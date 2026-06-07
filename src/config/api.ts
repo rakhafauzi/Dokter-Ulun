@@ -1,7 +1,34 @@
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const getApiBaseUrl = () => {
+  const configuredBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim();
+  if (configuredBaseUrl) {
+    return trimTrailingSlash(configuredBaseUrl);
+  }
+
+  return '/api';
+};
+
+const getOriginBaseUrl = (apiBaseUrl: string) => {
+  const configuredOrigin = String(import.meta.env.VITE_API_ORIGIN || '').trim();
+  if (configuredOrigin) {
+    return trimTrailingSlash(configuredOrigin);
+  }
+
+  if (/^https?:\/\//i.test(apiBaseUrl)) {
+    return trimTrailingSlash(apiBaseUrl.replace(/\/api$/i, ''));
+  }
+
+  return '';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+const API_ORIGIN = getOriginBaseUrl(API_BASE_URL);
+
 // API Configuration
 export const API_CONFIG = {
-  BASE_URL: 'http://localhost:3000/api',
-  BASE_URL_WITHOUT_API: 'http://localhost:3000',
+  BASE_URL: API_BASE_URL,
+  BASE_URL_WITHOUT_API: API_ORIGIN,
   ENDPOINTS: {
     STATISTICS_DATA: '/statistics-data',
     AUTH: '/auth',
@@ -34,7 +61,8 @@ export const API_CONFIG = {
     MEDICAL_SCRIBE: '/medical-scribe',
     CLINICAL_PATHWAY: '/clinical-pathway',
     PATIENT_NOTES: '/patient-notes',
-    OPERATION_REPORTS: '/operation-reports'
+    OPERATION_REPORTS: '/operation-reports',
+    DIGITAL_FILES: '/digital-files'
   }
 };
 
@@ -76,5 +104,6 @@ export const API_URLS = {
   MEDICAL_SCRIBE: buildApiUrl(API_CONFIG.ENDPOINTS.MEDICAL_SCRIBE),
   CLINICAL_PATHWAY: buildApiUrl(API_CONFIG.ENDPOINTS.CLINICAL_PATHWAY),
   PATIENT_NOTES: buildApiUrl(API_CONFIG.ENDPOINTS.PATIENT_NOTES),
-  OPERATION_REPORTS: buildApiUrl(API_CONFIG.ENDPOINTS.OPERATION_REPORTS)
+  OPERATION_REPORTS: buildApiUrl(API_CONFIG.ENDPOINTS.OPERATION_REPORTS),
+  DIGITAL_FILES: buildApiUrl(API_CONFIG.ENDPOINTS.DIGITAL_FILES)
 };

@@ -13,6 +13,7 @@ import RawatJalanPatientsService from './services/rawatJalanPatientsService.js';
 import RawatInapDataService from './services/rawatInapDataService.js';
 import HemodialisaDataService from './services/hemodialisaDataService.js';
 import GetMedicalRecordService from './services/getMedicalRecordService.js';
+import DigitalFilesService from './services/digitalFilesService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
 import IcdDataService from './services/icdDataService.js';
 import IgdDataService from './services/igdDataService.js';
@@ -1215,6 +1216,28 @@ app.delete('/api/radiology-data', async (req, res) => {
     }
   } catch (error) {
     console.error('Radiology data error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/digital-files/:no_rawat', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+
+    if (!no_rawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat is required'
+      });
+    }
+
+    const result = await DigitalFilesService.getFiles(no_rawat);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in digital-files GET endpoint:', error);
     res.status(500).json({
       success: false,
       error: error.message

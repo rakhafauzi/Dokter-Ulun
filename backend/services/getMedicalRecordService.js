@@ -48,22 +48,14 @@ class GetMedicalRecordService {
   }
 
   static async getOrthancConfig() {
-    const settingsQuery = `
-      SELECT field, value
-      FROM mlite_settings
-      WHERE module = 'orthanc'
-        AND field IN ('server', 'username', 'password')
-    `;
-    const [rows] = await db.execute(settingsQuery);
-
-    const configMap = Object.fromEntries(
-      rows.map((row) => [String(row.field || '').trim(), String(row.value || '').trim()])
-    );
+    const server = String(process.env.ORTHANC_SERVER || '').trim();
+    const username = String(process.env.ORTHANC_USERNAME || 'orthanc').trim();
+    const password = String(process.env.ORTHANC_PASSWORD || 'orthanc').trim();
 
     return {
-      server: configMap.server || process.env.ORTHANC_SERVER || '',
-      username: configMap.username || process.env.ORTHANC_USERNAME || 'orthanc',
-      password: configMap.password || process.env.ORTHANC_PASSWORD || 'orthanc'
+      server,
+      username,
+      password
     };
   }
 
