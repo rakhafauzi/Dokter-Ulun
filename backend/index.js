@@ -16,7 +16,9 @@ import IcdDataService from './services/icdDataService.js';
 import IgdDataService from './services/igdDataService.js';
 import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
+import ProcedureService from './services/procedureService.js';
 import PrescriptionDataService from './services/prescriptionDataService.js';
+import RadiologyDataService from './services/radiologyDataService.js';
 import ResumePasienDataService from './services/resumePasienDataService.js';
 import SaveExaminationService from './services/saveExaminationService.js';
 import WhatsappOtpService from './services/whatsappOtpService.js';
@@ -501,6 +503,60 @@ app.post('/api/get-medical-record', async (req, res) => {
   }
 });
 
+app.get('/api/procedure-options', async (req, res) => {
+  try {
+    const { no_rawat, search = '', limit = 20, status_rawat } = req.query;
+
+    if (!no_rawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat wajib diisi'
+      });
+    }
+
+    const result = await ProcedureService.searchProcedureOptions(
+      no_rawat,
+      String(search || ''),
+      Number(limit),
+      status_rawat
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error in procedure-options endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/save-procedures', async (req, res) => {
+  try {
+    const result = await ProcedureService.saveProcedures(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in save-procedures endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/delete-procedure', async (req, res) => {
+  try {
+    const result = await ProcedureService.deleteProcedure(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in delete-procedure endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Delete examination endpoint
 app.post('/api/delete-examination', async (req, res) => {
   try {
@@ -606,7 +662,7 @@ app.get('/api/laboratory-data', async (req, res) => {
 app.post('/api/laboratory-data', async (req, res) => {
   try {
     const { action } = req.query;
-    const { no_rawat, dokter_perujuk, examinations, details, noorder } = req.body;
+    const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat } = req.body;
     
     let result;
     
@@ -615,14 +671,14 @@ app.post('/api/laboratory-data', async (req, res) => {
         if (!no_rawat || !dokter_perujuk) {
           return res.status(400).json({ error: 'no_rawat and dokter_perujuk are required' });
         }
-        result = await LaboratoryDataService.createLabRequest(no_rawat, dokter_perujuk, examinations, details);
+        result = await LaboratoryDataService.createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat);
         break;
         
       case 'update_lab_request':
         if (!noorder) {
           return res.status(400).json({ error: 'noorder is required' });
         }
-        result = await LaboratoryDataService.updateLabRequest(noorder, examinations, details);
+        result = await LaboratoryDataService.updateLabRequest(noorder, examinations, details, status_rawat);
         break;
         
       default:
@@ -688,7 +744,7 @@ app.post('/api/medical-scribe', async (req, res) => {
 // Prescription Data endpoints
 app.get('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, no_resep } = req.query;
+    const { action, no_rawat, no_resep, search, limit } = req.query;
     
     let result;
     
@@ -716,6 +772,10 @@ app.get('/api/prescription-data', async (req, res) => {
       case 'get_medicines':
         result = await PrescriptionDataService.getMedicines();
         break;
+
+      case 'search_medicines':
+        result = await PrescriptionDataService.searchMedicines(search, limit);
+        break;
         
       case 'get_compound_methods':
         result = await PrescriptionDataService.getCompoundMethods();
@@ -724,7 +784,7 @@ app.get('/api/prescription-data', async (req, res) => {
       default:
         return res.status(400).json({
           success: false,
-          error: 'Invalid action. Supported actions: get_prescriptions, get_prescription_details, get_medicines, get_compound_methods'
+          error: 'Invalid action. Supported actions: get_prescriptions, get_prescription_details, get_medicines, search_medicines, get_compound_methods'
         });
     }
     
@@ -738,9 +798,107 @@ app.get('/api/prescription-data', async (req, res) => {
   }
 });
 
+app.get('/api/radiology-data', async (req, res) => {
+  try {
+    const { action, no_rawat, noorder } = req.query;
+
+    let result;
+
+    switch (action) {
+      case 'get_radiology_requests':
+        if (!no_rawat) {
+          return res.status(400).json({ error: 'no_rawat is required' });
+        }
+        result = await RadiologyDataService.getRadiologyRequests(no_rawat);
+        break;
+
+      case 'get_radiology_request_details':
+        if (!noorder) {
+          return res.status(400).json({ error: 'noorder is required' });
+        }
+        result = await RadiologyDataService.getRadiologyRequestDetails(noorder);
+        break;
+
+      case 'get_radiology_services':
+        result = await RadiologyDataService.getRadiologyServices();
+        break;
+
+      default:
+        return res.status(400).json({ error: 'Invalid action' });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Radiology data error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/radiology-data', async (req, res) => {
+  try {
+    const { action } = req.query;
+    const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat } = req.body;
+
+    let result;
+
+    switch (action) {
+      case 'create_radiology_request':
+        if (!no_rawat || !dokter_perujuk) {
+          return res.status(400).json({ error: 'no_rawat and dokter_perujuk are required' });
+        }
+        result = await RadiologyDataService.createRadiologyRequest(no_rawat, dokter_perujuk, examinations, status_rawat);
+        break;
+
+      case 'update_radiology_request':
+        if (!noorder) {
+          return res.status(400).json({ error: 'noorder is required' });
+        }
+        result = await RadiologyDataService.updateRadiologyRequest(noorder, examinations, status_rawat);
+        break;
+
+      default:
+        return res.status(400).json({ error: 'Invalid action' });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Radiology data error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.delete('/api/radiology-data', async (req, res) => {
+  try {
+    const { action, noorder } = req.query;
+
+    if (action === 'delete_radiology_request') {
+      if (!noorder) {
+        return res.status(400).json({ error: 'noorder is required' });
+      }
+
+      const result = await RadiologyDataService.deleteRadiologyRequest(noorder);
+      res.json(result);
+    } else {
+      res.status(400).json({ error: 'Invalid action' });
+    }
+  } catch (error) {
+    console.error('Radiology data error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, kd_dokter, no_resep, medicines, compounds } = req.body;
+    const { action, no_rawat, kd_dokter, no_resep, medicines, compounds, prescription_date, prescription_status } = req.body;
     
     let result;
     
@@ -752,7 +910,7 @@ app.post('/api/prescription-data', async (req, res) => {
             error: 'no_rawat and kd_dokter are required for create_prescription'
           });
         }
-        result = await PrescriptionDataService.createPrescription(no_rawat, kd_dokter, medicines, compounds);
+        result = await PrescriptionDataService.createPrescription(no_rawat, kd_dokter, medicines, compounds, prescription_date, prescription_status);
         break;
         
       case 'update_prescription':
@@ -762,7 +920,13 @@ app.post('/api/prescription-data', async (req, res) => {
             error: 'no_resep is required for update_prescription'
           });
         }
-        result = await PrescriptionDataService.updatePrescription(no_resep, medicines, compounds);
+        result = await PrescriptionDataService.updatePrescription(
+          no_resep,
+          medicines,
+          compounds,
+          prescription_date,
+          prescription_status
+        );
         break;
         
       case 'delete_prescription':

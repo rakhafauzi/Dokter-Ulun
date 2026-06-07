@@ -56,12 +56,16 @@ class GetMedicalRecordService {
   static async fetchProcedures(noRawat, type) {
     const tablePrefix = type === 'ralan' ? 'rawat_jl' : 'rawat_inap';
     const procedureReferenceTable = type === 'ralan' ? 'jns_perawatan' : 'jns_perawatan_inap';
+    const statusRawat = type === 'ralan' ? 'Ralan' : 'Ranap';
     const proceduresQuery = `
       SELECT
         tindakan.tgl_perawatan,
         tindakan.jam_rawat,
         tindakan.kd_jenis_prw,
         tindakan.biaya_rawat,
+        tindakan.record_type,
+        tindakan.kd_dokter,
+        tindakan.nip,
         tindakan.nama_pelaksana,
         jp.nm_perawatan
       FROM (
@@ -71,6 +75,9 @@ class GetMedicalRecordService {
           tindakan.tgl_perawatan,
           tindakan.jam_rawat,
           tindakan.biaya_rawat,
+          'dr' AS record_type,
+          tindakan.kd_dokter,
+          NULL AS nip,
           COALESCE(d.nm_dokter, 'Dokter') AS nama_pelaksana
         FROM ${tablePrefix}_dr tindakan
         LEFT JOIN dokter d ON tindakan.kd_dokter = d.kd_dokter
@@ -82,6 +89,9 @@ class GetMedicalRecordService {
           tindakan.tgl_perawatan,
           tindakan.jam_rawat,
           tindakan.biaya_rawat,
+          'pr' AS record_type,
+          NULL AS kd_dokter,
+          tindakan.nip,
           COALESCE(p.nama, 'Perawat') AS nama_pelaksana
         FROM ${tablePrefix}_pr tindakan
         LEFT JOIN pegawai p ON tindakan.nip = p.nik
@@ -93,6 +103,9 @@ class GetMedicalRecordService {
           tindakan.tgl_perawatan,
           tindakan.jam_rawat,
           tindakan.biaya_rawat,
+          'drpr' AS record_type,
+          tindakan.kd_dokter,
+          tindakan.nip,
           CONCAT_WS(' & ', d.nm_dokter, p.nama) AS nama_pelaksana
         FROM ${tablePrefix}_drpr tindakan
         LEFT JOIN dokter d ON tindakan.kd_dokter = d.kd_dokter
@@ -106,11 +119,18 @@ class GetMedicalRecordService {
 
     return rows.map((row) => ({
       tanggal: this.formatDateOnly(row.tgl_perawatan) + ' ' + row.jam_rawat,
+      tgl_perawatan: this.formatDateOnly(row.tgl_perawatan),
+      jam_rawat: row.jam_rawat,
+      kd_jenis_prw: row.kd_jenis_prw,
       nm_perawatan: row.nm_perawatan || row.kd_jenis_prw || '-',
       nama: row.nm_perawatan || row.kd_jenis_prw || '-',
       nama_pelaksana: row.nama_pelaksana || '-',
       hasil: row.nama_pelaksana || '-',
-      biaya_rawat: row.biaya_rawat || 0
+      biaya_rawat: row.biaya_rawat || 0,
+      record_type: row.record_type || 'dr',
+      kd_dokter: row.kd_dokter || '',
+      nip: row.nip || '',
+      status_rawat: statusRawat
     }));
   }
 
@@ -150,6 +170,7 @@ class GetMedicalRecordService {
       ]);
       
       const obatList = detailRows.map(row => ({
+        kode_brng: row.kode_brng || '',
         nama: row.nama_brng || '-',
         jumlah: row.jml || '-',
         aturan_pakai: row.aturan || '-'
@@ -171,18 +192,18 @@ class GetMedicalRecordService {
   static async fetchMedicationsRequest(noRawat, status) {
     // Step 1: Get list of unique prescriptions
     const prescRequestQuery = `
-      SELECT DISTINCT no_resep, tgl_perawatan, jam
+      SELECT DISTINCT no_resep, tgl_peresepan, jam_peresepan
       FROM resep_obat 
       WHERE no_rawat = ? AND status = ?
-      ORDER BY tgl_perawatan, jam
+      ORDER BY tgl_peresepan, jam_peresepan
     `;
     const [prescRequestRows] = await db.execute(prescRequestQuery, [noRawat, status]);
     const medicationsRequest = [];
     
     // Step 2: For each prescription request, fetch detailed medications request
     for (const prescRequestRow of prescRequestRows) {
-      // Skip if tgl_perawatan or jam is NULL
-      if (!prescRequestRow.tgl_perawatan || !prescRequestRow.jam) {
+      // Skip if tgl_peresepan or jam_peresepan is NULL
+      if (!prescRequestRow.tgl_peresepan || !prescRequestRow.jam_peresepan) {
         continue;
       }
       
@@ -196,6 +217,7 @@ class GetMedicalRecordService {
       const [detailRequestRows] = await db.execute(detailRequestQuery, [prescRequestRow.no_resep]);
       
       const obatList = detailRequestRows.map(row => ({
+        kode_brng: row.kode_brng || '',
         nama: row.nama_brng || '-',
         jumlah: row.jml || '-',
         aturan_pakai: row.aturan_pakai || '-'
@@ -203,7 +225,7 @@ class GetMedicalRecordService {
       
       if (obatList.length > 0) {
         medicationsRequest.push({
-          tanggal: this.formatDateOnly(prescRequestRow.tgl_perawatan) + ' ' + prescRequestRow.jam,
+          tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
           no_resep: prescRequestRow.no_resep,
           obat: obatList
         });
@@ -216,31 +238,77 @@ class GetMedicalRecordService {
   // Helper function to fetch lab results request
   static async fetchLaboratoryRequest(noRawat, status) {
     const labRequestQuery = `
-      SELECT pl.*, ppl.kd_jenis_prw, jpl.nm_perawatan  
+      SELECT
+        pl.noorder,
+        pl.tgl_permintaan,
+        pl.jam_permintaan,
+        ppl.kd_jenis_prw,
+        jpl.nm_perawatan,
+        pdpl.id_template,
+        tl.Pemeriksaan AS template_name,
+        tl.satuan,
+        tl.nilai_rujukan_ld,
+        tl.nilai_rujukan_la,
+        tl.nilai_rujukan_pd,
+        tl.nilai_rujukan_pa
       FROM permintaan_lab pl 
       LEFT JOIN permintaan_pemeriksaan_lab ppl ON ppl.noorder = pl.noorder 
       LEFT JOIN jns_perawatan_lab jpl ON jpl.kd_jenis_prw = ppl.kd_jenis_prw
+      LEFT JOIN permintaan_detail_permintaan_lab pdpl
+        ON pdpl.noorder = pl.noorder
+        AND pdpl.kd_jenis_prw = ppl.kd_jenis_prw
+      LEFT JOIN template_laboratorium tl ON tl.id_template = pdpl.id_template
       WHERE pl.no_rawat = ? AND pl.status = ? 
-      ORDER BY pl.tgl_permintaan, pl.jam_permintaan
+      ORDER BY pl.tgl_permintaan, pl.jam_permintaan, ppl.kd_jenis_prw, tl.Pemeriksaan
     `;
     const [rows] = await db.execute(labRequestQuery, [noRawat, status]);
-    
-    const labsByDate = {};
-    rows.forEach(row => {
-      const dateKey = this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan;
-      if (!labsByDate[dateKey]) {
-        labsByDate[dateKey] = [];
-      }
-      if (row.nm_perawatan) {
-        labsByDate[dateKey].push({
-          nama: row.nm_perawatan
+
+    const requestsByOrder = new Map();
+
+    rows.forEach((row) => {
+      const requestKey = row.noorder || `${this.formatDateOnly(row.tgl_permintaan)} ${row.jam_permintaan}`;
+
+      if (!requestsByOrder.has(requestKey)) {
+        requestsByOrder.set(requestKey, {
+          noorder: row.noorder || '',
+          tanggal: this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan,
+          pemeriksaanMap: new Map()
         });
       }
+
+      const requestEntry = requestsByOrder.get(requestKey);
+      const examKey = row.kd_jenis_prw || row.nm_perawatan || '';
+
+      if (row.nm_perawatan && !requestEntry.pemeriksaanMap.has(examKey)) {
+        requestEntry.pemeriksaanMap.set(examKey, {
+          kode: row.kd_jenis_prw || '',
+          nama: row.nm_perawatan,
+          templates: []
+        });
+      }
+
+      if (row.id_template && requestEntry.pemeriksaanMap.has(examKey)) {
+        const examEntry = requestEntry.pemeriksaanMap.get(examKey);
+        const alreadyExists = examEntry.templates.some((template) => template.id_template === row.id_template);
+
+        if (!alreadyExists) {
+          examEntry.templates.push({
+            id_template: row.id_template,
+            nama: row.template_name || '',
+            satuan: row.satuan || '',
+            nilai_rujukan_ld: row.nilai_rujukan_ld || '',
+            nilai_rujukan_la: row.nilai_rujukan_la || '',
+            nilai_rujukan_pd: row.nilai_rujukan_pd || '',
+            nilai_rujukan_pa: row.nilai_rujukan_pa || ''
+          });
+        }
+      }
     });
-    
-    return Object.entries(labsByDate).map(([tanggal, pemeriksaan]) => ({
-      tanggal,
-      pemeriksaan
+
+    return Array.from(requestsByOrder.values()).map((requestEntry) => ({
+      noorder: requestEntry.noorder,
+      tanggal: requestEntry.tanggal,
+      pemeriksaan: Array.from(requestEntry.pemeriksaanMap.values())
     }));
   }
 
@@ -296,6 +364,52 @@ class GetMedicalRecordService {
       hasil: row.hasil || '',
       kesan: row.hasil || ''
     }));
+  }
+
+  static async fetchRadiologyRequest(noRawat, status) {
+    const radiologyRequestQuery = `
+      SELECT
+        pr.noorder,
+        pr.tgl_permintaan,
+        pr.jam_permintaan,
+        ppr.kd_jenis_prw,
+        jpr.nm_perawatan
+      FROM permintaan_radiologi pr
+      LEFT JOIN permintaan_pemeriksaan_radiologi ppr ON ppr.noorder = pr.noorder
+      LEFT JOIN jns_perawatan_radiologi jpr ON jpr.kd_jenis_prw = ppr.kd_jenis_prw
+      WHERE pr.no_rawat = ? AND pr.status = ?
+      ORDER BY pr.tgl_permintaan, pr.jam_permintaan, jpr.nm_perawatan
+    `;
+    const [rows] = await db.execute(radiologyRequestQuery, [noRawat, status]);
+
+    const requestsByOrder = new Map();
+
+    rows.forEach((row) => {
+      const requestKey = row.noorder || `${this.formatDateOnly(row.tgl_permintaan)} ${row.jam_permintaan}`;
+
+      if (!requestsByOrder.has(requestKey)) {
+        requestsByOrder.set(requestKey, {
+          noorder: row.noorder || '',
+          tanggal: this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan,
+          pemeriksaan: []
+        });
+      }
+
+      const requestEntry = requestsByOrder.get(requestKey);
+
+      if (row.nm_perawatan) {
+        const alreadyExists = requestEntry.pemeriksaan.some((item) => item.kode === row.kd_jenis_prw);
+
+        if (!alreadyExists) {
+          requestEntry.pemeriksaan.push({
+            kode: row.kd_jenis_prw || '',
+            nama: row.nm_perawatan
+          });
+        }
+      }
+    });
+
+    return Array.from(requestsByOrder.values());
   }
 
   static parsePositiveInteger(value, fallback) {
@@ -366,7 +480,8 @@ class GetMedicalRecordService {
       medicationsRequest,
       laboratory,
       laboratoryRequest,
-      radiology
+      radiology,
+      radiologyRequest
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ralan'),
       this.fetchProcedures(visit.no_rawat, 'ralan'),
@@ -374,7 +489,8 @@ class GetMedicalRecordService {
       this.fetchMedicationsRequest(visit.no_rawat, 'ralan'),
       this.fetchLaboratory(visit.no_rawat),
       this.fetchLaboratoryRequest(visit.no_rawat, 'ralan'),
-      this.fetchRadiology(visit.no_rawat)
+      this.fetchRadiology(visit.no_rawat),
+      this.fetchRadiologyRequest(visit.no_rawat, 'ralan')
     ]);
 
     return {
@@ -390,7 +506,8 @@ class GetMedicalRecordService {
       medications,
       laboratoryRequest,
       laboratory,
-      radiology
+      radiology,
+      radiologyRequest
     };
   }
 
@@ -404,7 +521,8 @@ class GetMedicalRecordService {
       medicationsRequestIbs,
       laboratory,
       laboratoryRequest,
-      radiology
+      radiology,
+      radiologyRequest
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ranap'),
       this.fetchProcedures(visit.no_rawat, 'ranap'),
@@ -414,7 +532,8 @@ class GetMedicalRecordService {
       this.fetchMedicationsRequest(visit.no_rawat, 'ibs'),
       this.fetchLaboratory(visit.no_rawat),
       this.fetchLaboratoryRequest(visit.no_rawat, 'ranap'),
-      this.fetchRadiology(visit.no_rawat)
+      this.fetchRadiology(visit.no_rawat),
+      this.fetchRadiologyRequest(visit.no_rawat, 'ranap')
     ]);
 
     return {
@@ -437,7 +556,8 @@ class GetMedicalRecordService {
       medications,
       laboratoryRequest,
       laboratory,
-      radiology
+      radiology,
+      radiologyRequest
     };
   }
 

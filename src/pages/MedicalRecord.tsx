@@ -5,11 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PatientTable from "@/components/PatientTable";
 import { FloatingButtonsModal } from '@/components/FloatingButtonsModal';
 
-import { 
-  User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio, 
-  Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin, 
+import {
+  User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
+  Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock,
-  Calendar as CalendarIcon, Copy, ChevronDown, ChevronUp, Brain
+  Calendar as CalendarIcon, Copy, ChevronDown, ChevronUp, Brain, Check, ChevronsUpDown, Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,19 +21,35 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDateTimeWIB } from "@/lib/date-utils";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { API_URLS } from '@/config/api';
 
+type PrescriptionStatus = 'Ralan' | 'Ranap' | 'Pulang' | 'IBS';
+
 interface Medication {
   tanggal: string;
+  status: PrescriptionStatus;
   obat: {
+    kode_brng: string;
     nama: string;
     jumlah: string;
     aturan_pakai: string;
+    satuan?: string;
+    stok?: number;
   }[];
+}
+
+interface MedicineOption {
+  kode_brng: string;
+  nama_brng: string;
+  satuan?: string;
+  harga?: number;
+  stok?: number;
 }
 
 interface RacikanMedicine {
@@ -48,6 +64,7 @@ interface CompoundPrescription {
 }
 
 interface LabTest {
+  kode?: string;
   nama?: string;
   pemeriksaan?: string;
   hasil: string;
@@ -55,10 +72,53 @@ interface LabTest {
   keterangan: string;
 }
 
+interface LabServiceOption {
+  kd_jenis_prw: string;
+  nm_perawatan: string;
+  total_byr?: number;
+}
+
+interface LabTemplateOption {
+  id_template: string;
+  Pemeriksaan: string;
+  satuan?: string;
+  nilai_rujukan_ld?: string;
+  nilai_rujukan_la?: string;
+  nilai_rujukan_pd?: string;
+  nilai_rujukan_pa?: string;
+}
+
 interface LabData {
   tanggal: string;
   pemeriksaan: LabTest[];
 }
+
+interface RadiologyFormItem {
+  kode: string;
+  pemeriksaan: string;
+}
+
+interface RadiologyServiceOption {
+  kd_jenis_prw: string;
+  nm_perawatan: string;
+  total_byr?: number;
+}
+
+interface ProcedureFormItem {
+  kode: string;
+  nama: string;
+  hasil: string;
+}
+
+interface ProcedureOption {
+  kode: string;
+  nama: string;
+  biaya_rawat: number;
+}
+
+type ProcedureStatusRawat = 'Ralan' | 'Ranap';
+type LabStatusRawat = 'Ralan' | 'Ranap';
+type RadiologyStatusRawat = 'Ralan' | 'Ranap';
 
 interface MedicalRecordData {
   patient: {
@@ -102,6 +162,21 @@ const getCurrentExaminationDateTime = () => ({
   jam_rawat: format(new Date(), 'HH:mm')
 });
 
+const getCurrentPrescriptionDate = () => format(new Date(), 'yyyy-MM-dd');
+
+const getDefaultMedicationForm = (defaultStatus: PrescriptionStatus = 'Ralan'): Medication[] => ([{
+  tanggal: getCurrentPrescriptionDate(),
+  status: defaultStatus,
+  obat: [{
+    kode_brng: '',
+    nama: '',
+    jumlah: '',
+    aturan_pakai: '',
+    satuan: '',
+    stok: 0
+  }]
+}]);
+
 const getDefaultExaminationForm = () => ({
   ...getCurrentExaminationDateTime(),
   suhu: '',
@@ -122,8 +197,53 @@ const getDefaultExaminationForm = () => ({
   nip: ''
 });
 
+const getDefaultProcedureForm = (): ProcedureFormItem[] => ([{
+  kode: '',
+  nama: '',
+  hasil: ''
+}]);
+
+const getDefaultLabRequestForm = (): LabTest[] => ([{
+  kode: '',
+  pemeriksaan: '',
+  hasil: '',
+  rujukan: '',
+  keterangan: ''
+}]);
+
+const getDefaultRadiologyRequestForm = (): RadiologyFormItem[] => ([{
+  kode: '',
+  pemeriksaan: ''
+}]);
+
 const mapStatusLanjutToStatusRawat = (statusLanjut?: string | null) => {
   return statusLanjut === 'Ranap' || statusLanjut === 'Dirawat' ? 'Ranap' : 'Ralan';
+};
+
+const mapPrescriptionSourceToStatus = (source?: string | null): PrescriptionStatus => {
+  switch (String(source || '').trim().toLowerCase()) {
+    case 'rawat inap':
+      return 'Ranap';
+    case 'obat pulang':
+      return 'Pulang';
+    case 'ibs':
+      return 'IBS';
+    default:
+      return 'Ralan';
+  }
+};
+
+const mapRequestSourceToStatusRawat = (source?: string | null): ProcedureStatusRawat => {
+  return String(source || '').trim().toLowerCase() === 'rawat inap' ? 'Ranap' : 'Ralan';
+};
+
+const getPrescriptionDateOnly = (value?: string | null) => {
+  const normalizedValue = String(value || '').trim();
+  if (!normalizedValue) {
+    return getCurrentPrescriptionDate();
+  }
+
+  return normalizedValue.split(' ')[0] || getCurrentPrescriptionDate();
 };
 
 const formatMultilineText = (value?: string | null) => {
@@ -170,14 +290,11 @@ const MedicalRecord = () => {
   const { user } = useAuth();
 
   // Form states
-  const [medications, setMedications] = useState<Medication[]>([{
-    tanggal: '',
-    obat: [{
-      nama: '',
-      jumlah: '',
-      aturan_pakai: ''
-    }]
-  }]);
+  const [medications, setMedications] = useState<Medication[]>(() => getDefaultMedicationForm('Ralan'));
+  const [medicineOptions, setMedicineOptions] = useState<Record<string, MedicineOption[]>>({});
+  const [medicineSearchOpen, setMedicineSearchOpen] = useState<Record<string, boolean>>({});
+  const [medicineSearchQuery, setMedicineSearchQuery] = useState<Record<string, string>>({});
+  const [medicineSearchLoading, setMedicineSearchLoading] = useState<Record<string, boolean>>({});
 
   const [compoundPrescriptions, setCompoundPrescriptions] = useState<CompoundPrescription[]>([{
     tanggal: '',
@@ -188,18 +305,30 @@ const MedicalRecord = () => {
     }]
   }]);
 
-  const [labTests, setLabTests] = useState<LabTest[]>([{
-    pemeriksaan: '',
-    hasil: '',
-    rujukan: '',
-    keterangan: ''
-  }]);
+  const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
+  const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
+  const [labServiceSearchOpen, setLabServiceSearchOpen] = useState<Record<number, boolean>>({});
+  const [labServiceSearchQuery, setLabServiceSearchQuery] = useState<Record<number, string>>({});
+  const [labServiceSearchLoading, setLabServiceSearchLoading] = useState(false);
+  const [labTemplatesByIndex, setLabTemplatesByIndex] = useState<Record<number, LabTemplateOption[]>>({});
+  const [labTemplateLoadingByIndex, setLabTemplateLoadingByIndex] = useState<Record<number, boolean>>({});
+  const [labStatusRawat, setLabStatusRawat] = useState<LabStatusRawat>('Ralan');
 
-  const [procedures, setProcedures] = useState([{
-    kode: '',
-    nama: '',
-    hasil: ''
-  }]);
+  const [procedures, setProcedures] = useState<ProcedureFormItem[]>(getDefaultProcedureForm);
+  const [procedureOptions, setProcedureOptions] = useState<Record<number, ProcedureOption[]>>({});
+  const [procedureSearchOpen, setProcedureSearchOpen] = useState<Record<number, boolean>>({});
+  const [procedureSearchQuery, setProcedureSearchQuery] = useState<Record<number, string>>({});
+  const [procedureSearchLoading, setProcedureSearchLoading] = useState<Record<number, boolean>>({});
+  const [deletingProcedureKey, setDeletingProcedureKey] = useState<string | null>(null);
+  const [procedureStatusRawat, setProcedureStatusRawat] = useState<ProcedureStatusRawat>('Ralan');
+  const [editingPrescriptionNo, setEditingPrescriptionNo] = useState<string | null>(null);
+  const [deletingPrescriptionNo, setDeletingPrescriptionNo] = useState<string | null>(null);
+  const [editingLabRequestNo, setEditingLabRequestNo] = useState<string | null>(null);
+  const [labFormNoRawat, setLabFormNoRawat] = useState<string>('');
+  const [deletingLabRequestNo, setDeletingLabRequestNo] = useState<string | null>(null);
+  const [editingRadiologyRequestNo, setEditingRadiologyRequestNo] = useState<string | null>(null);
+  const [radiologyFormNoRawat, setRadiologyFormNoRawat] = useState<string>('');
+  const [deletingRadiologyRequestNo, setDeletingRadiologyRequestNo] = useState<string | null>(null);
 
   const [radTests, setRadTests] = useState([{
     pemeriksaan: '',
@@ -213,7 +342,12 @@ const MedicalRecord = () => {
   const [draggingLab, setDraggingLab] = useState<LabData | null>(null);
   const [canvasItems, setCanvasItems] = useState<Array<{ type: string; content: any; position: { x: number; y: number } }>>([]);
   const [draggingRad, setDraggingRad] = useState<any>(null);
-  const [radiologies, setRadiologies] = useState([{ kode: '', pemeriksaan: '', hasil: '', keterangan: '' }]);
+  const [radiologies, setRadiologies] = useState<RadiologyFormItem[]>(getDefaultRadiologyRequestForm);
+  const [radiologyServiceOptions, setRadiologyServiceOptions] = useState<RadiologyServiceOption[]>([]);
+  const [radiologySearchOpen, setRadiologySearchOpen] = useState<Record<number, boolean>>({});
+  const [radiologySearchQuery, setRadiologySearchQuery] = useState<Record<number, string>>({});
+  const [radiologySearchLoading, setRadiologySearchLoading] = useState(false);
+  const [radiologyStatusRawat, setRadiologyStatusRawat] = useState<RadiologyStatusRawat>('Ralan');
   const [isExaminationFormOpen, setIsExaminationFormOpen] = useState(false);
   const [isProcedureFormOpen, setIsProcedureFormOpen] = useState(false);
   const [isMedicationFormOpen, setIsMedicationFormOpen] = useState(false);
@@ -358,6 +492,32 @@ const MedicalRecord = () => {
       fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
     }
   }, [fetchMedicalRecord, no_rkm_medis]);
+
+  useEffect(() => {
+    const defaultPrescriptionStatus = statusRawat === 'Ranap' ? 'Ranap' : 'Ralan';
+
+    setMedications((previous) => previous.map((medication) => {
+      const isBlankMedication = medication.obat.every((item) => (
+        !item.kode_brng && !item.nama && !item.jumlah && !item.aturan_pakai
+      ));
+
+      return isBlankMedication
+        ? { ...medication, status: defaultPrescriptionStatus }
+        : medication;
+    }));
+  }, [statusRawat]);
+
+  useEffect(() => {
+    setProcedureStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+  }, [statusRawat]);
+
+  useEffect(() => {
+    setLabStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+  }, [statusRawat]);
+
+  useEffect(() => {
+    setRadiologyStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+  }, [statusRawat]);
 
   const loadMoreMedicalRecord = useCallback(() => {
     if (loading || loadingMore || !hasMoreRecords) {
@@ -512,15 +672,36 @@ const MedicalRecord = () => {
   };
 
   // Form helper functions
+  const getMedicineFieldKey = (medIndex: number, obatIndex: number) => `${medIndex}-${obatIndex}`;
+
+  const updateMedicationItem = (
+    medIndex: number,
+    obatIndex: number,
+    updates: Partial<Medication['obat'][number]>
+  ) => {
+    setMedications((previous) => previous.map((medication, medicationIndex) => (
+      medicationIndex === medIndex
+        ? {
+            ...medication,
+            obat: medication.obat.map((item, itemIndex) => (
+              itemIndex === obatIndex ? { ...item, ...updates } : item
+            ))
+          }
+        : medication
+    )));
+  };
+
+  const resetMedicationForm = () => {
+    setMedications(getDefaultMedicationForm(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan'));
+    setMedicineOptions({});
+    setMedicineSearchOpen({});
+    setMedicineSearchQuery({});
+    setMedicineSearchLoading({});
+    setEditingPrescriptionNo(null);
+  };
+
   const addMedication = () => {
-    setMedications([...medications, {
-      tanggal: '',
-      obat: [{
-        nama: '',
-        jumlah: '',
-        aturan_pakai: ''
-      }]
-    }]);
+    setMedications([...medications, ...getDefaultMedicationForm(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan')]);
   };
 
   const removeMedication = (index: number) => {
@@ -529,16 +710,20 @@ const MedicalRecord = () => {
 
   const handleCopyResep = (med: any) => {
     const isFirstEmpty = medications.length === 1 && 
-      medications[0].tanggal === '' && 
+      medications[0].tanggal === getCurrentPrescriptionDate() && 
       medications[0].obat.length === 1 && 
       medications[0].obat[0].nama === '';
 
     const newMedication: Medication = {
-      tanggal: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+      tanggal: getCurrentPrescriptionDate(),
+      status: med.status || (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan'),
       obat: med.obat.map((o: any) => ({
+        kode_brng: o.kode_brng || '',
         nama: o.nama,
         jumlah: o.jumlah,
-        aturan_pakai: o.aturan_pakai
+        aturan_pakai: o.aturan_pakai,
+        satuan: o.satuan || '',
+        stok: Number(o.stok) || 0
       }))
     };
 
@@ -548,12 +733,139 @@ const MedicalRecord = () => {
       setMedications([...medications, newMedication]);
     }
 
+    setEditingPrescriptionNo(null);
     setIsMedicationFormOpen(true);
+    setActiveTab('medications');
     
     toast({
       title: "Resep Disalin",
       description: "Data resep berhasil disalin ke form tambah resep.",
     });
+  };
+
+  const handleEditResep = async (med: any) => {
+    if (!med?.no_resep) {
+      toast({
+        title: "Error",
+        description: "Nomor resep tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${API_URLS.PRESCRIPTION_DATA}?action=get_prescription_details&no_resep=${encodeURIComponent(med.no_resep)}`
+      );
+
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.details ||
+          responseJson?.error ||
+          `HTTP error! status: ${response.status}`
+        );
+      }
+
+      const detailMedicines = Array.isArray(responseJson.medicines) ? responseJson.medicines : [];
+
+      if (!detailMedicines.length) {
+        throw new Error('Detail obat untuk resep ini tidak ditemukan');
+      }
+
+      setMedications([{
+        tanggal: getPrescriptionDateOnly(med.tanggal),
+        status: med.status || mapPrescriptionSourceToStatus(med.source),
+        obat: detailMedicines.map((item: any) => ({
+          kode_brng: item.kode_brng || '',
+          nama: item.nama_brng || item.nama || '',
+          jumlah: String(item.jml ?? item.jumlah ?? ''),
+          aturan_pakai: item.aturan_pakai || '',
+          satuan: item.satuan || '',
+          stok: Number(item.stok) || 0
+        }))
+      }]);
+      setMedicineOptions({});
+      setMedicineSearchOpen({});
+      setMedicineSearchQuery({});
+      setMedicineSearchLoading({});
+      setEditingPrescriptionNo(med.no_resep);
+      setIsMedicationFormOpen(true);
+      setActiveTab('medications');
+
+      toast({
+        title: "Mode Edit Aktif",
+        description: `Resep ${med.no_resep} dimuat ke form edit.`,
+      });
+    } catch (error) {
+      console.error('Error loading prescription details:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Gagal memuat detail resep',
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteResep = async (med: any) => {
+    if (!med?.no_resep) {
+      toast({
+        title: "Error",
+        description: "Nomor resep tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!confirm(`Apakah Anda yakin ingin menghapus resep ${med.no_resep}?`)) {
+      return;
+    }
+
+    try {
+      setDeletingPrescriptionNo(med.no_resep);
+
+      const response = await fetch(API_URLS.PRESCRIPTION_DATA, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'delete_prescription',
+          no_resep: med.no_resep
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.details ||
+          responseJson?.error ||
+          `HTTP error! status: ${response.status}`
+        );
+      }
+
+      if (editingPrescriptionNo === med.no_resep) {
+        resetMedicationForm();
+      }
+
+      toast({
+        title: "Berhasil",
+        description: `Resep ${med.no_resep} berhasil dihapus`,
+      });
+
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error deleting prescription:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Gagal menghapus resep',
+        variant: "destructive"
+      });
+    } finally {
+      setDeletingPrescriptionNo(null);
+    }
   };
 
   const addCompoundPrescription = () => {
@@ -585,6 +897,7 @@ const MedicalRecord = () => {
 
   const addLabTest = () => {
     setLabTests([...labTests, {
+      kode: '',
       pemeriksaan: '',
       hasil: '',
       rujukan: '',
@@ -593,7 +906,45 @@ const MedicalRecord = () => {
   };
 
   const removeLabTest = (index: number) => {
+    const reindexState = <T,>(state: Record<number, T>) => {
+      return Object.entries(state).reduce<Record<number, T>>((result, [key, value]) => {
+        const numericKey = Number(key);
+
+        if (numericKey < index) {
+          result[numericKey] = value;
+        } else if (numericKey > index) {
+          result[numericKey - 1] = value;
+        }
+
+        return result;
+      }, {});
+    };
+
     setLabTests(labTests.filter((_, i) => i !== index));
+    setLabServiceSearchOpen((previous) => reindexState(previous));
+    setLabServiceSearchQuery((previous) => reindexState(previous));
+    setLabTemplatesByIndex((previous) => reindexState(previous));
+    setLabTemplateLoadingByIndex((previous) => reindexState(previous));
+  };
+
+  const resetLabForm = () => {
+    setLabTests(getDefaultLabRequestForm());
+    setLabServiceSearchOpen({});
+    setLabServiceSearchQuery({});
+    setLabTemplatesByIndex({});
+    setLabTemplateLoadingByIndex({});
+    setLabStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setEditingLabRequestNo(null);
+    setLabFormNoRawat('');
+  };
+
+  const handleLabStatusRawatChange = (value: LabStatusRawat) => {
+    setLabStatusRawat(value);
+    setLabTests(getDefaultLabRequestForm());
+    setLabServiceSearchOpen({});
+    setLabServiceSearchQuery({});
+    setLabTemplatesByIndex({});
+    setLabTemplateLoadingByIndex({});
   };
 
   const addProcedure = () => {
@@ -605,8 +956,181 @@ const MedicalRecord = () => {
   };
 
   const removeProcedure = (index: number) => {
+    const reindexState = <T,>(state: Record<number, T>) => {
+      return Object.entries(state).reduce<Record<number, T>>((result, [key, value]) => {
+        const numericKey = Number(key);
+
+        if (numericKey < index) {
+          result[numericKey] = value;
+        } else if (numericKey > index) {
+          result[numericKey - 1] = value;
+        }
+
+        return result;
+      }, {});
+    };
+
     setProcedures(procedures.filter((_, i) => i !== index));
+    setProcedureOptions((previous) => reindexState(previous));
+    setProcedureSearchOpen((previous) => reindexState(previous));
+    setProcedureSearchQuery((previous) => reindexState(previous));
+    setProcedureSearchLoading((previous) => reindexState(previous));
   };
+
+  const updateProcedure = (index: number, updates: Partial<ProcedureFormItem>) => {
+    setProcedures((previous) => previous.map((procedure, procedureIndex) => (
+      procedureIndex === index ? { ...procedure, ...updates } : procedure
+    )));
+  };
+
+  const resetProcedureForm = () => {
+    setProcedures(getDefaultProcedureForm());
+    setProcedureOptions({});
+    setProcedureSearchOpen({});
+    setProcedureSearchQuery({});
+    setProcedureSearchLoading({});
+    setProcedureStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+  };
+
+  const handleProcedureStatusRawatChange = (value: ProcedureStatusRawat) => {
+    setProcedureStatusRawat(value);
+    setProcedures(getDefaultProcedureForm());
+    setProcedureOptions({});
+    setProcedureSearchOpen({});
+    setProcedureSearchQuery({});
+    setProcedureSearchLoading({});
+  };
+
+  const fetchMedicineOptions = useCallback(async (medIndex: number, obatIndex: number, searchText = '') => {
+    const key = getMedicineFieldKey(medIndex, obatIndex);
+
+    try {
+      setMedicineSearchLoading((previous) => ({ ...previous, [key]: true }));
+
+      const params = new URLSearchParams({
+        action: 'search_medicines',
+        search: searchText,
+        limit: '20'
+      });
+
+      const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setMedicineOptions((previous) => ({
+        ...previous,
+        [key]: responseJson.data || []
+      }));
+    } catch (error) {
+      console.error('Error fetching medicine options:', error);
+      setMedicineOptions((previous) => ({ ...previous, [key]: [] }));
+    } finally {
+      setMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
+    }
+  }, []);
+
+  const fetchProcedureOptions = useCallback(async (index: number, searchText = '') => {
+    if (!formattedNoRawat) {
+      setProcedureOptions((previous) => ({ ...previous, [index]: [] }));
+      return;
+    }
+
+    try {
+      setProcedureSearchLoading((previous) => ({ ...previous, [index]: true }));
+
+      const params = new URLSearchParams({
+        no_rawat: formattedNoRawat,
+        status_rawat: procedureStatusRawat,
+        search: searchText,
+        limit: '20'
+      });
+
+      const response = await fetch(`${API_URLS.PROCEDURE_OPTIONS}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setProcedureOptions((previous) => ({
+        ...previous,
+        [index]: responseJson.data || []
+      }));
+    } catch (error) {
+      console.error('Error fetching procedure options:', error);
+      setProcedureOptions((previous) => ({ ...previous, [index]: [] }));
+    } finally {
+      setProcedureSearchLoading((previous) => ({ ...previous, [index]: false }));
+    }
+  }, [formattedNoRawat, procedureStatusRawat]);
+
+  const fetchLabServiceOptions = useCallback(async () => {
+    try {
+      setLabServiceSearchLoading(true);
+
+      const params = new URLSearchParams({
+        action: 'get_lab_services'
+      });
+      const response = await fetch(`${API_URLS.LABORATORY_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setLabServiceOptions(Array.isArray(responseJson) ? responseJson : []);
+    } catch (error) {
+      console.error('Error fetching laboratory service options:', error);
+      setLabServiceOptions([]);
+    } finally {
+      setLabServiceSearchLoading(false);
+    }
+  }, []);
+
+  const fetchLabTemplates = useCallback(async (index: number, kdJenisPrw: string) => {
+    const normalizedKode = String(kdJenisPrw || '').trim();
+
+    if (!normalizedKode) {
+      setLabTemplatesByIndex((previous) => ({ ...previous, [index]: [] }));
+      return;
+    }
+
+    try {
+      setLabTemplateLoadingByIndex((previous) => ({ ...previous, [index]: true }));
+
+      const params = new URLSearchParams({
+        action: 'get_lab_templates',
+        kd_jenis_prw: normalizedKode
+      });
+      const response = await fetch(`${API_URLS.LABORATORY_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setLabTemplatesByIndex((previous) => ({
+        ...previous,
+        [index]: Array.isArray(responseJson) ? responseJson : []
+      }));
+    } catch (error) {
+      console.error('Error fetching laboratory templates:', error);
+      setLabTemplatesByIndex((previous) => ({ ...previous, [index]: [] }));
+    } finally {
+      setLabTemplateLoadingByIndex((previous) => ({ ...previous, [index]: false }));
+    }
+  }, []);
 
   const addRadTest = () => {
     setRadTests([...radTests, {
@@ -621,14 +1145,351 @@ const MedicalRecord = () => {
   };
 
   const addRadiology = () => {
-    setRadiologies([...radiologies, { kode: '', pemeriksaan: '', hasil: '', keterangan: '' }]);
+    setRadiologies([...radiologies, { kode: '', pemeriksaan: '' }]);
   };
 
   const removeRadiology = (index: number) => {
+    const reindexState = <T,>(state: Record<number, T>) => {
+      return Object.entries(state).reduce<Record<number, T>>((result, [key, value]) => {
+        const numericKey = Number(key);
+
+        if (numericKey < index) {
+          result[numericKey] = value;
+        } else if (numericKey > index) {
+          result[numericKey - 1] = value;
+        }
+
+        return result;
+      }, {});
+    };
+
     setRadiologies(radiologies.filter((_, i) => i !== index));
+    setRadiologySearchOpen((previous) => reindexState(previous));
+    setRadiologySearchQuery((previous) => reindexState(previous));
+  };
+
+  const resetRadiologyForm = () => {
+    setRadiologies(getDefaultRadiologyRequestForm());
+    setRadiologySearchOpen({});
+    setRadiologySearchQuery({});
+    setRadiologyStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setEditingRadiologyRequestNo(null);
+    setRadiologyFormNoRawat('');
+  };
+
+  const handleRadiologyStatusRawatChange = (value: RadiologyStatusRawat) => {
+    setRadiologyStatusRawat(value);
+    setRadiologies(getDefaultRadiologyRequestForm());
+    setRadiologySearchOpen({});
+    setRadiologySearchQuery({});
+  };
+
+  const fetchRadiologyServiceOptions = useCallback(async () => {
+    try {
+      setRadiologySearchLoading(true);
+
+      const params = new URLSearchParams({
+        action: 'get_radiology_services'
+      });
+      const response = await fetch(`${API_URLS.RADIOLOGY_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setRadiologyServiceOptions(Array.isArray(responseJson) ? responseJson : []);
+    } catch (error) {
+      console.error('Error fetching radiology service options:', error);
+      setRadiologyServiceOptions([]);
+    } finally {
+      setRadiologySearchLoading(false);
+    }
+  }, []);
+
+  const handleCopyLabRequest = (lab: any) => {
+    const tests = Array.isArray(lab?.pemeriksaan) ? lab.pemeriksaan : [];
+
+    if (!tests.length) {
+      toast({
+        title: "Error",
+        description: "Data pemeriksaan laboratorium tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLabTests(tests.map((test: any) => ({
+      kode: test.kode || '',
+      pemeriksaan: test.nama || '',
+      hasil: '',
+      rujukan: '',
+      keterangan: ''
+    })));
+    const copiedTemplatesByIndex: Record<number, any[]> = {};
+    tests.forEach((test: any, index: number) => {
+      copiedTemplatesByIndex[index] = Array.isArray(test.templates) ? test.templates : [];
+    });
+    setLabTemplatesByIndex(copiedTemplatesByIndex);
+    setLabServiceSearchOpen({});
+    const copiedQueries: Record<number, string> = {};
+    tests.forEach((test: any, index: number) => {
+      copiedQueries[index] = test.nama || '';
+    });
+    setLabServiceSearchQuery(copiedQueries);
+    setLabTemplateLoadingByIndex({});
+    setLabStatusRawat(mapRequestSourceToStatusRawat(lab.source));
+    setEditingLabRequestNo(null);
+    setLabFormNoRawat(lab.no_rawat || '');
+    setIsLabFormOpen(true);
+    setActiveTab('laboratory');
+
+    toast({
+      title: "Permintaan Lab Disalin",
+      description: "Data permintaan laboratorium berhasil disalin ke form.",
+    });
+  };
+
+  const handleEditLabRequest = (lab: any) => {
+    if (!lab?.noorder) {
+      toast({
+        title: "Error",
+        description: "Nomor order laboratorium tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const tests = Array.isArray(lab?.pemeriksaan) ? lab.pemeriksaan : [];
+
+    if (!tests.length) {
+      toast({
+        title: "Error",
+        description: "Detail pemeriksaan laboratorium tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLabTests(tests.map((test: any) => ({
+      kode: test.kode || '',
+      pemeriksaan: test.nama || '',
+      hasil: '',
+      rujukan: '',
+      keterangan: ''
+    })));
+    const editTemplatesByIndex: Record<number, any[]> = {};
+    tests.forEach((test: any, index: number) => {
+      editTemplatesByIndex[index] = Array.isArray(test.templates) ? test.templates : [];
+    });
+    setLabTemplatesByIndex(editTemplatesByIndex);
+    setLabServiceSearchOpen({});
+    const editQueries: Record<number, string> = {};
+    tests.forEach((test: any, index: number) => {
+      editQueries[index] = test.nama || '';
+    });
+    setLabServiceSearchQuery(editQueries);
+    setLabTemplateLoadingByIndex({});
+    setLabStatusRawat(mapRequestSourceToStatusRawat(lab.source));
+    setEditingLabRequestNo(lab.noorder);
+    setLabFormNoRawat(lab.no_rawat || '');
+    setIsLabFormOpen(true);
+    setActiveTab('laboratory');
+
+    toast({
+      title: "Mode Edit Aktif",
+      description: `Permintaan lab ${lab.noorder} dimuat ke form edit.`,
+    });
+  };
+
+  const handleDeleteLabRequest = async (lab: any) => {
+    if (!lab?.noorder) {
+      toast({
+        title: "Error",
+        description: "Nomor order laboratorium tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!confirm(`Apakah Anda yakin ingin menghapus permintaan laboratorium ${lab.noorder}?`)) {
+      return;
+    }
+
+    try {
+      setDeletingLabRequestNo(lab.noorder);
+
+      const response = await fetch(
+        `${API_URLS.LABORATORY_DATA}?action=delete_lab_request&noorder=${encodeURIComponent(lab.noorder)}`,
+        { method: 'DELETE' }
+      );
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.details ||
+          responseJson?.error ||
+          `HTTP error! status: ${response.status}`
+        );
+      }
+
+      if (editingLabRequestNo === lab.noorder) {
+        resetLabForm();
+      }
+
+      toast({
+        title: "Berhasil",
+        description: `Permintaan laboratorium ${lab.noorder} berhasil dihapus`,
+      });
+
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error deleting laboratory request:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Gagal menghapus permintaan laboratorium',
+        variant: "destructive"
+      });
+    } finally {
+      setDeletingLabRequestNo(null);
+    }
+  };
+
+  const handleCopyRadiologyRequest = (rad: any) => {
+    const tests = Array.isArray(rad?.pemeriksaan) ? rad.pemeriksaan : [];
+
+    if (!tests.length) {
+      toast({
+        title: "Error",
+        description: "Data pemeriksaan radiologi tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setRadiologies(tests.map((test: any) => ({
+      kode: test.kode || '',
+      pemeriksaan: test.nama || ''
+    })));
+    setRadiologySearchOpen({});
+    const copiedQueries: Record<number, string> = {};
+    tests.forEach((test: any, index: number) => {
+      copiedQueries[index] = test.nama || '';
+    });
+    setRadiologySearchQuery(copiedQueries);
+    setRadiologyStatusRawat(mapRequestSourceToStatusRawat(rad.source));
+    setEditingRadiologyRequestNo(null);
+    setRadiologyFormNoRawat(rad.no_rawat || '');
+    setIsRadiologyFormOpen(true);
+    setActiveTab('radiology');
+
+    toast({
+      title: "Permintaan Radiologi Disalin",
+      description: "Data permintaan radiologi berhasil disalin ke form.",
+    });
+  };
+
+  const handleEditRadiologyRequest = (rad: any) => {
+    if (!rad?.noorder) {
+      toast({
+        title: "Error",
+        description: "Nomor order radiologi tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const tests = Array.isArray(rad?.pemeriksaan) ? rad.pemeriksaan : [];
+
+    if (!tests.length) {
+      toast({
+        title: "Error",
+        description: "Detail pemeriksaan radiologi tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setRadiologies(tests.map((test: any) => ({
+      kode: test.kode || '',
+      pemeriksaan: test.nama || ''
+    })));
+    setRadiologySearchOpen({});
+    const editQueries: Record<number, string> = {};
+    tests.forEach((test: any, index: number) => {
+      editQueries[index] = test.nama || '';
+    });
+    setRadiologySearchQuery(editQueries);
+    setRadiologyStatusRawat(mapRequestSourceToStatusRawat(rad.source));
+    setEditingRadiologyRequestNo(rad.noorder);
+    setRadiologyFormNoRawat(rad.no_rawat || '');
+    setIsRadiologyFormOpen(true);
+    setActiveTab('radiology');
+
+    toast({
+      title: "Mode Edit Aktif",
+      description: `Permintaan radiologi ${rad.noorder} dimuat ke form edit.`,
+    });
+  };
+
+  const handleDeleteRadiologyRequest = async (rad: any) => {
+    if (!rad?.noorder) {
+      toast({
+        title: "Error",
+        description: "Nomor order radiologi tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!confirm(`Apakah Anda yakin ingin menghapus permintaan radiologi ${rad.noorder}?`)) {
+      return;
+    }
+
+    try {
+      setDeletingRadiologyRequestNo(rad.noorder);
+
+      const response = await fetch(
+        `${API_URLS.RADIOLOGY_DATA}?action=delete_radiology_request&noorder=${encodeURIComponent(rad.noorder)}`,
+        { method: 'DELETE' }
+      );
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.details ||
+          responseJson?.error ||
+          `HTTP error! status: ${response.status}`
+        );
+      }
+
+      if (editingRadiologyRequestNo === rad.noorder) {
+        resetRadiologyForm();
+      }
+
+      toast({
+        title: "Berhasil",
+        description: `Permintaan radiologi ${rad.noorder} berhasil dihapus`,
+      });
+
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error deleting radiology request:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Gagal menghapus permintaan radiologi',
+        variant: "destructive"
+      });
+    } finally {
+      setDeletingRadiologyRequestNo(null);
+    }
   };
 
   const handleEditExamination = (examination: any, visit: any) => {
+    setActiveTab('examinations');
+    setIsExaminationFormOpen(true);
     setEditingExamination({
       ...examination,
       no_rawat: visit.no_rawat,
@@ -658,6 +1519,8 @@ const MedicalRecord = () => {
   };
 
   const handleCopyExamination = (examination: any, visit: any) => {
+    setActiveTab('examinations');
+    setIsExaminationFormOpen(true);
     // Copy examination data to form with current date/time as default
     setExaminationForm({
       tgl_perawatan: format(new Date(), 'yyyy-MM-dd'),
@@ -732,6 +1595,63 @@ const MedicalRecord = () => {
     }
   };
 
+  const handleDeleteProcedure = async (procedure: any) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus data tindakan ini?')) {
+      return;
+    }
+
+    const requestPayload = {
+      no_rawat: procedure.no_rawat,
+      status_rawat: procedure.status_rawat || (procedure.source === 'Rawat Inap' ? 'Ranap' : 'Ralan'),
+      kd_jenis_prw: procedure.kd_jenis_prw,
+      tgl_perawatan: procedure.tgl_perawatan,
+      jam_rawat: procedure.jam_rawat,
+      record_type: procedure.record_type,
+      kd_dokter: procedure.kd_dokter,
+      nip: procedure.nip
+    };
+    const procedureKey = [
+      requestPayload.no_rawat,
+      requestPayload.kd_jenis_prw,
+      requestPayload.tgl_perawatan,
+      requestPayload.jam_rawat,
+      requestPayload.record_type
+    ].join('|');
+
+    try {
+      setDeletingProcedureKey(procedureKey);
+
+      const response = await fetch(API_URLS.DELETE_PROCEDURE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestPayload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      await response.json();
+
+      toast({
+        title: "Berhasil",
+        description: "Data tindakan berhasil dihapus",
+      });
+
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error deleting procedure:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Gagal menghapus data tindakan",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingProcedureKey(null);
+    }
+  };
+
   const formatDateTime = (date: Date): string => {
     return formatDateTimeWIB(date);
   };
@@ -769,6 +1689,30 @@ const MedicalRecord = () => {
       return '-';
     } catch (error) {
       console.error('Error formatting date:', dateStr, error);
+      return '-';
+    }
+  };
+
+  const formatDateTimeToMinute = (dateStr: string | null | undefined): string => {
+    if (!dateStr) return '-';
+
+    if (typeof dateStr === 'string' && dateStr.includes(' ') && !dateStr.includes('T') && !dateStr.includes('Z')) {
+      const [datePart, timePart = ''] = dateStr.split(' ');
+      const minutePart = timePart.split(':').slice(0, 2).join(':');
+      return minutePart ? `${datePart} ${minutePart}` : datePart;
+    }
+
+    try {
+      const cleanDateStr = String(dateStr).replace(/Z$/, '');
+      const date = new Date(cleanDateStr);
+
+      if (isNaN(date.getTime())) {
+        return '-';
+      }
+
+      return format(date, 'yyyy-MM-dd HH:mm');
+    } catch (error) {
+      console.error('Error formatting date to minute:', dateStr, error);
       return '-';
     }
   };
@@ -851,6 +1795,283 @@ const MedicalRecord = () => {
 
         // Refresh medical record data
         fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+      } else if (type === 'Tindakan') {
+        if (!formattedNoRawat) {
+          throw new Error('Pilih kunjungan pasien terlebih dahulu');
+        }
+
+        const validProcedures = procedures
+          .map((procedure) => ({
+            kode: procedure.kode.trim(),
+            nama: procedure.nama.trim(),
+            hasil: procedure.hasil.trim()
+          }))
+          .filter((procedure) => procedure.kode && procedure.nama);
+
+        if (!validProcedures.length) {
+          throw new Error('Pilih minimal satu tindakan yang valid');
+        }
+
+        const response = await fetch(API_URLS.SAVE_PROCEDURES, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            no_rawat: formattedNoRawat,
+            status_rawat: procedureStatusRawat,
+            username: user?.username || '',
+            procedures: validProcedures
+          })
+        });
+
+        const responseJson = await response.json().catch(() => null);
+
+        if (!response.ok || !responseJson?.success) {
+          throw new Error(
+            responseJson?.details ||
+            responseJson?.error ||
+            `HTTP error! status: ${response.status}`
+          );
+        }
+        toast({
+          title: "Berhasil",
+          description: `${responseJson.data?.inserted || validProcedures.length} tindakan berhasil disimpan`,
+        });
+
+        resetProcedureForm();
+        setActiveTab('procedures');
+        await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+      } else if (type === 'Laboratorium') {
+        const effectiveNoRawat = labFormNoRawat || formattedNoRawat;
+
+        if (!effectiveNoRawat) {
+          throw new Error('Pilih kunjungan pasien terlebih dahulu');
+        }
+
+        if (!user?.username) {
+          throw new Error('User login tidak ditemukan');
+        }
+
+        const validLabRequests = labTests
+          .map((test) => ({
+            kd_jenis_prw: test.kode?.trim() || '',
+            nama: test.pemeriksaan?.trim() || ''
+          }))
+          .filter((test) => test.kd_jenis_prw && test.nama);
+
+        const validLabRequestDetails = labTests.flatMap((test, index) => {
+          const kdJenisPrw = test.kode?.trim() || '';
+          const templates = labTemplatesByIndex[index] || [];
+
+          if (!kdJenisPrw || templates.length === 0) {
+            return [];
+          }
+
+          return templates.map((template) => ({
+            kd_jenis_prw: kdJenisPrw,
+            id_template: template.id_template
+          }));
+        });
+
+        if (!validLabRequests.length) {
+          throw new Error('Pilih minimal satu pemeriksaan laboratorium yang valid');
+        }
+
+        const isEditingLabRequest = Boolean(editingLabRequestNo);
+        const response = await fetch(`${API_URLS.LABORATORY_DATA}?action=${isEditingLabRequest ? 'update_lab_request' : 'create_lab_request'}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            no_rawat: effectiveNoRawat,
+            dokter_perujuk: user.username,
+            status_rawat: labStatusRawat,
+            noorder: editingLabRequestNo,
+            examinations: validLabRequests,
+            details: validLabRequestDetails
+          })
+        });
+
+        const responseJson = await response.json().catch(() => null);
+
+        if (!response.ok || !responseJson?.success) {
+          throw new Error(
+            responseJson?.details ||
+            responseJson?.error ||
+            `HTTP error! status: ${response.status}`
+          );
+        }
+
+        toast({
+          title: "Berhasil",
+          description: isEditingLabRequest
+            ? `Permintaan laboratorium ${editingLabRequestNo} berhasil diperbarui`
+            : `${validLabRequests.length} permintaan laboratorium berhasil disimpan`,
+        });
+
+        resetLabForm();
+        setActiveTab('laboratory');
+        await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+      } else if (type === 'Radiologi') {
+        const effectiveNoRawat = radiologyFormNoRawat || formattedNoRawat;
+
+        if (!effectiveNoRawat) {
+          throw new Error('Pilih kunjungan pasien terlebih dahulu');
+        }
+
+        if (!user?.username) {
+          throw new Error('User login tidak ditemukan');
+        }
+
+        const validRadiologyRequests = radiologies
+          .map((radiology) => ({
+            kd_jenis_prw: radiology.kode.trim(),
+            nama: radiology.pemeriksaan.trim()
+          }))
+          .filter((radiology) => radiology.kd_jenis_prw && radiology.nama);
+
+        if (!validRadiologyRequests.length) {
+          throw new Error('Pilih minimal satu pemeriksaan radiologi yang valid');
+        }
+
+        const isEditingRadiologyRequest = Boolean(editingRadiologyRequestNo);
+        const response = await fetch(`${API_URLS.RADIOLOGY_DATA}?action=${isEditingRadiologyRequest ? 'update_radiology_request' : 'create_radiology_request'}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            no_rawat: effectiveNoRawat,
+            dokter_perujuk: user.username,
+            status_rawat: radiologyStatusRawat,
+            noorder: editingRadiologyRequestNo,
+            examinations: validRadiologyRequests
+          })
+        });
+
+        const responseJson = await response.json().catch(() => null);
+
+        if (!response.ok || !responseJson?.success) {
+          throw new Error(
+            responseJson?.details ||
+            responseJson?.error ||
+            `HTTP error! status: ${response.status}`
+          );
+        }
+
+        toast({
+          title: "Berhasil",
+          description: isEditingRadiologyRequest
+            ? `Permintaan radiologi ${editingRadiologyRequestNo} berhasil diperbarui`
+            : `${validRadiologyRequests.length} permintaan radiologi berhasil disimpan`,
+        });
+
+        resetRadiologyForm();
+        setActiveTab('radiology');
+        await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+      } else if (type === 'Resep') {
+        if (!formattedNoRawat) {
+          throw new Error('Pilih kunjungan pasien terlebih dahulu');
+        }
+
+        if (!user?.username) {
+          throw new Error('User login tidak ditemukan');
+        }
+
+        const validPrescriptions = medications
+          .map((medication) => ({
+            tanggal: medication.tanggal,
+            status: medication.status,
+            medicines: medication.obat
+              .map((obat) => ({
+                kode_brng: obat.kode_brng?.trim() || '',
+                nama: obat.nama?.trim() || '',
+                jml: obat.jumlah?.trim() || '',
+                aturan_pakai: obat.aturan_pakai?.trim() || ''
+              }))
+              .filter((obat) => obat.kode_brng && obat.nama && obat.jml)
+          }))
+          .filter((medication) => medication.tanggal && medication.medicines.length > 0);
+
+        if (!validPrescriptions.length) {
+          throw new Error('Pilih minimal satu resep dengan obat yang valid');
+        }
+
+        if (editingPrescriptionNo && validPrescriptions.length !== 1) {
+          throw new Error('Mode edit hanya mendukung satu resep dalam satu kali simpan');
+        }
+
+        if (editingPrescriptionNo) {
+          const prescription = validPrescriptions[0];
+          const response = await fetch(API_URLS.PRESCRIPTION_DATA, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'update_prescription',
+              no_resep: editingPrescriptionNo,
+              prescription_date: prescription.tanggal,
+              prescription_status: prescription.status,
+              medicines: prescription.medicines,
+              compounds: []
+            })
+          });
+
+          const responseJson = await response.json().catch(() => null);
+
+          if (!response.ok || !responseJson?.success) {
+            throw new Error(
+              responseJson?.details ||
+              responseJson?.error ||
+              `HTTP error! status: ${response.status}`
+            );
+          }
+
+          toast({
+            title: "Berhasil",
+            description: `Resep ${editingPrescriptionNo} berhasil diperbarui`,
+          });
+        } else {
+          for (const prescription of validPrescriptions) {
+            const response = await fetch(API_URLS.PRESCRIPTION_DATA, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                action: 'create_prescription',
+                no_rawat: formattedNoRawat,
+                kd_dokter: user.username,
+                prescription_date: prescription.tanggal,
+                prescription_status: prescription.status,
+                medicines: prescription.medicines,
+                compounds: []
+              })
+            });
+
+            const responseJson = await response.json().catch(() => null);
+
+            if (!response.ok || !responseJson?.success) {
+              throw new Error(
+                responseJson?.details ||
+                responseJson?.error ||
+                `HTTP error! status: ${response.status}`
+              );
+            }
+          }
+
+          toast({
+            title: "Berhasil",
+            description: `${validPrescriptions.length} resep berhasil disimpan`,
+          });
+        }
+
+        resetMedicationForm();
+        setActiveTab('medications');
+        await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
       } else {
         toast({
           title: "Berhasil",
@@ -859,9 +2080,10 @@ const MedicalRecord = () => {
       }
     } catch (error) {
       console.error(`Error saving ${type}:`, error);
+      const message = error instanceof Error ? error.message : `Gagal menyimpan data ${type}`;
       toast({
         title: "Error",
-        description: `Gagal menyimpan data ${type}`,
+        description: message,
         variant: "destructive"
       });
     }
@@ -2224,56 +3446,125 @@ const MedicalRecord = () => {
                       transition: 'height 0.2s ease-out, opacity 0.2s ease-out'
                     }}
                   >
-                
+                <div className="grid grid-cols-1 gap-4 mb-4 md:max-w-sm">
+                  <div className="space-y-2">
+                    <Label htmlFor="procedure-status-rawat">Status Rawat</Label>
+                    <Select
+                      value={procedureStatusRawat}
+                      onValueChange={(value: ProcedureStatusRawat) => handleProcedureStatusRawatChange(value)}
+                    >
+                      <SelectTrigger id="procedure-status-rawat">
+                        <SelectValue placeholder="Pilih status rawat" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Ralan">Rawat Jalan</SelectItem>
+                        <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 {procedures.map((procedure, index) => (
                   <div key={index} className="border rounded-lg p-4 mb-4 bg-background">
-                    <div className="flex justify-between items-center mb-4">
-                      <h4 className="font-medium">Tindakan {index + 1}</h4>
-                      {procedures.length > 1 && (
-                        <Button variant="destructive" size="sm" onClick={() => removeProcedure(index)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor={`proc-nama-${index}`}>Cari Tindakan</Label>
+                        <Popover
+                          open={!!procedureSearchOpen[index]}
+                          onOpenChange={(open) => {
+                            setProcedureSearchOpen((previous) => ({ ...previous, [index]: open }));
+                            if (open) {
+                              const currentSearch = procedureSearchQuery[index] ?? procedure.nama ?? '';
+                              void fetchProcedureOptions(index, currentSearch);
+                            }
+                          }}
+                        >
+                          <PopoverTrigger asChild>
+                            <Button
+                              id={`proc-nama-${index}`}
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={!!procedureSearchOpen[index]}
+                              className="w-full justify-between"
+                              disabled={!formattedNoRawat}
+                            >
+                              <span className="truncate text-left">
+                                {procedure.nama || (formattedNoRawat ? 'Cari dan pilih tindakan' : 'Pilih kunjungan/no_rawat dulu')}
+                              </span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[350px] p-0 md:w-[500px]" align="start">
+                            <Command shouldFilter={false}>
+                              <CommandInput
+                                placeholder="Cari kode atau nama tindakan..."
+                                value={procedureSearchQuery[index] ?? procedure.nama}
+                                onValueChange={(value) => {
+                                  setProcedureSearchQuery((previous) => ({ ...previous, [index]: value }));
+                                  void fetchProcedureOptions(index, value);
+                                }}
+                              />
+                              <CommandList>
+                                <CommandEmpty>
+                                  {procedureSearchLoading[index] ? 'Mencari tindakan...' : 'Tidak ada tindakan ditemukan.'}
+                                </CommandEmpty>
+                                <CommandGroup>
+                                  {(procedureOptions[index] || []).map((option) => (
+                                    <CommandItem
+                                      key={`${option.kode}-${option.nama}`}
+                                      value={`${option.kode} ${option.nama}`}
+                                      onSelect={() => {
+                                        updateProcedure(index, {
+                                          kode: option.kode,
+                                          nama: option.nama
+                                        });
+                                        setProcedureSearchQuery((previous) => ({
+                                          ...previous,
+                                          [index]: option.nama
+                                        }));
+                                        setProcedureSearchOpen((previous) => ({
+                                          ...previous,
+                                          [index]: false
+                                        }));
+                                      }}
+                                    >
+                                      <Check
+                                        className={cn(
+                                          "mr-2 h-4 w-4",
+                                          procedure.kode === option.kode ? "opacity-100" : "opacity-0"
+                                        )}
+                                      />
+                                      <div className="flex flex-col">
+                                        <span>{option.nama}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {option.kode}
+                                          {typeof option.biaya_rawat === 'number' ? ` • Rp ${option.biaya_rawat.toLocaleString('id-ID')}` : ''}
+                                        </span>
+                                      </div>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
                         <Label htmlFor={`proc-kode-${index}`}>Kode Tindakan</Label>
-                        <Input 
-                          id={`proc-kode-${index}`} 
-                          placeholder="TDK001"
-                          value={procedure.kode}
-                          onChange={(e) => {
-                            const newProcedures = [...procedures];
-                            newProcedures[index].kode = e.target.value;
-                            setProcedures(newProcedures);
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor={`proc-nama-${index}`}>Nama Tindakan</Label>
-                        <Input 
-                          id={`proc-nama-${index}`} 
-                          placeholder="Nama tindakan"
-                          value={procedure.nama}
-                          onChange={(e) => {
-                            const newProcedures = [...procedures];
-                            newProcedures[index].nama = e.target.value;
-                            setProcedures(newProcedures);
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor={`proc-hasil-${index}`}>Hasil</Label>
-                        <Input 
-                          id={`proc-hasil-${index}`} 
-                          placeholder="Hasil tindakan"
-                          value={procedure.hasil}
-                          onChange={(e) => {
-                            const newProcedures = [...procedures];
-                            newProcedures[index].hasil = e.target.value;
-                            setProcedures(newProcedures);
-                          }}
-                        />
+                        <div className="flex items-end gap-2">
+                          <Input
+                            id={`proc-kode-${index}`}
+                            placeholder="Terisi otomatis"
+                            value={procedure.kode}
+                            readOnly
+                            className="flex-1"
+                          />
+                          {procedures.length > 1 && (
+                            <Button variant="destructive" size="sm" onClick={() => removeProcedure(index)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2285,7 +3576,7 @@ const MedicalRecord = () => {
                     Tambah Tindakan
                   </Button>
                   <div className="flex space-x-2">
-                    <Button variant="outline">Reset</Button>
+                    <Button variant="outline" onClick={resetProcedureForm}>Reset</Button>
                     <Button onClick={() => handleSaveForm('Tindakan')}>Simpan Tindakan</Button>
                   </div>
                  </div>
@@ -2329,7 +3620,7 @@ const MedicalRecord = () => {
                   }
 
                   const groupedProcedures = sortedProcedures.reduce((groups, proc) => {
-                    const groupKey = proc.tanggal || '-';
+                    const groupKey = formatDateTimeToMinute(proc.tanggal);
                     if (!groups[groupKey]) {
                       groups[groupKey] = [];
                     }
@@ -2342,7 +3633,7 @@ const MedicalRecord = () => {
                       <div className="flex flex-col gap-3 border-b pb-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-                          <p className="font-semibold">{formatDateSafe(tanggal)}</p>
+                          <p className="font-semibold">{formatDateTimeToMinute(tanggal)}</p>
                         </div>
 
                         <div className="text-left md:text-right">
@@ -2353,6 +3644,16 @@ const MedicalRecord = () => {
 
                       <div className="space-y-3">
                         {procedures.map((proc, procIndex) => (
+                          (() => {
+                            const procedureKey = [
+                              proc.no_rawat,
+                              proc.kd_jenis_prw,
+                              proc.tgl_perawatan,
+                              proc.jam_rawat,
+                              proc.record_type
+                            ].join('|');
+
+                            return (
                           <div
                             key={`${proc.no_rawat}-${tanggal}-${proc.nm_perawatan}-${procIndex}`}
                             className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-md border bg-muted/20 p-3"
@@ -2365,7 +3666,20 @@ const MedicalRecord = () => {
                               <p className="text-sm text-muted-foreground">Nama Pelaksana</p>
                               <p className="font-medium">{proc.nama_pelaksana || proc.hasil || '-'}</p>
                             </div>
+                            <div className="md:col-span-2 flex justify-end">
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteProcedure(proc)}
+                                disabled={deletingProcedureKey === procedureKey}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                {deletingProcedureKey === procedureKey ? 'Menghapus...' : 'Hapus'}
+                              </Button>
+                            </div>
                           </div>
+                            );
+                          })()
                         ))}
                       </div>
                     </div>
@@ -2391,7 +3705,7 @@ const MedicalRecord = () => {
                     <button className="w-full flex items-center justify-between text-lg font-semibold mb-4 hover:text-primary transition-colors">
                       <div className="flex items-center">
                         <Plus className="h-5 w-5 mr-2" />
-                        Form Tambah Resep Obat
+                        {editingPrescriptionNo ? 'Form Edit Resep Obat' : 'Form Tambah Resep Obat'}
                       </div>
                       {isMedicationFormOpen ? (
                         <ChevronUp className="h-5 w-5 transition-transform duration-200" />
@@ -2410,99 +3724,228 @@ const MedicalRecord = () => {
                 {medications.map((medication, medIndex) => (
                   <div key={medIndex} className="border rounded-lg p-4 mb-4 bg-background">
                     <div className="flex justify-between items-center mb-4">
-                      <h4 className="font-medium">Resep {medIndex + 1}</h4>
+                      <div>
+                        <h4 className="font-medium">Resep {medIndex + 1}</h4>
+                        {editingPrescriptionNo ? (
+                          <p className="text-xs text-muted-foreground">
+                            Mode edit untuk nomor resep {editingPrescriptionNo}
+                          </p>
+                        ) : null}
+                      </div>
                       {medications.length > 1 && (
                         <Button variant="destructive" size="sm" onClick={() => removeMedication(medIndex)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 gap-4 mb-4 md:max-w-xl md:grid-cols-2">
                       <div>
                         <Label htmlFor={`med-date-${medIndex}`}>Tanggal Resep</Label>
-                        <Input 
-                          id={`med-date-${medIndex}`} 
-                          type="datetime-local"
-                          value={medication.tanggal}
-                          onChange={(e) => {
-                            const newMedications = [...medications];
-                            newMedications[medIndex].tanggal = e.target.value;
-                            setMedications(newMedications);
-                          }}
-                        />
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              id={`med-date-${medIndex}`}
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {medication.tanggal ? format(new Date(medication.tanggal), "dd/MM/yyyy") : "Pilih tanggal resep"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <CalendarComponent
+                              mode="single"
+                              selected={medication.tanggal ? new Date(medication.tanggal) : undefined}
+                              onSelect={(date) => {
+                                if (!date) return;
+                                setMedications((previous) => previous.map((item, index) => (
+                                  index === medIndex
+                                    ? { ...item, tanggal: format(date, 'yyyy-MM-dd') }
+                                    : item
+                                )));
+                              }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
                       </div>
                       <div>
-                        <Label htmlFor="med-norawat">No. Rawat</Label>
-                        <Input id="med-norawat" value={formattedNoRawat} readOnly className="bg-muted" />
+                        <Label htmlFor={`med-status-${medIndex}`}>Status Rawat</Label>
+                        <Select
+                          value={medication.status}
+                          onValueChange={(value: PrescriptionStatus) => {
+                            setMedications((previous) => previous.map((item, index) => (
+                              index === medIndex
+                                ? { ...item, status: value }
+                                : item
+                            )));
+                          }}
+                        >
+                          <SelectTrigger id={`med-status-${medIndex}`}>
+                            <SelectValue placeholder="Pilih status rawat" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Ralan">Rawat Jalan</SelectItem>
+                            <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                            <SelectItem value="Pulang">Obat Pulang</SelectItem>
+                            <SelectItem value="IBS">IBS</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                     
                     <div className="space-y-4">
                       <h5 className="font-medium">Daftar Obat:</h5>
-                      {medication.obat.map((obat, obatIndex) => (
-                        <div key={obatIndex} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-3 border rounded bg-muted/20">
-                          <div>
-                            <Label htmlFor={`obat-nama-${medIndex}-${obatIndex}`}>Nama Obat</Label>
-                            <Input 
-                              id={`obat-nama-${medIndex}-${obatIndex}`}
-                              placeholder="Nama obat"
-                              value={obat.nama}
-                              onChange={(e) => {
-                                const newMedications = [...medications];
-                                newMedications[medIndex].obat[obatIndex].nama = e.target.value;
-                                setMedications(newMedications);
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor={`obat-jumlah-${medIndex}-${obatIndex}`}>Jumlah</Label>
-                            <Input 
-                              id={`obat-jumlah-${medIndex}-${obatIndex}`}
-                              placeholder="10"
-                              value={obat.jumlah}
-                              onChange={(e) => {
-                                const newMedications = [...medications];
-                                newMedications[medIndex].obat[obatIndex].jumlah = e.target.value;
-                                setMedications(newMedications);
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor={`obat-aturan-${medIndex}-${obatIndex}`}>Aturan Pakai</Label>
-                            <Input 
-                              id={`obat-aturan-${medIndex}-${obatIndex}`}
-                              placeholder="3x1"
-                              value={obat.aturan_pakai}
-                              onChange={(e) => {
-                                const newMedications = [...medications];
-                                newMedications[medIndex].obat[obatIndex].aturan_pakai = e.target.value;
-                                setMedications(newMedications);
-                              }}
-                            />
-                          </div>
-                          <div className="flex items-end">
-                            {medication.obat.length > 1 && (
-                              <Button 
-                                variant="destructive" 
-                                size="sm" 
-                                onClick={() => {
-                                  const newMedications = [...medications];
-                                  newMedications[medIndex].obat = newMedications[medIndex].obat.filter((_, i) => i !== obatIndex);
-                                  setMedications(newMedications);
+                      {medication.obat.map((obat, obatIndex) => {
+                        const fieldKey = getMedicineFieldKey(medIndex, obatIndex);
+
+                        return (
+                          <div key={obatIndex} className="grid grid-cols-1 gap-4 p-3 border rounded bg-muted/20 md:grid-cols-4">
+                            <div className="md:col-span-2">
+                              <Label htmlFor={`obat-nama-${medIndex}-${obatIndex}`}>Nama Obat</Label>
+                              <Popover
+                                open={!!medicineSearchOpen[fieldKey]}
+                                onOpenChange={(open) => {
+                                  setMedicineSearchOpen((previous) => ({ ...previous, [fieldKey]: open }));
+                                  if (open) {
+                                    const currentSearch = medicineSearchQuery[fieldKey] ?? obat.nama ?? '';
+                                    void fetchMedicineOptions(medIndex, obatIndex, currentSearch);
+                                  }
                                 }}
                               >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    id={`obat-nama-${medIndex}-${obatIndex}`}
+                                    variant="outline"
+                                    role="combobox"
+                                    className="w-full justify-between"
+                                    aria-expanded={!!medicineSearchOpen[fieldKey]}
+                                  >
+                                    <span className="truncate text-left">
+                                      {obat.nama || 'Cari dan pilih obat'}
+                                    </span>
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[350px] p-0 md:w-[500px]" align="start">
+                                  <Command shouldFilter={false}>
+                                    <CommandInput
+                                      placeholder="Cari kode atau nama obat..."
+                                      value={medicineSearchQuery[fieldKey] ?? obat.nama}
+                                      onValueChange={(value) => {
+                                        setMedicineSearchQuery((previous) => ({ ...previous, [fieldKey]: value }));
+                                        void fetchMedicineOptions(medIndex, obatIndex, value);
+                                      }}
+                                    />
+                                    <CommandList>
+                                      <CommandEmpty>
+                                        {medicineSearchLoading[fieldKey] ? 'Mencari obat...' : 'Tidak ada obat ditemukan.'}
+                                      </CommandEmpty>
+                                      <CommandGroup>
+                                        {(medicineOptions[fieldKey] || []).map((option) => (
+                                          <CommandItem
+                                            key={`${option.kode_brng}-${fieldKey}`}
+                                            value={`${option.kode_brng} ${option.nama_brng}`}
+                                            onSelect={() => {
+                                              updateMedicationItem(medIndex, obatIndex, {
+                                                kode_brng: option.kode_brng,
+                                                nama: option.nama_brng,
+                                                satuan: option.satuan || '',
+                                                stok: Number(option.stok) || 0
+                                              });
+                                              setMedicineSearchQuery((previous) => ({
+                                                ...previous,
+                                                [fieldKey]: option.nama_brng
+                                              }));
+                                              setMedicineSearchOpen((previous) => ({
+                                                ...previous,
+                                                [fieldKey]: false
+                                              }));
+                                            }}
+                                          >
+                                            <Check
+                                              className={cn(
+                                                "mr-2 h-4 w-4",
+                                                obat.kode_brng === option.kode_brng ? "opacity-100" : "opacity-0"
+                                              )}
+                                            />
+                                            <div className="flex flex-col">
+                                              <span>{option.nama_brng}</span>
+                                              <span className="text-xs text-muted-foreground">
+                                                {option.kode_brng}
+                                                {option.satuan ? ` • ${option.satuan}` : ''}
+                                                {typeof option.stok === 'number' ? ` • Stok ${option.stok}` : ''}
+                                              </span>
+                                            </div>
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                              {(obat.kode_brng || obat.stok) ? (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {obat.kode_brng || '-'}
+                                  {obat.satuan ? ` • ${obat.satuan}` : ''}
+                                  {typeof obat.stok === 'number' ? ` • Stok ${obat.stok}` : ''}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div>
+                              <Label htmlFor={`obat-jumlah-${medIndex}-${obatIndex}`}>Jumlah</Label>
+                              <Input
+                                id={`obat-jumlah-${medIndex}-${obatIndex}`}
+                                placeholder="10"
+                                value={obat.jumlah}
+                                onChange={(e) => updateMedicationItem(medIndex, obatIndex, { jumlah: e.target.value })}
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor={`obat-aturan-${medIndex}-${obatIndex}`}>Aturan Pakai</Label>
+                              <div className="flex items-end gap-2">
+                                <Input
+                                  id={`obat-aturan-${medIndex}-${obatIndex}`}
+                                  placeholder="3x1"
+                                  value={obat.aturan_pakai}
+                                  onChange={(e) => updateMedicationItem(medIndex, obatIndex, { aturan_pakai: e.target.value })}
+                                />
+                                {medication.obat.length > 1 && (
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      setMedications((previous) => previous.map((item, index) => (
+                                        index === medIndex
+                                          ? {
+                                              ...item,
+                                              obat: item.obat.filter((_, i) => i !== obatIndex)
+                                            }
+                                          : item
+                                      )));
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       <Button 
                         variant="outline" 
                         size="sm"
                         onClick={() => {
                           const newMedications = [...medications];
-                          newMedications[medIndex].obat.push({ nama: '', jumlah: '', aturan_pakai: '' });
+                          newMedications[medIndex].obat.push({
+                            kode_brng: '',
+                            nama: '',
+                            jumlah: '',
+                            aturan_pakai: '',
+                            satuan: '',
+                            stok: 0
+                          });
                           setMedications(newMedications);
                         }}
                       >
@@ -2514,13 +3957,15 @@ const MedicalRecord = () => {
                 ))}
 
                 <div className="flex justify-between items-center">
-                  <Button variant="outline" onClick={addMedication}>
+                  <Button variant="outline" onClick={addMedication} disabled={!!editingPrescriptionNo}>
                     <Plus className="h-4 w-4 mr-2" />
-                    Tambah Resep
+                    {editingPrescriptionNo ? 'Mode Edit Aktif' : 'Tambah Resep'}
                   </Button>
                   <div className="flex space-x-2">
-                    <Button variant="outline">Reset</Button>
-                    <Button onClick={() => handleSaveForm('Resep')}>Simpan Resep</Button>
+                    <Button variant="outline" onClick={resetMedicationForm}>Reset</Button>
+                    <Button onClick={() => handleSaveForm('Resep')}>
+                      {editingPrescriptionNo ? 'Update Resep' : 'Simpan Resep'}
+                    </Button>
                   </div>
                  </div>
                   </CollapsibleContent>
@@ -2671,6 +4116,7 @@ const MedicalRecord = () => {
                             ...med,
                             no_rawat: visit.no_rawat,
                             source: "Rawat Jalan",
+                            status: "Ralan",
                           }))
                         ),
                         ...scopedInpatientVisits.flatMap((visit) => {
@@ -2678,16 +4124,19 @@ const MedicalRecord = () => {
                             ...med,
                             no_rawat: visit.no_rawat,
                             source: "Rawat Inap",
+                            status: "Ranap",
                           }));
                           const pulang = (visit.medicationsRequestPulang || []).map((med) => ({
                             ...med,
                             no_rawat: visit.no_rawat,
                             source: "Obat Pulang",
+                            status: "Pulang",
                           }));
                           const ibs = (visit.medicationsRequestIbs || []).map((med) => ({
                             ...med,
                             no_rawat: visit.no_rawat,
                             source: "IBS",
+                            status: "IBS",
                           }));
                           return [...ranap, ...pulang, ...ibs];
                         }),
@@ -2726,14 +4175,33 @@ const MedicalRecord = () => {
                           <div className="space-y-2">
                             <div className="flex justify-between items-center mb-2">
                               <h4 className="font-medium">Obat:</h4>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleCopyResep(med)}
-                              >
-                                <Copy className="h-4 w-4 mr-2" />
-                                Copy Resep
-                              </Button>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEditResep(med)}
+                                >
+                                  <Pencil className="h-4 w-4 mr-2" />
+                                  Edit Resep
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleDeleteResep(med)}
+                                  disabled={deletingPrescriptionNo === med.no_resep}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  {deletingPrescriptionNo === med.no_resep ? 'Menghapus...' : 'Hapus'}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleCopyResep(med)}
+                                >
+                                  <Copy className="h-4 w-4 mr-2" />
+                                  Copy Resep
+                                </Button>
+                              </div>
                             </div>
                             {med.obat.map((obat, i) => (
                               <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
@@ -2867,7 +4335,7 @@ const MedicalRecord = () => {
                     <button className="w-full flex items-center justify-between text-lg font-semibold mb-4 hover:text-primary transition-colors">
                       <div className="flex items-center">
                         <Plus className="h-5 w-5 mr-2" />
-                        Form Tambah Laboratorium
+                        {editingLabRequestNo ? `Form Edit Laboratorium (${editingLabRequestNo})` : 'Form Tambah Laboratorium'}
                       </div>
                       {isLabFormOpen ? (
                         <ChevronUp className="h-5 w-5 transition-transform duration-200" />
@@ -2883,19 +4351,39 @@ const MedicalRecord = () => {
                     }}
                   >
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
-                    <Label htmlFor="lab-date">Tanggal Pemeriksaan</Label>
-                    <Input id="lab-date" type="datetime-local" />
+                    <Label htmlFor="lab-request-date">Tanggal Permintaan</Label>
+                    <Input
+                      id="lab-request-date"
+                      value={format(new Date(), 'yyyy-MM-dd HH:mm')}
+                      readOnly
+                      className="bg-muted"
+                    />
                   </div>
                   <div>
                     <Label htmlFor="lab-norawat">No. Rawat</Label>
-                    <Input id="lab-norawat" value={formattedNoRawat} readOnly className="bg-muted" />
+                    <Input id="lab-norawat" value={labFormNoRawat || formattedNoRawat} readOnly className="bg-muted" />
+                  </div>
+                  <div>
+                    <Label htmlFor="lab-status-rawat">Status Rawat</Label>
+                    <Select
+                      value={labStatusRawat}
+                      onValueChange={(value: LabStatusRawat) => handleLabStatusRawatChange(value)}
+                    >
+                      <SelectTrigger id="lab-status-rawat">
+                        <SelectValue placeholder="Pilih status rawat" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Ralan">Rawat Jalan</SelectItem>
+                        <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h5 className="font-medium">Pemeriksaan Laboratorium:</h5>
+                  <h5 className="font-medium">Permintaan Pemeriksaan Laboratorium:</h5>
                   {labTests.map((test, index) => (
                     <div key={index} className="border rounded-lg p-4 bg-background">
                       <div className="flex justify-between items-center mb-4">
@@ -2907,59 +4395,145 @@ const MedicalRecord = () => {
                         )}
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div>
-                          <Label htmlFor={`lab-nama-${index}`}>Nama Pemeriksaan</Label>
-                          <Input 
-                            id={`lab-nama-${index}`}
-                            placeholder="Hemoglobin"
-                            value={test.pemeriksaan}
-                            onChange={(e) => {
-                              const newLabTests = [...labTests];
-                              newLabTests[index].pemeriksaan = e.target.value;
-                              setLabTests(newLabTests);
+                        <div className="md:col-span-3">
+                          <Label htmlFor={`lab-nama-${index}`}>Cari Pemeriksaan</Label>
+                          <Popover
+                            open={!!labServiceSearchOpen[index]}
+                            onOpenChange={(open) => {
+                              setLabServiceSearchOpen((previous) => ({ ...previous, [index]: open }));
+                              if (open && labServiceOptions.length === 0) {
+                                void fetchLabServiceOptions();
+                              }
                             }}
-                          />
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                id={`lab-nama-${index}`}
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={!!labServiceSearchOpen[index]}
+                                className="w-full justify-between"
+                                disabled={!formattedNoRawat}
+                              >
+                                <span className="truncate text-left">
+                                  {test.pemeriksaan || (formattedNoRawat ? 'Cari dan pilih pemeriksaan laboratorium' : 'Pilih kunjungan/no_rawat dulu')}
+                                </span>
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[350px] p-0 md:w-[500px]" align="start">
+                              <Command>
+                                <CommandInput
+                                  placeholder="Cari kode atau nama pemeriksaan..."
+                                  value={labServiceSearchQuery[index] ?? test.pemeriksaan}
+                                  onValueChange={(value) => {
+                                    setLabServiceSearchQuery((previous) => ({ ...previous, [index]: value }));
+                                  }}
+                                />
+                                <CommandList>
+                                  <CommandEmpty>
+                                    {labServiceSearchLoading ? 'Memuat pemeriksaan...' : 'Tidak ada pemeriksaan ditemukan.'}
+                                  </CommandEmpty>
+                                  <CommandGroup>
+                                    {labServiceOptions.map((option) => (
+                                      <CommandItem
+                                        key={option.kd_jenis_prw}
+                                        value={`${option.kd_jenis_prw} ${option.nm_perawatan}`}
+                                        onSelect={() => {
+                                          setLabTests((previous) => previous.map((item, itemIndex) => (
+                                            itemIndex === index
+                                              ? {
+                                                  ...item,
+                                                  kode: option.kd_jenis_prw,
+                                                  pemeriksaan: option.nm_perawatan,
+                                                  hasil: '',
+                                                  rujukan: '',
+                                                  keterangan: ''
+                                                }
+                                              : item
+                                          )));
+                                          void fetchLabTemplates(index, option.kd_jenis_prw);
+                                          setLabServiceSearchQuery((previous) => ({
+                                            ...previous,
+                                            [index]: option.nm_perawatan
+                                          }));
+                                          setLabServiceSearchOpen((previous) => ({
+                                            ...previous,
+                                            [index]: false
+                                          }));
+                                        }}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            test.kode === option.kd_jenis_prw ? "opacity-100" : "opacity-0"
+                                          )}
+                                        />
+                                        <div className="flex flex-col">
+                                          <span>{option.nm_perawatan}</span>
+                                          <span className="text-xs text-muted-foreground">
+                                            {option.kd_jenis_prw}
+                                            {typeof option.total_byr === 'number' ? ` • Rp ${option.total_byr.toLocaleString('id-ID')}` : ''}
+                                          </span>
+                                        </div>
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
                         </div>
                         <div>
-                          <Label htmlFor={`lab-hasil-${index}`}>Hasil</Label>
-                          <Input 
-                            id={`lab-hasil-${index}`}
-                            placeholder="13.5"
-                            value={test.hasil}
-                            onChange={(e) => {
-                              const newLabTests = [...labTests];
-                              newLabTests[index].hasil = e.target.value;
-                              setLabTests(newLabTests);
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor={`lab-rujukan-${index}`}>Nilai Rujukan</Label>
-                          <Input 
-                            id={`lab-rujukan-${index}`}
-                            placeholder="12-16"
-                            value={test.rujukan}
-                            onChange={(e) => {
-                              const newLabTests = [...labTests];
-                              newLabTests[index].rujukan = e.target.value;
-                              setLabTests(newLabTests);
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor={`lab-keterangan-${index}`}>Keterangan</Label>
-                          <Input 
-                            id={`lab-keterangan-${index}`}
-                            placeholder="Normal"
-                            value={test.keterangan}
-                            onChange={(e) => {
-                              const newLabTests = [...labTests];
-                              newLabTests[index].keterangan = e.target.value;
-                              setLabTests(newLabTests);
-                            }}
+                          <Label htmlFor={`lab-kode-${index}`}>Kode Pemeriksaan</Label>
+                          <Input
+                            id={`lab-kode-${index}`}
+                            placeholder="Terisi otomatis"
+                            value={test.kode || ''}
+                            readOnly
+                            className="bg-muted"
                           />
                         </div>
                       </div>
+                      {test.kode ? (
+                        <div className="mt-4 rounded-md border bg-muted/20 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <h6 className="font-medium text-sm">Template Pemeriksaan</h6>
+                            {labTemplateLoadingByIndex[index] ? (
+                              <span className="text-xs text-muted-foreground">Memuat template...</span>
+                            ) : null}
+                          </div>
+                          {labTemplatesByIndex[index]?.length ? (
+                            <div className="mt-3 space-y-2">
+                              {labTemplatesByIndex[index].map((template) => (
+                                <div
+                                  key={`${template.id_template}-${template.Pemeriksaan}`}
+                                  className="rounded border bg-background p-3"
+                                >
+                                  <p className="font-medium">{template.Pemeriksaan}</p>
+                                  {/* <p className="text-xs text-muted-foreground">
+                                    ID Template: {template.id_template}
+                                    {template.satuan ? ` • Satuan: ${template.satuan}` : ''}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Rujukan LD: {template.nilai_rujukan_ld || '-'}
+                                    {' • '}
+                                    LA: {template.nilai_rujukan_la || '-'}
+                                    {' • '}
+                                    PD: {template.nilai_rujukan_pd || '-'}
+                                    {' • '}
+                                    PA: {template.nilai_rujukan_pa || '-'}
+                                  </p> */}
+                                </div>
+                              ))}
+                            </div>
+                          ) : !labTemplateLoadingByIndex[index] ? (
+                            <p className="mt-2 text-sm italic text-muted-foreground">
+                              Template laboratorium untuk pemeriksaan ini belum tersedia.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                   <Button variant="outline" onClick={addLabTest}>
@@ -2969,8 +4543,10 @@ const MedicalRecord = () => {
                 </div>
 
                 <div className="flex justify-end space-x-2 mt-4">
-                  <Button variant="outline">Reset</Button>
-                  <Button onClick={() => handleSaveForm('Laboratorium')}>Simpan Laboratorium</Button>
+                  <Button variant="outline" onClick={resetLabForm}>Reset</Button>
+                  <Button onClick={() => handleSaveForm('Laboratorium')}>
+                    {editingLabRequestNo ? 'Update Permintaan Lab' : 'Simpan Permintaan Lab'}
+                  </Button>
                  </div>
                   </CollapsibleContent>
                 </div>
@@ -3018,14 +4594,22 @@ const MedicalRecord = () => {
                             <div>
                               <p className="font-medium">{formatDateSafe(item.content.tanggal)}</p>
                               <div className="space-y-1 mt-2">
-                                {Array.isArray(item.content.perawatans) && item.content.perawatans.length > 0 ? 
-                                  item.content.perawatans.map((lab, labIndex) => (
+                                {Array.isArray((item.content as any).perawatans) && (item.content as any).perawatans.length > 0 ? 
+                                  (item.content as any).perawatans.map((lab: any, labIndex: number) => (
                                     <div key={labIndex} className="mb-2">
                                       <p className="font-semibold text-primary">{lab.nm_perawatan}</p>
                                       {Array.isArray(lab.hasil) && lab.hasil.length > 0 ? (
-                                        lab.hasil.map((test, testIndex) => (
-                                          <div key={testIndex} className="text-sm ml-4">
+                                        lab.hasil.map((test: any, testIndex: number) => (
+                                          <div
+                                            key={testIndex}
+                                            className={cn(
+                                              "text-sm ml-4 rounded px-2 py-1",
+                                              test.keterangan === 'H' && "bg-red-100 text-red-900",
+                                              test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                                            )}
+                                          >
                                             <span className="font-medium">{test.pemeriksaan}:</span> {test.nilai} ({test.nilai_rujukan})
+                                            {test.keterangan ? ` - ${test.keterangan}` : ''}
                                           </div>
                                         ))
                                       ) : (
@@ -3033,7 +4617,23 @@ const MedicalRecord = () => {
                                       )}
                                     </div>
                                   )) :
-                                  <div className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan.</div>
+                                  Array.isArray((item.content as any).pemeriksaan) && (item.content as any).pemeriksaan.length > 0 ? (
+                                    (item.content as any).pemeriksaan.map((test: any, testIndex: number) => (
+                                      <div
+                                        key={testIndex}
+                                        className={cn(
+                                          "text-sm rounded px-2 py-1",
+                                          test.keterangan === 'H' && "bg-red-100 text-red-900",
+                                          test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                                        )}
+                                      >
+                                        <span className="font-medium">{test.nama || '-'}</span>: {test.hasil || '-'} ({test.rujukan || '-'})
+                                        {test.keterangan ? ` - ${test.keterangan}` : ''}
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan.</div>
+                                  )
                                 }
                               </div>
                             </div>
@@ -3075,36 +4675,126 @@ const MedicalRecord = () => {
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Data Permintaan Laboratorium</h3>
                     <div className="space-y-4">
-                      {scopedOutpatientVisits.map((visit) => 
-                        visit.laboratoryRequest?.map((lab, labIndex) => (
-                          <div 
-                            key={labIndex} 
-                            className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
+                      {(() => {
+                        const allLabRequests = [
+                          ...scopedOutpatientVisits.flatMap((visit) =>
+                            (visit.laboratoryRequest || []).map((lab) => ({
+                              ...lab,
+                              no_rawat: visit.no_rawat,
+                              source: 'Rawat Jalan'
+                            }))
+                          ),
+                          ...scopedInpatientVisits.flatMap((visit) =>
+                            (visit.laboratoryRequest || []).map((lab) => ({
+                              ...lab,
+                              no_rawat: visit.no_rawat,
+                              source: 'Rawat Inap'
+                            }))
+                          )
+                        ];
+
+                        if (allLabRequests.length === 0) {
+                          return (
+                            <p className="text-sm italic text-muted-foreground">
+                              Belum ada data permintaan laboratorium.
+                            </p>
+                          );
+                        }
+
+                        return allLabRequests.map((lab, labIndex) => (
+                          <div
+                            key={`${lab.no_rawat}-${labIndex}`}
+                            className="border rounded-lg p-4 hover:shadow-lg transition-shadow"
                           >
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                               <div>
                                 <p className="text-sm text-muted-foreground">Tanggal</p>
                                 <p className="font-medium">{formatDateSafe(lab.tanggal)}</p>
                               </div>
                               <div>
                                 <p className="text-sm text-muted-foreground">No. Rawat</p>
-                                <p className="font-medium">{visit.no_rawat}</p>
+                                <p className="font-medium">{lab.no_rawat}</p>
                               </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">Sumber</p>
+                                <p className="font-medium">{lab.source}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">No. Order</p>
+                                <p className="font-medium">{lab.noorder || '-'}</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 mb-4">
+                              <Button variant="outline" size="sm" onClick={() => handleEditLabRequest(lab)}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => handleCopyLabRequest(lab)}>
+                                <Copy className="h-4 w-4 mr-2" />
+                                Copy
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteLabRequest(lab)}
+                                disabled={deletingLabRequestNo === lab.noorder}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                {deletingLabRequestNo === lab.noorder ? 'Menghapus...' : 'Hapus'}
+                              </Button>
                             </div>
                             <div className="space-y-2">
                               <h4 className="font-medium">Pemeriksaan:</h4>
-                              {lab.pemeriksaan.map((test, testIndex) => (
+                              {lab.pemeriksaan.map((test: any, testIndex: number) => (
                                 <div key={testIndex} className="grid grid-cols-1 md:grid-cols-1 gap-4 border-l-2 border-primary pl-4">
                                   <div>
                                     <p className="text-sm text-muted-foreground">Nama</p>
                                     <p className="font-medium">{test.nama}</p>
                                   </div>
+                                  {test.kode ? (
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Kode Pemeriksaan</p>
+                                      <p className="font-medium">{test.kode}</p>
+                                    </div>
+                                  ) : null}
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Template</p>
+                                    {Array.isArray(test.templates) && test.templates.length > 0 ? (
+                                      <div className="mt-2 space-y-2">
+                                        {test.templates.map((template: any, templateIndex: number) => (
+                                          <div
+                                            key={`${template.id_template}-${templateIndex}`}
+                                            className="rounded border bg-muted/20 p-3"
+                                          >
+                                            <p className="font-medium">{template.nama || '-'}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                              ID Template: {template.id_template || '-'}
+                                              {template.satuan ? ` • Satuan: ${template.satuan}` : ''}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                              Rujukan LD: {template.nilai_rujukan_ld || '-'}
+                                              {' • '}
+                                              LA: {template.nilai_rujukan_la || '-'}
+                                              {' • '}
+                                              PD: {template.nilai_rujukan_pd || '-'}
+                                              {' • '}
+                                              PA: {template.nilai_rujukan_pa || '-'}
+                                            </p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm italic text-muted-foreground">
+                                        Tidak ada template tersimpan.
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                             </div>
                           </div>
-                        ))
-                      )}
+                        ));
+                      })()}
                     </div>
                   </div>
                 </TabsContent>
@@ -3115,88 +4805,99 @@ const MedicalRecord = () => {
                     <h3 className="text-lg font-semibold">Riwayat Pemeriksaan Laboratorium (Draggable)</h3>
                     <ScrollArea className="h-[400px] w-full rounded-md border p-4">
                       <div className="space-y-4">
-                        {scopedOutpatientVisits.map((visit) => {
-                          // Grouping berdasarkan tanggal + jam
-                          const groupedLaboratory = {};
-
-                          for (const lab of visit.laboratory || []) {
-                            const key = `${lab.tanggal} ${lab.jam}`;
-                            if (!groupedLaboratory[key]) {
-                              groupedLaboratory[key] = {
-                                tanggal: lab.tanggal,
-                                jam: lab.jam,
+                        {(() => {
+                          const allLaboratoryHistory = [
+                            ...scopedOutpatientVisits.flatMap((visit) =>
+                              ((visit.laboratory || []) as LabData[]).map((lab) => ({
+                                ...lab,
                                 no_rawat: visit.no_rawat,
-                                nm_perawatan: lab.nm_perawatan,
-                                perawatans: [],
-                              };
-                            }
-                            groupedLaboratory[key].perawatans.push(lab);
+                                source: 'Rawat Jalan'
+                              }))
+                            ),
+                            ...scopedInpatientVisits.flatMap((visit) =>
+                              ((visit.laboratory || []) as LabData[]).map((lab) => ({
+                                ...lab,
+                                no_rawat: visit.no_rawat,
+                                source: 'Rawat Inap'
+                              }))
+                            )
+                          ];
+
+                          if (allLaboratoryHistory.length === 0) {
+                            return (
+                              <p className="text-sm italic text-muted-foreground">
+                                Belum ada riwayat pemeriksaan laboratorium.
+                              </p>
+                            );
                           }
 
-                          return Object.values(groupedLaboratory).map((group, groupIndex) => (
+                          return allLaboratoryHistory.map((labGroup, groupIndex) => (
                             <div
-                              key={groupIndex}
+                              key={`${labGroup.no_rawat}-${labGroup.tanggal}-${groupIndex}`}
                               className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
                               draggable
                               onDragStart={(e) => {
-                                setDraggingLab(group as LabData);
+                                setDraggingLab({
+                                  tanggal: labGroup.tanggal,
+                                  pemeriksaan: labGroup.pemeriksaan
+                                });
                                 e.dataTransfer.effectAllowed = 'move';
                               }}
                             >
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                 <div>
                                   <p className="text-sm text-muted-foreground">Tanggal</p>
-                                  <p className="font-medium">
-                                      {formatDateSafe((group as any).tanggal)}
-                                    </p>
+                                  <p className="font-medium">{formatDateSafe(labGroup.tanggal)}</p>
                                 </div>
                                 <div>
                                   <p className="text-sm text-muted-foreground">No. Rawat</p>
-                                  <p className="font-medium">{(group as any).no_rawat}</p>
+                                  <p className="font-medium">{labGroup.no_rawat}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Sumber</p>
+                                  <p className="font-medium">{labGroup.source}</p>
                                 </div>
                               </div>
 
-                              {(group as any).perawatans?.map((lab: any, labIndex: number) => (
-                                <div key={labIndex} className="mb-4">
-                                  <h4 className="text-md font-semibold text-primary">{lab.nm_perawatan}</h4>
-
-                                  <div className="space-y-2">
-                                    <h4 className="font-medium">Pemeriksaan:</h4>
-                                    {Array.isArray(lab.hasil) && lab.hasil.length > 0 ? (
-                                      lab.hasil.map((test, testIndex) => (
-                                        <div
-                                          key={testIndex}
-                                          className="grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4"
-                                        >
-                                          <div>
-                                            <p className="text-sm text-muted-foreground">Nama</p>
-                                            <p className="font-medium">{test.pemeriksaan}</p>
-                                          </div>
-                                          <div>
-                                            <p className="text-sm text-muted-foreground">Hasil</p>
-                                            <p className="font-medium">{test.nilai}</p>
-                                          </div>
-                                          <div>
-                                            <p className="text-sm text-muted-foreground">Rujukan</p>
-                                            <p className="font-medium">{test.nilai_rujukan}</p>
-                                          </div>
-                                          <div>
-                                            <p className="text-sm text-muted-foreground">Keterangan</p>
-                                            <p className="font-medium">{test.keterangan}</p>
-                                          </div>
-                                        </div>
-                                      ))
-                                    ) : (
-                                      <p className="text-sm italic text-muted-foreground">
-                                        Tidak ada hasil pemeriksaan
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
+                              <div className="space-y-2">
+                                <h4 className="font-medium">Pemeriksaan:</h4>
+                                {Array.isArray(labGroup.pemeriksaan) && labGroup.pemeriksaan.length > 0 ? (
+                                  labGroup.pemeriksaan.map((test, testIndex) => (
+                                    <div
+                                      key={testIndex}
+                                      className={cn(
+                                        "grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2",
+                                        test.keterangan === 'H' && "bg-red-100 text-red-900",
+                                        test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                                      )}
+                                    >
+                                      <div>
+                                        <p className="text-sm text-muted-foreground">Nama</p>
+                                        <p className="font-medium">{test.nama || '-'}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-sm text-muted-foreground">Hasil</p>
+                                        <p className="font-medium">{test.hasil || '-'}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-sm text-muted-foreground">Rujukan</p>
+                                        <p className="font-medium">{test.rujukan || '-'}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-sm text-muted-foreground">Keterangan</p>
+                                        <p className="font-medium">{test.keterangan || '-'}</p>
+                                      </div>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <p className="text-sm italic text-muted-foreground">
+                                    Tidak ada hasil pemeriksaan
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           ));
-                        })}
+                        })()}
                       </div>
                     </ScrollArea>
                   </div>
@@ -3221,7 +4922,7 @@ const MedicalRecord = () => {
                     <button className="w-full flex items-center justify-between text-lg font-semibold mb-4 hover:text-primary transition-colors">
                       <div className="flex items-center">
                         <Plus className="h-5 w-5 mr-2" />
-                        Form Tambah Radiologi
+                        {editingRadiologyRequestNo ? `Form Edit Radiologi (${editingRadiologyRequestNo})` : 'Form Tambah Radiologi'}
                       </div>
                       {isRadiologyFormOpen ? (
                         <ChevronUp className="h-5 w-5 transition-transform duration-200" />
@@ -3236,86 +4937,159 @@ const MedicalRecord = () => {
                       transition: 'height 0.2s ease-out, opacity 0.2s ease-out'
                     }}
                   >
-                
-                {radiologies.map((radiology, index) => (
-                  <div key={index} className="border rounded-lg p-4 mb-4 bg-background">
-                    <div className="flex justify-between items-center mb-4">
-                      <h4 className="font-medium">Radiologi {index + 1}</h4>
-                      {radiologies.length > 1 && (
-                        <Button variant="destructive" size="sm" onClick={() => removeRadiology(index)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div>
-                        <Label htmlFor={`rad-kode-${index}`}>Kode Radiologi</Label>
-                        <Input 
-                          id={`rad-kode-${index}`} 
-                          placeholder="RAD001"
-                          value={radiology.kode}
-                          onChange={(e) => {
-                            const newRadiologies = [...radiologies];
-                            newRadiologies[index].kode = e.target.value;
-                            setRadiologies(newRadiologies);
-                          }}
+                        <Label htmlFor="rad-request-date">Tanggal Permintaan</Label>
+                        <Input
+                          id="rad-request-date"
+                          value={format(new Date(), 'yyyy-MM-dd HH:mm')}
+                          readOnly
+                          className="bg-muted"
                         />
                       </div>
                       <div>
-                        <Label htmlFor={`rad-pemeriksaan-${index}`}>Jenis Pemeriksaan</Label>
-                        <Input 
-                          id={`rad-pemeriksaan-${index}`} 
-                          placeholder="Rontgen Thorax"
-                          value={radiology.pemeriksaan}
-                          onChange={(e) => {
-                            const newRadiologies = [...radiologies];
-                            newRadiologies[index].pemeriksaan = e.target.value;
-                            setRadiologies(newRadiologies);
-                          }}
-                        />
+                        <Label htmlFor="rad-norawat">No. Rawat</Label>
+                        <Input id="rad-norawat" value={radiologyFormNoRawat || formattedNoRawat} readOnly className="bg-muted" />
+                      </div>
+                      <div>
+                        <Label htmlFor="rad-status-rawat">Status Rawat</Label>
+                        <Select
+                          value={radiologyStatusRawat}
+                          onValueChange={(value: RadiologyStatusRawat) => handleRadiologyStatusRawatChange(value)}
+                        >
+                          <SelectTrigger id="rad-status-rawat">
+                            <SelectValue placeholder="Pilih status rawat" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Ralan">Rawat Jalan</SelectItem>
+                            <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                      <div>
-                        <Label htmlFor={`rad-hasil-${index}`}>Hasil Pemeriksaan</Label>
-                        <Textarea 
-                          id={`rad-hasil-${index}`} 
-                          placeholder="Hasil pemeriksaan radiologi"
-                          value={radiology.hasil}
-                          onChange={(e) => {
-                            const newRadiologies = [...radiologies];
-                            newRadiologies[index].hasil = e.target.value;
-                            setRadiologies(newRadiologies);
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor={`rad-keterangan-${index}`}>Keterangan</Label>
-                        <Textarea 
-                          id={`rad-keterangan-${index}`} 
-                          placeholder="Keterangan tambahan"
-                          value={radiology.keterangan}
-                          onChange={(e) => {
-                            const newRadiologies = [...radiologies];
-                            newRadiologies[index].keterangan = e.target.value;
-                            setRadiologies(newRadiologies);
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
 
-                <div className="flex justify-between items-center">
-                  <Button variant="outline" onClick={addRadiology}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Tambah Radiologi
-                  </Button>
-                  <div className="flex space-x-2">
-                    <Button variant="outline">Reset</Button>
-                    <Button onClick={() => handleSaveForm('Radiologi')}>Simpan Radiologi</Button>
-                  </div>
-                 </div>
+                    {radiologies.map((radiology, index) => (
+                      <div key={index} className="border rounded-lg p-4 mb-4 bg-background">
+                        <div className="flex justify-between items-center mb-4">
+                          <h4 className="font-medium">Pemeriksaan Radiologi {index + 1}</h4>
+                          {radiologies.length > 1 && (
+                            <Button variant="destructive" size="sm" onClick={() => removeRadiology(index)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div className="md:col-span-3">
+                            <Label htmlFor={`rad-pemeriksaan-${index}`}>Cari Pemeriksaan</Label>
+                            <Popover
+                              open={!!radiologySearchOpen[index]}
+                              onOpenChange={(open) => {
+                                setRadiologySearchOpen((previous) => ({ ...previous, [index]: open }));
+                                if (open && radiologyServiceOptions.length === 0) {
+                                  void fetchRadiologyServiceOptions();
+                                }
+                              }}
+                            >
+                              <PopoverTrigger asChild>
+                                <Button
+                                  id={`rad-pemeriksaan-${index}`}
+                                  variant="outline"
+                                  role="combobox"
+                                  aria-expanded={!!radiologySearchOpen[index]}
+                                  className="w-full justify-between"
+                                  disabled={!formattedNoRawat}
+                                >
+                                  <span className="truncate text-left">
+                                    {radiology.pemeriksaan || (formattedNoRawat ? 'Cari dan pilih pemeriksaan radiologi' : 'Pilih kunjungan/no_rawat dulu')}
+                                  </span>
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[350px] p-0 md:w-[500px]" align="start">
+                                <Command>
+                                  <CommandInput
+                                    placeholder="Cari kode atau nama pemeriksaan..."
+                                    value={radiologySearchQuery[index] ?? radiology.pemeriksaan}
+                                    onValueChange={(value) => {
+                                      setRadiologySearchQuery((previous) => ({ ...previous, [index]: value }));
+                                    }}
+                                  />
+                                  <CommandList>
+                                    <CommandEmpty>
+                                      {radiologySearchLoading ? 'Memuat pemeriksaan...' : 'Tidak ada pemeriksaan ditemukan.'}
+                                    </CommandEmpty>
+                                    <CommandGroup>
+                                      {radiologyServiceOptions.map((option) => (
+                                        <CommandItem
+                                          key={option.kd_jenis_prw}
+                                          value={`${option.kd_jenis_prw} ${option.nm_perawatan}`}
+                                          onSelect={() => {
+                                            setRadiologies((previous) => previous.map((item, itemIndex) => (
+                                              itemIndex === index
+                                                ? {
+                                                    ...item,
+                                                    kode: option.kd_jenis_prw,
+                                                    pemeriksaan: option.nm_perawatan
+                                                  }
+                                                : item
+                                            )));
+                                            setRadiologySearchQuery((previous) => ({
+                                              ...previous,
+                                              [index]: option.nm_perawatan
+                                            }));
+                                            setRadiologySearchOpen((previous) => ({
+                                              ...previous,
+                                              [index]: false
+                                            }));
+                                          }}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              "mr-2 h-4 w-4",
+                                              radiology.kode === option.kd_jenis_prw ? "opacity-100" : "opacity-0"
+                                            )}
+                                          />
+                                          <div className="flex flex-col">
+                                            <span>{option.nm_perawatan}</span>
+                                            <span className="text-xs text-muted-foreground">
+                                              {option.kd_jenis_prw}
+                                              {typeof option.total_byr === 'number' ? ` • Rp ${option.total_byr.toLocaleString('id-ID')}` : ''}
+                                            </span>
+                                          </div>
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                          <div>
+                            <Label htmlFor={`rad-kode-${index}`}>Kode Pemeriksaan</Label>
+                            <Input
+                              id={`rad-kode-${index}`}
+                              placeholder="Terisi otomatis"
+                              value={radiology.kode}
+                              readOnly
+                              className="bg-muted"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="flex justify-between items-center">
+                      <Button variant="outline" onClick={addRadiology}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Tambah Pemeriksaan
+                      </Button>
+                      <div className="flex space-x-2">
+                        <Button variant="outline" onClick={resetRadiologyForm}>Reset</Button>
+                        <Button onClick={() => handleSaveForm('Radiologi')}>
+                          {editingRadiologyRequestNo ? 'Update Permintaan Radiologi' : 'Simpan Permintaan Radiologi'}
+                        </Button>
+                      </div>
+                    </div>
                   </CollapsibleContent>
                 </div>
               </Collapsible>
@@ -3357,20 +5131,20 @@ const MedicalRecord = () => {
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {canvasItems.filter(item => item.type === 'radiology').map((item, index) => (
-                        <div key={`${item.content.tanggal}-${item.content.pemeriksaan}-${index}`} className="border rounded-lg p-3 bg-blue-50">
+                        <div key={`${(item.content as any).tanggal}-${(item.content as any).pemeriksaan}-${index}`} className="border rounded-lg p-3 bg-blue-50">
                           <div className="flex justify-between items-start">
                             <div>
-                              <p className="font-medium">{formatDateSafe(item.content.tanggal)}</p>
+                              <p className="font-medium">{formatDateSafe((item.content as any).tanggal)}</p>
                               <div className="space-y-1 mt-2">
                                 <div className="text-sm">
-                                  <span className="font-medium">Pemeriksaan:</span> {item.content.pemeriksaan}
+                                  <span className="font-medium">Pemeriksaan:</span> {(item.content as any).pemeriksaan}
                                 </div>
                                 <div className="text-sm">
-                                  <span className="font-medium">Hasil:</span> {item.content.hasil}
+                                  <span className="font-medium">Hasil:</span> {(item.content as any).hasil}
                                 </div>
-                                {item.content.keterangan && (
+                                {(item.content as any).keterangan && (
                                   <div className="text-sm">
-                                    <span className="font-medium">Keterangan:</span> {item.content.keterangan}
+                                    <span className="font-medium">Keterangan:</span> {(item.content as any).keterangan}
                                   </div>
                                 )}
                               </div>
@@ -3382,9 +5156,9 @@ const MedicalRecord = () => {
                                 // Find the actual index in the original canvasItems array
                                 const actualIndex = canvasItems.findIndex(canvasItem => 
                                   canvasItem.type === 'radiology' && 
-                                  canvasItem.content.tanggal === item.content.tanggal &&
-                                  canvasItem.content.pemeriksaan === item.content.pemeriksaan &&
-                                  canvasItem.content.hasil === item.content.hasil
+                                  (canvasItem.content as any).tanggal === (item.content as any).tanggal &&
+                                  (canvasItem.content as any).pemeriksaan === (item.content as any).pemeriksaan &&
+                                  (canvasItem.content as any).hasil === (item.content as any).hasil
                                 );
                                 
                                 if (actualIndex !== -1) {
@@ -3402,46 +5176,180 @@ const MedicalRecord = () => {
                 </div>
               </div>
 
-              {/* Data Existing - Draggable */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Data Radiologi (Draggable)</h3>
-                <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+              <Tabs defaultValue="current" className="space-y-4">
+                <TabsList>
+                  <TabsTrigger value="current">Data Permintaan Radiologi</TabsTrigger>
+                  <TabsTrigger value="history">Riwayat Radiologi</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="current">
                   <div className="space-y-4">
-                    {scopedOutpatientVisits.map((visit) => 
-                      visit.radiology?.map((rad, radIndex) => (
-                        <div 
-                          key={radIndex} 
-                          className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
-                          draggable
-                          onDragStart={(e) => {
-                            setDraggingRad(rad);
-                            e.dataTransfer.effectAllowed = 'move';
-                          }}
-                        >
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div>
-                              <p className="text-sm text-muted-foreground">Tanggal</p>
-                              <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
+                    <h3 className="text-lg font-semibold">Data Permintaan Radiologi</h3>
+                    <div className="space-y-4">
+                      {(() => {
+                        const allRadiologyRequests = [
+                          ...scopedOutpatientVisits.flatMap((visit) =>
+                            ((visit.radiologyRequest || []) as any[]).map((rad) => ({
+                              ...rad,
+                              no_rawat: visit.no_rawat,
+                              source: 'Rawat Jalan'
+                            }))
+                          ),
+                          ...scopedInpatientVisits.flatMap((visit) =>
+                            ((visit.radiologyRequest || []) as any[]).map((rad) => ({
+                              ...rad,
+                              no_rawat: visit.no_rawat,
+                              source: 'Rawat Inap'
+                            }))
+                          )
+                        ];
+
+                        if (allRadiologyRequests.length === 0) {
+                          return (
+                            <p className="text-sm italic text-muted-foreground">
+                              Belum ada data permintaan radiologi.
+                            </p>
+                          );
+                        }
+
+                        return allRadiologyRequests.map((rad, radIndex) => (
+                          <div key={`${rad.no_rawat}-${rad.noorder}-${radIndex}`} className="border rounded-lg p-4">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                              <div>
+                                <p className="text-sm text-muted-foreground">Tanggal</p>
+                                <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">No. Rawat</p>
+                                <p className="font-medium">{rad.no_rawat}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">Sumber</p>
+                                <p className="font-medium">{rad.source}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">No. Order</p>
+                                <p className="font-medium">{rad.noorder || '-'}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">No. Rawat</p>
-                              <p className="font-medium">{visit.no_rawat}</p>
+                            <div className="flex flex-wrap gap-2 mb-4">
+                              <Button variant="outline" size="sm" onClick={() => handleEditRadiologyRequest(rad)}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => handleCopyRadiologyRequest(rad)}>
+                                <Copy className="h-4 w-4 mr-2" />
+                                Copy
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteRadiologyRequest(rad)}
+                                disabled={deletingRadiologyRequestNo === rad.noorder}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                {deletingRadiologyRequestNo === rad.noorder ? 'Menghapus...' : 'Hapus'}
+                              </Button>
                             </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-                              <p className="font-medium">{rad.pemeriksaan}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Hasil</p>
-                              <p className="font-medium">{rad.hasil}</p>
+                            <div className="space-y-2">
+                              <h4 className="font-medium">Pemeriksaan:</h4>
+                              {Array.isArray(rad.pemeriksaan) && rad.pemeriksaan.length > 0 ? (
+                                rad.pemeriksaan.map((test: any, testIndex: number) => (
+                                  <div key={testIndex} className="grid grid-cols-1 md:grid-cols-2 gap-4 border-l-2 border-primary pl-4">
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Nama</p>
+                                      <p className="font-medium">{test.nama || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Kode Pemeriksaan</p>
+                                      <p className="font-medium">{test.kode || '-'}</p>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-sm italic text-muted-foreground">
+                                  Tidak ada pemeriksaan radiologi tersimpan.
+                                </p>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      ))
-                    )}
+                        ));
+                      })()}
+                    </div>
                   </div>
-                </ScrollArea>
-              </div>
+                </TabsContent>
+
+                <TabsContent value="history">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">Riwayat Radiologi (Draggable)</h3>
+                    <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                      <div className="space-y-4">
+                        {(() => {
+                          const allRadiologyHistory = [
+                            ...scopedOutpatientVisits.flatMap((visit) =>
+                              ((visit.radiology || []) as any[]).map((rad) => ({
+                                ...rad,
+                                no_rawat: visit.no_rawat,
+                                source: 'Rawat Jalan'
+                              }))
+                            ),
+                            ...scopedInpatientVisits.flatMap((visit) =>
+                              ((visit.radiology || []) as any[]).map((rad) => ({
+                                ...rad,
+                                no_rawat: visit.no_rawat,
+                                source: 'Rawat Inap'
+                              }))
+                            )
+                          ];
+
+                          if (allRadiologyHistory.length === 0) {
+                            return (
+                              <p className="text-sm italic text-muted-foreground">
+                                Belum ada riwayat radiologi.
+                              </p>
+                            );
+                          }
+
+                          return allRadiologyHistory.map((rad, radIndex) => (
+                            <div
+                              key={`${rad.no_rawat}-${rad.tanggal}-${radIndex}`}
+                              className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggingRad(rad);
+                                e.dataTransfer.effectAllowed = 'move';
+                              }}
+                            >
+                              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Tanggal</p>
+                                  <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">No. Rawat</p>
+                                  <p className="font-medium">{rad.no_rawat}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Sumber</p>
+                                  <p className="font-medium">{rad.source}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Pemeriksaan</p>
+                                  <p className="font-medium">{rad.pemeriksaan}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Hasil</p>
+                                  <p className="font-medium">{rad.hasil || '-'}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </TabsContent>

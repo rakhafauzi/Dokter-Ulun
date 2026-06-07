@@ -1,6 +1,84 @@
 import { executeQuery, getConnection } from '../config/database.js';
 
 class PrescriptionDataService {
+  normalizePrescriptionStatus(value) {
+    const normalizedValue = String(value || '').trim().toLowerCase();
+
+    if (
+      normalizedValue === 'ralan' ||
+      normalizedValue === 'ranap' ||
+      normalizedValue === 'pulang' ||
+      normalizedValue === 'ibs'
+    ) {
+      return normalizedValue;
+    }
+
+    if (normalizedValue === 'rawat jalan') {
+      return 'ralan';
+    }
+
+    if (normalizedValue === 'rawat inap') {
+      return 'ranap';
+    }
+
+    if (normalizedValue === 'obat pulang') {
+      return 'pulang';
+    }
+
+    if (normalizedValue === 'ibs') {
+      return 'ibs';
+    }
+
+    return null;
+  }
+
+  async resolvePrescriptionStatus(connection, no_rawat, requestedStatus) {
+    const normalizedRequestedStatus = this.normalizePrescriptionStatus(requestedStatus);
+
+    if (normalizedRequestedStatus) {
+      return normalizedRequestedStatus;
+    }
+
+    const [registrationRows] = await connection.execute(
+      `
+        SELECT status_lanjut
+        FROM reg_periksa
+        WHERE no_rawat = ?
+        LIMIT 1
+      `,
+      [no_rawat]
+    );
+
+    const registration = registrationRows[0];
+
+    if (!registration?.status_lanjut) {
+      return 'ralan';
+    }
+
+    return registration.status_lanjut === 'Ranap' ? 'ranap' : 'ralan';
+  }
+
+  normalizePrescriptionDate(value) {
+    if (!value) {
+      return null;
+    }
+
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+      return value.trim();
+    }
+
+    const parsedDate = new Date(value);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new Error('Tanggal resep tidak valid');
+    }
+
+    const year = parsedDate.getFullYear();
+    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(parsedDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   // Get prescriptions for a patient
   async getPrescriptions(no_rawat) {
     if (!no_rawat) {
@@ -36,7 +114,7 @@ class PrescriptionDataService {
     try {
       // Get prescription medicines
       const medicineQuery = `
-        SELECT rd.*, db.nama_brng, db.satuan, db.harga
+        SELECT rd.*, db.nama_brng, db.kode_sat AS satuan, db.kelas1 AS harga
         FROM resep_dokter rd
         LEFT JOIN databarang db ON rd.kode_brng = db.kode_brng
         WHERE rd.no_resep = ?
@@ -88,6 +166,58 @@ class PrescriptionDataService {
     }
   }
 
+  async searchMedicines(search = '', limit = 20) {
+    const keyword = String(search || '').trim();
+    const effectiveLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
+    const query = `
+      SELECT
+        db.kode_brng,
+        db.nama_brng,
+        db.kode_sat AS satuan,
+        db.kelas1 AS harga,
+        SUM(COALESCE(gb.stok, 0)) AS stok
+      FROM gudangbarang gb
+      INNER JOIN databarang db ON db.kode_brng = gb.kode_brng
+      WHERE db.status = '1'
+        AND (
+          ? = ''
+          OR db.kode_brng LIKE ?
+          OR db.nama_brng LIKE ?
+        )
+      GROUP BY db.kode_brng, db.nama_brng, db.kode_sat, db.kelas1
+      HAVING stok > 0
+      ORDER BY
+        CASE
+          WHEN db.kode_brng = ? THEN 0
+          WHEN db.kode_brng LIKE ? THEN 1
+          WHEN db.nama_brng LIKE ? THEN 2
+          ELSE 3
+        END,
+        db.nama_brng ASC
+      LIMIT ?
+    `;
+
+    try {
+      const result = await executeQuery(query, [
+        keyword,
+        `%${keyword}%`,
+        `%${keyword}%`,
+        keyword,
+        `${keyword}%`,
+        `${keyword}%`,
+        effectiveLimit
+      ]);
+
+      return {
+        success: true,
+        data: result
+      };
+    } catch (error) {
+      console.error('Error searching medicines from gudangbarang:', error);
+      throw error;
+    }
+  }
+
   // Get compound methods
   async getCompoundMethods() {
     const query = `SELECT * FROM metode_racik ORDER BY nm_racik`;
@@ -105,7 +235,7 @@ class PrescriptionDataService {
   }
 
   // Create new prescription
-  async createPrescription(no_rawat, kd_dokter, medicines, compounds) {
+  async createPrescription(no_rawat, kd_dokter, medicines, compounds, prescriptionDate, prescriptionStatus) {
     if (!no_rawat || !kd_dokter) {
       throw new Error('no_rawat and kd_dokter are required');
     }
@@ -114,19 +244,37 @@ class PrescriptionDataService {
     
     try {
       await connection.beginTransaction();
+      const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate) || new Date().toISOString().slice(0, 10);
+      const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, no_rawat, prescriptionStatus);
       
-      // Generate prescription number
-      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const timeStr = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
-      const no_resep = `${today}${timeStr}`;
+      // Generate no_resep dengan format YYYYMMDD + 5 digit urutan harian.
+      const datePrefix = normalizedPrescriptionDate.replace(/-/g, '');
+      const [sequenceRows] = await connection.execute(
+        `
+          SELECT MAX(no_resep) AS last_no_resep
+          FROM resep_obat
+          WHERE no_resep LIKE ?
+        `,
+        [`${datePrefix}%`]
+      );
+      const lastNoResep = sequenceRows[0]?.last_no_resep || '';
+      const lastSequence = Number(String(lastNoResep).slice(datePrefix.length)) || 0;
+      const nextSequence = String(lastSequence + 1).padStart(5, '0');
+      const no_resep = `${datePrefix}${nextSequence}`;
       
       // Insert main prescription
       const insertPrescriptionQuery = `
-        INSERT INTO resep_obat (no_resep, tgl_perawatan, jam, no_rawat, kd_dokter, tgl_peresepan, jam_peresepan, status, tgl_penyerahan, jam_penyerahan)
-        VALUES (?, CURDATE(), CURTIME(), ?, ?, CURDATE(), CURTIME(), 'ralan', '0000-00-00', '00:00:00')
+        INSERT INTO resep_obat (no_resep, tgl_perawatan, jam, no_rawat, kd_dokter, tgl_peresepan, jam_peresepan, status)
+        VALUES (?, '0000-00-00', '00:00:00', ?, ?, ?, CURTIME(), ?)
       `;
       
-      await connection.execute(insertPrescriptionQuery, [no_resep, no_rawat, kd_dokter]);
+      await connection.execute(insertPrescriptionQuery, [
+        no_resep,
+        no_rawat,
+        kd_dokter,
+        normalizedPrescriptionDate,
+        resolvedPrescriptionStatus
+      ]);
       
       // Insert medicines
       if (medicines && medicines.length > 0) {
@@ -166,7 +314,7 @@ class PrescriptionDataService {
   }
 
   // Update existing prescription
-  async updatePrescription(no_resep, medicines, compounds) {
+  async updatePrescription(no_resep, medicines, compounds, prescriptionDate, prescriptionStatus) {
     if (!no_resep) {
       throw new Error('no_resep is required');
     }
@@ -175,6 +323,29 @@ class PrescriptionDataService {
     
     try {
       await connection.beginTransaction();
+
+      const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate);
+      const normalizedPrescriptionStatus = this.normalizePrescriptionStatus(prescriptionStatus);
+
+      const headerUpdates = [];
+      const headerParams = [];
+
+      if (normalizedPrescriptionDate) {
+        headerUpdates.push('tgl_peresepan = ?');
+        headerParams.push(normalizedPrescriptionDate);
+      }
+
+      if (normalizedPrescriptionStatus) {
+        headerUpdates.push('status = ?');
+        headerParams.push(normalizedPrescriptionStatus);
+      }
+
+      if (headerUpdates.length > 0) {
+        await connection.execute(
+          `UPDATE resep_obat SET ${headerUpdates.join(', ')} WHERE no_resep = ?`,
+          [...headerParams, no_resep]
+        );
+      }
       
       // Delete existing medicines and compounds
       await connection.execute('DELETE FROM resep_dokter WHERE no_resep = ?', [no_resep]);

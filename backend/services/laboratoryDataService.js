@@ -19,6 +19,20 @@ class LaboratoryDataService {
     return await mysql.createConnection(this.dbConfig);
   }
 
+  normalizeStatusRawat(value) {
+    const normalizedValue = String(value || '').trim().toLowerCase();
+
+    if (normalizedValue === 'ranap' || normalizedValue === 'rawat inap') {
+      return 'ranap';
+    }
+
+    if (normalizedValue === 'ralan' || normalizedValue === 'rawat jalan') {
+      return 'ralan';
+    }
+
+    return null;
+  }
+
   async getLabRequests(no_rawat) {
     const connection = await this.getConnection();
     try {
@@ -101,10 +115,11 @@ class LaboratoryDataService {
     }
   }
 
-  async createLabRequest(no_rawat, dokter_perujuk, examinations, details) {
+  async createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat) {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
+      const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat) || 'ralan';
       
       // Generate request number
       const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -114,10 +129,10 @@ class LaboratoryDataService {
       // Insert main laboratory request
       const insertLabRequestQuery = `
         INSERT INTO permintaan_lab (noorder, no_rawat, tgl_permintaan, jam_permintaan, tgl_sampel, jam_sampel, tgl_hasil, jam_hasil, dokter_perujuk, status, kategori)
-        VALUES (?, ?, CURDATE(), CURTIME(), '0000-00-00', '00:00:00', '0000-00-00', '00:00:00', ?, 'ralan', 'PK')
+        VALUES (?, ?, CURDATE(), CURTIME(), '0000-00-00', '00:00:00', '0000-00-00', '00:00:00', ?, ?, 'PK')
       `;
       
-      await connection.execute(insertLabRequestQuery, [noorder, no_rawat, dokter_perujuk]);
+      await connection.execute(insertLabRequestQuery, [noorder, no_rawat, dokter_perujuk, normalizedStatusRawat]);
       
       // Insert examinations
       if (examinations && examinations.length > 0) {
@@ -142,7 +157,7 @@ class LaboratoryDataService {
       }
       
       await connection.commit();
-      return { success: true, noorder };
+      return { success: true, noorder, status_rawat: normalizedStatusRawat };
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -151,10 +166,18 @@ class LaboratoryDataService {
     }
   }
 
-  async updateLabRequest(noorder, examinations, details) {
+  async updateLabRequest(noorder, examinations, details, status_rawat) {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
+      const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat);
+
+      if (normalizedStatusRawat) {
+        await connection.execute(
+          'UPDATE permintaan_lab SET status = ? WHERE noorder = ?',
+          [normalizedStatusRawat, noorder]
+        );
+      }
       
       // Delete existing examinations and details
       await connection.execute('DELETE FROM permintaan_pemeriksaan_lab WHERE noorder = ?', [noorder]);
@@ -183,7 +206,7 @@ class LaboratoryDataService {
       }
       
       await connection.commit();
-      return { success: true };
+      return { success: true, status_rawat: normalizedStatusRawat };
     } catch (error) {
       await connection.rollback();
       throw error;
