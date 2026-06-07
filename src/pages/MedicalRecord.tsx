@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PatientTable from "@/components/PatientTable";
 import { FloatingButtonsModal } from '@/components/FloatingButtonsModal';
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
@@ -53,8 +54,11 @@ interface MedicineOption {
 }
 
 interface RacikanMedicine {
+  kode_brng?: string;
   nama: string;
   jumlah: string;
+  satuan?: string;
+  stok?: number;
 }
 
 interface CompoundPrescription {
@@ -164,6 +168,20 @@ const getCurrentExaminationDateTime = () => ({
 
 const getCurrentPrescriptionDate = () => format(new Date(), 'yyyy-MM-dd');
 
+const createEmptyRacikanMedicine = (): RacikanMedicine => ({
+  kode_brng: '',
+  nama: '',
+  jumlah: '',
+  satuan: '',
+  stok: 0
+});
+
+const createDefaultCompoundPrescription = (): CompoundPrescription => ({
+  tanggal: getCurrentPrescriptionDate(),
+  nama_racikan: '',
+  komposisi: [createEmptyRacikanMedicine()]
+});
+
 const getDefaultMedicationForm = (defaultStatus: PrescriptionStatus = 'Ralan'): Medication[] => ([{
   tanggal: getCurrentPrescriptionDate(),
   status: defaultStatus,
@@ -251,6 +269,59 @@ const formatMultilineText = (value?: string | null) => {
   return normalizedValue || '-';
 };
 
+const parseVitalNumber = (value?: string | number | null) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalized = String(value).trim().replace(',', '.');
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseBloodPressure = (value?: string | null) => {
+  const normalized = String(value || '').trim();
+  const matches = normalized.match(/(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)/);
+
+  if (!matches) {
+    return { systolic: null, diastolic: null };
+  }
+
+  return {
+    systolic: parseVitalNumber(matches[1]),
+    diastolic: parseVitalNumber(matches[2]),
+  };
+};
+
+const parseGcsValue = (value?: string | number | null) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^\d{3}$/.test(normalized)) {
+    return normalized.split('').reduce((total, digit) => total + Number(digit), 0);
+  }
+
+  return parseVitalNumber(normalized);
+};
+
+const vitalChartSeries = [
+  { key: 'systolic', title: 'Sistolik', color: '#2563eb', unit: 'mmHg' },
+  { key: 'diastolic', title: 'Diastolik', color: '#0f172a', unit: 'mmHg' },
+  { key: 'nadi', title: 'Nadi', color: '#7c3aed', unit: 'x/menit' },
+  { key: 'respirasi', title: 'Respirasi', color: '#db2777', unit: 'x/menit' },
+  { key: 'suhu', title: 'Suhu', color: '#ea580c', unit: 'C' },
+  { key: 'gcs', title: 'GCS', color: '#059669', unit: 'skor' },
+  { key: 'spo2', title: 'SpO2', color: '#dc2626', unit: '%' },
+] as const;
+
+type VitalChartSeriesKey = typeof vitalChartSeries[number]['key'];
+
 const formatRouteNoRawat = (rawatParam?: string) => {
   if (!rawatParam || rawatParam.length < 9) {
     return '';
@@ -296,14 +367,11 @@ const MedicalRecord = () => {
   const [medicineSearchQuery, setMedicineSearchQuery] = useState<Record<string, string>>({});
   const [medicineSearchLoading, setMedicineSearchLoading] = useState<Record<string, boolean>>({});
 
-  const [compoundPrescriptions, setCompoundPrescriptions] = useState<CompoundPrescription[]>([{
-    tanggal: '',
-    nama_racikan: '',
-    komposisi: [{
-      nama: '',
-      jumlah: ''
-    }]
-  }]);
+  const [compoundPrescriptions, setCompoundPrescriptions] = useState<CompoundPrescription[]>([createDefaultCompoundPrescription()]);
+  const [compoundMedicineOptions, setCompoundMedicineOptions] = useState<Record<string, MedicineOption[]>>({});
+  const [compoundMedicineSearchOpen, setCompoundMedicineSearchOpen] = useState<Record<string, boolean>>({});
+  const [compoundMedicineSearchQuery, setCompoundMedicineSearchQuery] = useState<Record<string, string>>({});
+  const [compoundMedicineSearchLoading, setCompoundMedicineSearchLoading] = useState<Record<string, boolean>>({});
 
   const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
   const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
@@ -354,6 +422,15 @@ const MedicalRecord = () => {
   const [isCompoundFormOpen, setIsCompoundFormOpen] = useState(false);
   const [isLabFormOpen, setIsLabFormOpen] = useState(false);
   const [isRadiologyFormOpen, setIsRadiologyFormOpen] = useState(false);
+  const [visibleVitalSeries, setVisibleVitalSeries] = useState<Record<VitalChartSeriesKey, boolean>>(() => ({
+    systolic: true,
+    diastolic: true,
+    nadi: true,
+    respirasi: true,
+    suhu: true,
+    gcs: true,
+    spo2: true,
+  }));
   const [activeTab, setActiveTab] = useState('visits');
   const [pagination, setPagination] = useState<MedicalRecordPagination>({
     outpatient: DEFAULT_PAGINATION_META,
@@ -369,6 +446,36 @@ const MedicalRecord = () => {
   const scopedInpatientVisits = formattedNoRawat
     ? allInpatientVisits.filter((visit) => visit.no_rawat === formattedNoRawat)
     : allInpatientVisits;
+  const vitalChartData = React.useMemo(() => {
+    return [...scopedOutpatientVisits, ...scopedInpatientVisits]
+      .flatMap((visit) => (visit.examinations || []).map((exam: any) => {
+        const bloodPressure = parseBloodPressure(exam.tekanan_darah || exam.tensi);
+        const examDate = exam.tgl_perawatan || exam.tanggal || '';
+        const examTime = exam.jam_rawat || '00:00';
+        const examDateTime = examDate
+          ? new Date(`${examDate}T${examTime.length === 5 ? `${examTime}:00` : examTime}`).getTime()
+          : 0;
+
+        return {
+          id: `${visit.no_rawat}-${examDate}-${examTime}`,
+          label: examDate
+            ? `${examDate.slice(8, 10)}/${examDate.slice(5, 7)} ${examTime.slice(0, 5)}`
+            : '-',
+          fullDate: examDate,
+          fullTime: examTime,
+          systolic: bloodPressure.systolic,
+          diastolic: bloodPressure.diastolic,
+          nadi: parseVitalNumber(exam.nadi),
+          respirasi: parseVitalNumber(exam.respirasi),
+          suhu: parseVitalNumber(exam.suhu_tubuh || exam.suhu),
+          gcs: parseGcsValue(exam.gcs),
+          spo2: parseVitalNumber(exam.spo2),
+          timestamp: Number.isNaN(examDateTime) ? 0 : examDateTime,
+        };
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }, [scopedInpatientVisits, scopedOutpatientVisits]);
+  const activeVitalSeries = vitalChartSeries.filter((series) => visibleVitalSeries[series.key]);
   
   useEffect(() => {
     const searchQuery = searchParams.get('search');
@@ -673,6 +780,7 @@ const MedicalRecord = () => {
 
   // Form helper functions
   const getMedicineFieldKey = (medIndex: number, obatIndex: number) => `${medIndex}-${obatIndex}`;
+  const getCompoundMedicineFieldKey = (compoundIndex: number, racikanIndex: number) => `${compoundIndex}-${racikanIndex}`;
 
   const updateMedicationItem = (
     medIndex: number,
@@ -691,6 +799,23 @@ const MedicalRecord = () => {
     )));
   };
 
+  const updateCompoundMedicineItem = (
+    compoundIndex: number,
+    racikanIndex: number,
+    updates: Partial<RacikanMedicine>
+  ) => {
+    setCompoundPrescriptions((previous) => previous.map((compound, compoundPosition) => (
+      compoundPosition === compoundIndex
+        ? {
+            ...compound,
+            komposisi: compound.komposisi.map((item, itemPosition) => (
+              itemPosition === racikanIndex ? { ...item, ...updates } : item
+            ))
+          }
+        : compound
+    )));
+  };
+
   const resetMedicationForm = () => {
     setMedications(getDefaultMedicationForm(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan'));
     setMedicineOptions({});
@@ -698,6 +823,14 @@ const MedicalRecord = () => {
     setMedicineSearchQuery({});
     setMedicineSearchLoading({});
     setEditingPrescriptionNo(null);
+  };
+
+  const resetCompoundForm = () => {
+    setCompoundPrescriptions([createDefaultCompoundPrescription()]);
+    setCompoundMedicineOptions({});
+    setCompoundMedicineSearchOpen({});
+    setCompoundMedicineSearchQuery({});
+    setCompoundMedicineSearchLoading({});
   };
 
   const addMedication = () => {
@@ -869,14 +1002,7 @@ const MedicalRecord = () => {
   };
 
   const addCompoundPrescription = () => {
-    setCompoundPrescriptions([...compoundPrescriptions, {
-      tanggal: '',
-      nama_racikan: '',
-      komposisi: [{
-        nama: '',
-        jumlah: ''
-      }]
-    }]);
+    setCompoundPrescriptions([...compoundPrescriptions, createDefaultCompoundPrescription()]);
   };
 
   const removeCompoundPrescription = (index: number) => {
@@ -885,7 +1011,7 @@ const MedicalRecord = () => {
 
   const addRacikanMedicine = (prescriptionIndex: number) => {
     const newPrescriptions = [...compoundPrescriptions];
-    newPrescriptions[prescriptionIndex].komposisi.push({ nama: '', jumlah: '' });
+    newPrescriptions[prescriptionIndex].komposisi.push(createEmptyRacikanMedicine());
     setCompoundPrescriptions(newPrescriptions);
   };
 
@@ -1031,6 +1157,39 @@ const MedicalRecord = () => {
       setMedicineOptions((previous) => ({ ...previous, [key]: [] }));
     } finally {
       setMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
+    }
+  }, []);
+
+  const fetchCompoundMedicineOptions = useCallback(async (compoundIndex: number, racikanIndex: number, searchText = '') => {
+    const key = getCompoundMedicineFieldKey(compoundIndex, racikanIndex);
+
+    try {
+      setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: true }));
+
+      const params = new URLSearchParams({
+        action: 'search_medicines',
+        search: searchText,
+        limit: '20'
+      });
+
+      const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setCompoundMedicineOptions((previous) => ({
+        ...previous,
+        [key]: responseJson.data || []
+      }));
+    } catch (error) {
+      console.error('Error fetching compound medicine options:', error);
+      setCompoundMedicineOptions((previous) => ({ ...previous, [key]: [] }));
+    } finally {
+      setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
   }, []);
 
@@ -2962,6 +3121,97 @@ const MedicalRecord = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 md:p-4">
+              {formattedNoRawat && (
+                <div className="space-y-4 mb-6">
+                  <div>
+                    <h3 className="text-lg font-semibold">Grafik Tanda Vital</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Tren tanda vital berdasarkan nomor rawat {formattedNoRawat}
+                    </p>
+                  </div>
+
+                  {vitalChartData.length > 0 ? (
+                    <div className="border rounded-lg p-4 bg-card space-y-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <h4 className="font-medium">Tren Tanda-Tanda Vital</h4>
+                          <p className="text-xs text-muted-foreground">
+                            Tampilkan atau sembunyikan jenis TTV sesuai kebutuhan
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {vitalChartSeries.map((series) => {
+                            const hasData = vitalChartData.some((item) => item[series.key] !== null);
+
+                            return (
+                              <Button
+                                key={series.key}
+                                type="button"
+                                variant={visibleVitalSeries[series.key] ? 'default' : 'outline'}
+                                size="sm"
+                                disabled={!hasData}
+                                onClick={() => setVisibleVitalSeries((previous) => ({
+                                  ...previous,
+                                  [series.key]: !previous[series.key]
+                                }))}
+                                className="gap-2"
+                              >
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full"
+                                  style={{ backgroundColor: series.color }}
+                                />
+                                {series.title}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {activeVitalSeries.some((series) => vitalChartData.some((item) => item[series.key] !== null)) ? (
+                        <ResponsiveContainer width="100%" height={340}>
+                          <LineChart data={vitalChartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="label" tick={{ fontSize: 12 }} minTickGap={24} />
+                            <YAxis tick={{ fontSize: 12 }} width={40} />
+                            <Tooltip
+                              labelFormatter={(label, payload) => {
+                                const point = payload?.[0]?.payload;
+                                return point ? `${point.fullDate} ${point.fullTime}` : label;
+                              }}
+                              formatter={(value: number | string | Array<number | string>, name: string) => {
+                                const activeSeries = vitalChartSeries.find((series) => series.title === name);
+                                return [`${value} ${activeSeries?.unit || ''}`.trim(), name];
+                              }}
+                            />
+                            <Legend />
+                            {activeVitalSeries.map((series) => (
+                              <Line
+                                key={series.key}
+                                type="monotone"
+                                dataKey={series.key}
+                                name={series.title}
+                                stroke={series.color}
+                                strokeWidth={2}
+                                dot={{ r: 3 }}
+                                connectNulls
+                              />
+                            ))}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-[340px] flex items-center justify-center text-sm text-muted-foreground border border-dashed rounded-md">
+                          Pilih minimal satu jenis TTV yang memiliki data untuk ditampilkan.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+                      Belum ada data pemeriksaan untuk ditampilkan pada grafik tanda vital.
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Form Tambah Pemeriksaan */}
               <Collapsible open={isExaminationFormOpen} onOpenChange={setIsExaminationFormOpen}>
                 <div className="border rounded-lg p-4 mb-6 bg-muted/30">
@@ -3752,7 +4002,7 @@ const MedicalRecord = () => {
                               {medication.tanggal ? format(new Date(medication.tanggal), "dd/MM/yyyy") : "Pilih tanggal resep"}
                             </Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
+                          <PopoverContent className="w-96 p-0" align="start">
                             <CalendarComponent
                               mode="single"
                               selected={medication.tanggal ? new Date(medication.tanggal) : undefined}
@@ -4005,19 +4255,36 @@ const MedicalRecord = () => {
                          </Button>
                        )}
                      </div>
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                        <div>
                          <Label htmlFor={`racikan-date-${compoundIndex}`}>Tanggal Resep</Label>
-                         <Input 
-                           id={`racikan-date-${compoundIndex}`} 
-                           type="datetime-local"
-                           value={compound.tanggal}
-                           onChange={(e) => {
-                             const newPrescriptions = [...compoundPrescriptions];
-                             newPrescriptions[compoundIndex].tanggal = e.target.value;
-                             setCompoundPrescriptions(newPrescriptions);
-                           }}
-                         />
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              id={`racikan-date-${compoundIndex}`}
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {compound.tanggal ? format(new Date(compound.tanggal), "dd/MM/yyyy") : "Pilih tanggal resep"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-96 p-0" align="start">
+                            <CalendarComponent
+                              mode="single"
+                              selected={compound.tanggal ? new Date(compound.tanggal) : undefined}
+                              onSelect={(date) => {
+                                if (!date) return;
+                                setCompoundPrescriptions((previous) => previous.map((item, index) => (
+                                  index === compoundIndex
+                                    ? { ...item, tanggal: format(date, 'yyyy-MM-dd') }
+                                    : item
+                                )));
+                              }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
                        </div>
                        <div>
                          <Label htmlFor={`racikan-nama-${compoundIndex}`}>Nama Racikan</Label>
@@ -4036,20 +4303,101 @@ const MedicalRecord = () => {
 
                  <div className="space-y-4">
                    <h5 className="font-medium text-blue-700">Komposisi Racikan:</h5>
-                   {compound.komposisi.map((racikan, racikanIndex) => (
-                     <div key={racikanIndex} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-3 border rounded bg-blue-50/30">
-                       <div>
+                  {compound.komposisi.map((racikan, racikanIndex) => {
+                    const fieldKey = getCompoundMedicineFieldKey(compoundIndex, racikanIndex);
+
+                    return (
+                    <div key={racikanIndex} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-3 border rounded bg-blue-50/30">
+                      <div>
                          <Label htmlFor={`racikan-obat-${compoundIndex}-${racikanIndex}`}>Nama Obat</Label>
-                         <Input 
-                           id={`racikan-obat-${compoundIndex}-${racikanIndex}`}
-                           placeholder="Nama obat"
-                           value={racikan.nama}
-                           onChange={(e) => {
-                             const newPrescriptions = [...compoundPrescriptions];
-                             newPrescriptions[compoundIndex].komposisi[racikanIndex].nama = e.target.value;
-                             setCompoundPrescriptions(newPrescriptions);
-                           }}
-                         />
+                        <Popover
+                          open={!!compoundMedicineSearchOpen[fieldKey]}
+                          onOpenChange={(open) => {
+                            setCompoundMedicineSearchOpen((previous) => ({ ...previous, [fieldKey]: open }));
+                            if (open) {
+                              const currentSearch = compoundMedicineSearchQuery[fieldKey] ?? racikan.nama ?? '';
+                              void fetchCompoundMedicineOptions(compoundIndex, racikanIndex, currentSearch);
+                            }
+                          }}
+                        >
+                          <PopoverTrigger asChild>
+                            <Button
+                              id={`racikan-obat-${compoundIndex}-${racikanIndex}`}
+                              variant="outline"
+                              role="combobox"
+                              className="w-full justify-between"
+                              aria-expanded={!!compoundMedicineSearchOpen[fieldKey]}
+                            >
+                              <span className="truncate text-left">
+                                {racikan.nama || 'Cari dan pilih obat'}
+                              </span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[350px] p-0 md:w-[500px]" align="start">
+                            <Command shouldFilter={false}>
+                              <CommandInput
+                                placeholder="Cari kode atau nama obat..."
+                                value={compoundMedicineSearchQuery[fieldKey] ?? racikan.nama}
+                                onValueChange={(value) => {
+                                  setCompoundMedicineSearchQuery((previous) => ({ ...previous, [fieldKey]: value }));
+                                  void fetchCompoundMedicineOptions(compoundIndex, racikanIndex, value);
+                                }}
+                              />
+                              <CommandList>
+                                <CommandEmpty>
+                                  {compoundMedicineSearchLoading[fieldKey] ? 'Mencari obat...' : 'Tidak ada obat ditemukan.'}
+                                </CommandEmpty>
+                                <CommandGroup>
+                                  {(compoundMedicineOptions[fieldKey] || []).map((option) => (
+                                    <CommandItem
+                                      key={`${option.kode_brng}-${fieldKey}`}
+                                      value={`${option.kode_brng} ${option.nama_brng}`}
+                                      onSelect={() => {
+                                        updateCompoundMedicineItem(compoundIndex, racikanIndex, {
+                                          kode_brng: option.kode_brng,
+                                          nama: option.nama_brng,
+                                          satuan: option.satuan || '',
+                                          stok: Number(option.stok) || 0
+                                        });
+                                        setCompoundMedicineSearchQuery((previous) => ({
+                                          ...previous,
+                                          [fieldKey]: option.nama_brng
+                                        }));
+                                        setCompoundMedicineSearchOpen((previous) => ({
+                                          ...previous,
+                                          [fieldKey]: false
+                                        }));
+                                      }}
+                                    >
+                                      <Check
+                                        className={cn(
+                                          "mr-2 h-4 w-4",
+                                          racikan.kode_brng === option.kode_brng ? "opacity-100" : "opacity-0"
+                                        )}
+                                      />
+                                      <div className="flex flex-col">
+                                        <span>{option.nama_brng}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {option.kode_brng}
+                                          {option.satuan ? ` • ${option.satuan}` : ''}
+                                          {typeof option.stok === 'number' ? ` • Stok ${option.stok}` : ''}
+                                        </span>
+                                      </div>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        {(racikan.kode_brng || racikan.stok) ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {racikan.kode_brng || '-'}
+                            {racikan.satuan ? ` • ${racikan.satuan}` : ''}
+                            {typeof racikan.stok === 'number' ? ` • Stok ${racikan.stok}` : ''}
+                          </p>
+                        ) : null}
                        </div>
                        <div>
                          <Label htmlFor={`racikan-jumlah-${compoundIndex}-${racikanIndex}`}>Jumlah/Dosis</Label>
@@ -4057,11 +4405,7 @@ const MedicalRecord = () => {
                            id={`racikan-jumlah-${compoundIndex}-${racikanIndex}`}
                            placeholder="mg/ml"
                            value={racikan.jumlah}
-                           onChange={(e) => {
-                             const newPrescriptions = [...compoundPrescriptions];
-                             newPrescriptions[compoundIndex].komposisi[racikanIndex].jumlah = e.target.value;
-                             setCompoundPrescriptions(newPrescriptions);
-                           }}
+                          onChange={(e) => updateCompoundMedicineItem(compoundIndex, racikanIndex, { jumlah: e.target.value })}
                          />
                        </div>
                        <div className="flex items-end">
@@ -4072,7 +4416,8 @@ const MedicalRecord = () => {
                          )}
                        </div>
                      </div>
-                   ))}
+                    );
+                  })}
                    <Button variant="outline" size="sm" onClick={() => addRacikanMedicine(compoundIndex)}>
                      <Plus className="h-4 w-4 mr-2" />
                      Tambah Komposisi
@@ -4087,7 +4432,7 @@ const MedicalRecord = () => {
                  Tambah Resep Racikan
                </Button>
                <div className="flex space-x-2">
-                 <Button variant="outline">Reset</Button>
+                <Button variant="outline" onClick={resetCompoundForm}>Reset</Button>
                  <Button onClick={() => handleSaveForm('Resep Racikan')} className="bg-blue-600 hover:bg-blue-700">
                    Simpan Resep Racikan
                  </Button>
@@ -4618,17 +4963,33 @@ const MedicalRecord = () => {
                                     </div>
                                   )) :
                                   Array.isArray((item.content as any).pemeriksaan) && (item.content as any).pemeriksaan.length > 0 ? (
-                                    (item.content as any).pemeriksaan.map((test: any, testIndex: number) => (
-                                      <div
-                                        key={testIndex}
-                                        className={cn(
-                                          "text-sm rounded px-2 py-1",
-                                          test.keterangan === 'H' && "bg-red-100 text-red-900",
-                                          test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
-                                        )}
-                                      >
-                                        <span className="font-medium">{test.nama || '-'}</span>: {test.hasil || '-'} ({test.rujukan || '-'})
-                                        {test.keterangan ? ` - ${test.keterangan}` : ''}
+                                    Object.entries(
+                                      ((item.content as any).pemeriksaan as LabTest[]).reduce<Record<string, LabTest[]>>((groups, test) => {
+                                        const key = test.nama?.trim() || '-';
+                                        if (!groups[key]) {
+                                          groups[key] = [];
+                                        }
+                                        groups[key].push(test);
+                                        return groups;
+                                      }, {})
+                                    ).map(([groupName, tests], groupIndex) => (
+                                      <div key={`${groupName}-${groupIndex}`} className="mb-2 rounded border bg-background p-2">
+                                        <p className="font-semibold text-primary">{groupName}</p>
+                                        <div className="mt-2 space-y-1">
+                                          {tests.map((test, testIndex) => (
+                                            <div
+                                              key={`${groupName}-${testIndex}`}
+                                              className={cn(
+                                                "text-sm rounded px-2 py-1",
+                                                test.keterangan === 'H' && "bg-red-100 text-red-900",
+                                                test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                                              )}
+                                            >
+                                              <span className="font-medium">{test.pemeriksaan || '-'}</span>: {test.hasil || '-'} ({test.rujukan || '-'})
+                                              {test.keterangan ? ` - ${test.keterangan}` : ''}
+                                            </div>
+                                          ))}
+                                        </div>
                                       </div>
                                     ))
                                   ) : (
@@ -4862,30 +5223,49 @@ const MedicalRecord = () => {
                               <div className="space-y-2">
                                 <h4 className="font-medium">Pemeriksaan:</h4>
                                 {Array.isArray(labGroup.pemeriksaan) && labGroup.pemeriksaan.length > 0 ? (
-                                  labGroup.pemeriksaan.map((test, testIndex) => (
-                                    <div
-                                      key={testIndex}
-                                      className={cn(
-                                        "grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2",
-                                        test.keterangan === 'H' && "bg-red-100 text-red-900",
-                                        test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
-                                      )}
-                                    >
+                                  Object.entries(
+                                    labGroup.pemeriksaan.reduce<Record<string, LabTest[]>>((groups, test) => {
+                                      const key = test.nama?.trim() || '-';
+                                      if (!groups[key]) {
+                                        groups[key] = [];
+                                      }
+                                      groups[key].push(test);
+                                      return groups;
+                                    }, {})
+                                  ).map(([groupName, tests], groupIdx) => (
+                                    <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
                                       <div>
                                         <p className="text-sm text-muted-foreground">Nama</p>
-                                        <p className="font-medium">{test.nama || '-'}</p>
+                                        <p className="font-semibold">{groupName}</p>
                                       </div>
-                                      <div>
-                                        <p className="text-sm text-muted-foreground">Hasil</p>
-                                        <p className="font-medium">{test.hasil || '-'}</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-sm text-muted-foreground">Rujukan</p>
-                                        <p className="font-medium">{test.rujukan || '-'}</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-sm text-muted-foreground">Keterangan</p>
-                                        <p className="font-medium">{test.keterangan || '-'}</p>
+                                      <div className="space-y-2">
+                                        {tests.map((test, testIndex) => (
+                                          <div
+                                            key={`${groupName}-${testIndex}`}
+                                            className={cn(
+                                              "grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2 bg-background",
+                                              test.keterangan === 'H' && "bg-red-100 text-red-900",
+                                              test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                                            )}
+                                          >
+                                            <div>
+                                              <p className="text-sm text-muted-foreground">Pemeriksaan</p>
+                                              <p className="font-medium">{test.pemeriksaan || '-'}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-sm text-muted-foreground">Hasil</p>
+                                              <p className="font-medium">{test.hasil || '-'}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-sm text-muted-foreground">Rujukan</p>
+                                              <p className="font-medium">{test.rujukan || '-'}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-sm text-muted-foreground">Keterangan</p>
+                                              <p className="font-medium">{test.keterangan || '-'}</p>
+                                            </div>
+                                          </div>
+                                        ))}
                                       </div>
                                     </div>
                                   ))

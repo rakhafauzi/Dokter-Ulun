@@ -315,12 +315,17 @@ class GetMedicalRecordService {
   // Helper function to fetch lab results
   static async fetchLaboratory(noRawat) {
     const labQuery = `
-      SELECT pl.*, jp.nm_perawatan, dpl.nilai, dpl.nilai_rujukan, dpl.keterangan
+      SELECT pl.*, jp.nm_perawatan, dpl.nilai, dpl.nilai_rujukan, dpl.keterangan, tl.Pemeriksaan AS pemeriksaan
       FROM periksa_lab pl 
       LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw 
-      LEFT JOIN detail_periksa_lab dpl ON pl.no_rawat = dpl.no_rawat AND pl.kd_jenis_prw = dpl.kd_jenis_prw 
+      LEFT JOIN detail_periksa_lab dpl
+        ON pl.no_rawat = dpl.no_rawat
+        AND pl.kd_jenis_prw = dpl.kd_jenis_prw
+        AND pl.tgl_periksa = dpl.tgl_periksa
+        AND pl.jam = dpl.jam
+      LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
       WHERE pl.no_rawat = ? 
-      ORDER BY pl.tgl_periksa, pl.jam
+      ORDER BY pl.tgl_periksa, pl.jam, tl.Pemeriksaan
     `;
     const [rows] = await db.execute(labQuery, [noRawat]);
     
@@ -333,6 +338,7 @@ class GetMedicalRecordService {
       if (row.nm_perawatan) {
         labsByDate[dateKey].push({
           nama: row.nm_perawatan,
+          pemeriksaan: row.pemeriksaan || '',
           hasil: row.nilai || '',
           rujukan: row.nilai_rujukan || '',
           keterangan: row.keterangan || ''

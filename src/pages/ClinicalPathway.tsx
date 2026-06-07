@@ -10,10 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Save, Printer, User, Calendar, DollarSign, Target, AlertTriangle, Activity, Stethoscope, Plus, X, Database, Brain, Search, Filter, ArrowUp, ArrowDown, Clipboard } from 'lucide-react';
+import { FileText, Save, Printer, User, Calendar, DollarSign, Target, AlertTriangle, Activity, Stethoscope, Plus, X, Database, Brain, Search, Clipboard } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { PaginationControls } from '@/components/PaginationControls';
-import { usePagination } from '@/hooks/usePagination';
 import { API_URLS } from '@/config/api';
 
 interface PathwayItem {
@@ -25,6 +23,27 @@ interface PathwayItem {
     variance?: string;
   }[];
 }
+
+interface IcdEntry {
+  code: string;
+  description: string;
+  snomedCode?: string;
+  snomedTerm?: string;
+}
+
+interface SnomedEntry {
+  kode: string;
+  istilah: string;
+  is_direct_map?: boolean;
+  related_icd_codes?: string;
+}
+
+const createEmptyIcdEntry = (): IcdEntry => ({
+  code: '',
+  description: '',
+  snomedCode: '',
+  snomedTerm: ''
+});
 
 const ClinicalPathway = () => {
   const { toast } = useToast();
@@ -69,22 +88,25 @@ const ClinicalPathway = () => {
   const [varianceNotes, setVarianceNotes] = useState('');
   
   // ICD Codes
-  const [icd10Primary, setIcd10Primary] = useState({ code: '', description: '' });
-  const [icd10Secondary, setIcd10Secondary] = useState([{ code: '', description: '' }]);
-  const [icd9Primary, setIcd9Primary] = useState({ code: '', description: '' });
-  const [icd9Secondary, setIcd9Secondary] = useState([{ code: '', description: '' }]);
+  const [icd10Primary, setIcd10Primary] = useState<IcdEntry>(createEmptyIcdEntry());
+  const [icd10Secondary, setIcd10Secondary] = useState<IcdEntry[]>([createEmptyIcdEntry()]);
+  const [icd9Primary, setIcd9Primary] = useState<IcdEntry>(createEmptyIcdEntry());
+  const [icd9Secondary, setIcd9Secondary] = useState<IcdEntry[]>([createEmptyIcdEntry()]);
   
   // ICD Modal States
   const [isIcdModalOpen, setIsIcdModalOpen] = useState(false);
-  const [icdModalType, setIcdModalType] = useState<'icd10' | 'icd9'>('icd10');
-  const [icdModalTarget, setIcdModalTarget] = useState<{type: 'icd10Primary' | 'icd10Secondary' | 'icd9Primary' | 'icd9Secondary', index?: number}>({ type: 'icd10Primary' });
-  const [icdSearchQuery, setIcdSearchQuery] = useState('');
-  const [icdSearchResults, setIcdSearchResults] = useState<any[]>([]);
-  const [icdLoading, setIcdLoading] = useState(false);
-  const [icdHasSearched, setIcdHasSearched] = useState(false);
   const [icdActiveTab, setIcdActiveTab] = useState('icd10');
-  const [icdSortField, setIcdSortField] = useState('code');
-  const [icdSortDirection, setIcdSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [modalIcd10Primary, setModalIcd10Primary] = useState<IcdEntry>(createEmptyIcdEntry());
+  const [modalIcd10Secondary, setModalIcd10Secondary] = useState<IcdEntry[]>([createEmptyIcdEntry()]);
+  const [modalIcd9Primary, setModalIcd9Primary] = useState<IcdEntry>(createEmptyIcdEntry());
+  const [modalIcd9Secondary, setModalIcd9Secondary] = useState<IcdEntry[]>([createEmptyIcdEntry()]);
+  const [icdSearchQueryByKey, setIcdSearchQueryByKey] = useState<Record<string, string>>({});
+  const [icdSearchResultsByKey, setIcdSearchResultsByKey] = useState<Record<string, any[]>>({});
+  const [icdLoadingByKey, setIcdLoadingByKey] = useState<Record<string, boolean>>({});
+  const [snomedSearchQueryByKey, setSnomedSearchQueryByKey] = useState<Record<string, string>>({});
+  const [snomedSearchResultsByKey, setSnomedSearchResultsByKey] = useState<Record<string, SnomedEntry[]>>({});
+  const [snomedLoadingByKey, setSnomedLoadingByKey] = useState<Record<string, boolean>>({});
+  const [snomedHasSearchedByKey, setSnomedHasSearchedByKey] = useState<Record<string, boolean>>({});
   
   // Data Mining Modal States
   const [isDataMiningModalOpen, setIsDataMiningModalOpen] = useState(false);
@@ -93,10 +115,6 @@ const ClinicalPathway = () => {
   // AI Generation Modal States
   const [isAIGenerationModalOpen, setIsAIGenerationModalOpen] = useState(false);
   const [aiGenerationResults, setAIGenerationResults] = useState<any>(null);
-  
-  const { paginationState: icdPaginationState, handlePageChange: handleIcdPageChange, handleItemsPerPageChange: handleIcdItemsPerPageChange, updatePagination: updateIcdPagination } = usePagination({
-    initialItemsPerPage: 10
-  });
   
   // Verifikasi
   const [doctorSignature, setDoctorSignature] = useState('');
@@ -291,7 +309,7 @@ const ClinicalPathway = () => {
 
   // ICD Helper Functions
   const addIcdEntry = (type: 'icd10Secondary' | 'icd9Secondary') => {
-    const newEntry = { code: '', description: '' };
+    const newEntry: IcdEntry = createEmptyIcdEntry();
     switch (type) {
       case 'icd10Secondary':
         setIcd10Secondary([...icd10Secondary, newEntry]);
@@ -342,44 +360,49 @@ const ClinicalPathway = () => {
     }
   };
 
-  // ICD Modal Functions
-  const openIcdModal = (type: 'icd10Primary' | 'icd10Secondary' | 'icd9Primary' | 'icd9Secondary', index?: number) => {
-    setIcdModalTarget({ type, index });
-    setIcdModalType(type.startsWith('icd10') ? 'icd10' : 'icd9');
+  const getIcdFieldKey = (icdType: 'icd10' | 'icd9', slot: 'primary' | 'secondary', index?: number) => (
+    `${icdType}-${slot}-${index ?? 0}`
+  );
+
+  const openIcdModal = (type: 'icd10Primary' | 'icd10Secondary' | 'icd9Primary' | 'icd9Secondary') => {
     setIcdActiveTab(type.startsWith('icd10') ? 'icd10' : 'icd9');
+    setModalIcd10Primary({ ...icd10Primary });
+    setModalIcd10Secondary(icd10Secondary.length ? icd10Secondary.map((entry) => ({ ...entry })) : [createEmptyIcdEntry()]);
+    setModalIcd9Primary({ ...icd9Primary });
+    setModalIcd9Secondary(icd9Secondary.length ? icd9Secondary.map((entry) => ({ ...entry })) : [createEmptyIcdEntry()]);
+    setIcdSearchQueryByKey({});
+    setIcdSearchResultsByKey({});
+    setIcdLoadingByKey({});
+    setSnomedSearchQueryByKey({});
+    setSnomedSearchResultsByKey({});
+    setSnomedLoadingByKey({});
+    setSnomedHasSearchedByKey({});
     setIsIcdModalOpen(true);
-    setIcdSearchQuery('');
-    setIcdSearchResults([]);
-    setIcdHasSearched(false);
-    updateIcdPagination({ page: 1 });
   };
 
-  const fetchIcdData = async (icdType: string, search: string = '') => {
-    setIcdLoading(true);
+  const fetchIcdOptions = async (fieldKey: string, icdType: 'icd10' | 'icd9', search: string = '') => {
+    setIcdLoadingByKey((previous) => ({ ...previous, [fieldKey]: true }));
     try {
       const response = await fetch(API_URLS.ICD_DATA, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          page: icdPaginationState.currentPage,
-          itemsPerPage: icdPaginationState.itemsPerPage,
-          search: search,
-          icdType: icdType
+          page: 1,
+          itemsPerPage: 20,
+          search,
+          icdType
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
-      setIcdSearchResults(data.data || []);
-      updateIcdPagination({
-        total: data.total,
-        totalPages: data.totalPages
-      });
-      setIcdHasSearched(true);
+      setIcdSearchResultsByKey((previous) => ({
+        ...previous,
+        [fieldKey]: data.data || []
+      }));
     } catch (error) {
       console.error('Error fetching ICD data:', error);
       toast({
@@ -387,109 +410,406 @@ const ClinicalPathway = () => {
         description: "Gagal memuat data ICD",
         variant: "destructive"
       });
-      setIcdSearchResults([]);
-      setIcdHasSearched(true);
+      setIcdSearchResultsByKey((previous) => ({
+        ...previous,
+        [fieldKey]: []
+      }));
     } finally {
-      setIcdLoading(false);
+      setIcdLoadingByKey((previous) => ({ ...previous, [fieldKey]: false }));
     }
   };
 
-  const handleIcdSearch = () => {
-    updateIcdPagination({ page: 1 });
-    fetchIcdData(icdActiveTab, icdSearchQuery);
+  const fetchSnomedOptions = async (
+    fieldKey: string,
+    relatedIcdCode: string,
+    relatedIcdType: 'icd10' | 'icd9',
+    search: string = ''
+  ) => {
+    setSnomedLoadingByKey((previous) => ({ ...previous, [fieldKey]: true }));
+    try {
+      const response = await fetch(API_URLS.ICD_DATA, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page: 1,
+          itemsPerPage: 20,
+          search,
+          icdType: 'snomed',
+          relatedIcdCode,
+          relatedIcdType
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setSnomedSearchResultsByKey((previous) => ({
+        ...previous,
+        [fieldKey]: data.data || []
+      }));
+      setSnomedHasSearchedByKey((previous) => ({
+        ...previous,
+        [fieldKey]: true
+      }));
+    } catch (error) {
+      console.error('Error fetching SNOMED data:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memuat data SNOMED-CT",
+        variant: "destructive"
+      });
+      setSnomedSearchResultsByKey((previous) => ({
+        ...previous,
+        [fieldKey]: []
+      }));
+      setSnomedHasSearchedByKey((previous) => ({
+        ...previous,
+        [fieldKey]: true
+      }));
+    } finally {
+      setSnomedLoadingByKey((previous) => ({ ...previous, [fieldKey]: false }));
+    }
   };
 
-  const handleIcdClearSearch = () => {
-    setIcdSearchQuery('');
-    setIcdSearchResults([]);
-    setIcdHasSearched(false);
-    updateIcdPagination({ page: 1 });
-  };
-  
   const handleIcdTabChange = (value: string) => {
     setIcdActiveTab(value);
-    setIcdSearchResults([]);
-    setIcdHasSearched(false);
-    setIcdSearchQuery('');
-    updateIcdPagination({ page: 1 });
   };
 
-  const handleIcdSelect = (item: any) => {
-    const { type, index } = icdModalTarget;
-    
-    if (icdActiveTab === 'icd10') {
-      const code = item.kd_penyakit;
-      const description = item.nm_penyakit;
-      
-      if (type === 'icd10Primary') {
-        setIcd10Primary({ code, description });
-      } else if (type === 'icd10Secondary' && index !== undefined) {
-        const newIcd10Secondary = [...icd10Secondary];
-        newIcd10Secondary[index] = { code, description };
-        setIcd10Secondary(newIcd10Secondary);
-      }
-    } else {
-      const code = item.kode;
-      const description = item.deskripsi_pendek;
-      
-      if (type === 'icd9Primary') {
-        setIcd9Primary({ code, description });
-      } else if (type === 'icd9Secondary' && index !== undefined) {
-        const newIcd9Secondary = [...icd9Secondary];
-        newIcd9Secondary[index] = { code, description };
-        setIcd9Secondary(newIcd9Secondary);
-      }
+  const updateModalEntry = (
+    icdType: 'icd10' | 'icd9',
+    slot: 'primary' | 'secondary',
+    index: number | undefined,
+    updater: (entry: IcdEntry) => IcdEntry
+  ) => {
+    if (icdType === 'icd10' && slot === 'primary') {
+      setModalIcd10Primary((previous) => updater(previous));
+      return;
     }
-    
+
+    if (icdType === 'icd10' && slot === 'secondary' && index !== undefined) {
+      setModalIcd10Secondary((previous) => previous.map((entry, entryIndex) => (
+        entryIndex === index ? updater(entry) : entry
+      )));
+      return;
+    }
+
+    if (icdType === 'icd9' && slot === 'primary') {
+      setModalIcd9Primary((previous) => updater(previous));
+      return;
+    }
+
+    if (icdType === 'icd9' && slot === 'secondary' && index !== undefined) {
+      setModalIcd9Secondary((previous) => previous.map((entry, entryIndex) => (
+        entryIndex === index ? updater(entry) : entry
+      )));
+    }
+  };
+
+  const addModalIcdEntry = (icdType: 'icd10' | 'icd9') => {
+    if (icdType === 'icd10') {
+      setModalIcd10Secondary((previous) => [...previous, createEmptyIcdEntry()]);
+      return;
+    }
+
+    setModalIcd9Secondary((previous) => [...previous, createEmptyIcdEntry()]);
+  };
+
+  const removeModalIcdEntry = (icdType: 'icd10' | 'icd9', index: number) => {
+    if (icdType === 'icd10') {
+      if (modalIcd10Secondary.length > 1) {
+        setModalIcd10Secondary((previous) => previous.filter((_, entryIndex) => entryIndex !== index));
+      }
+      return;
+    }
+
+    if (modalIcd9Secondary.length > 1) {
+      setModalIcd9Secondary((previous) => previous.filter((_, entryIndex) => entryIndex !== index));
+    }
+  };
+
+  const handleModalIcdSelection = (
+    icdType: 'icd10' | 'icd9',
+    slot: 'primary' | 'secondary',
+    index: number | undefined,
+    item: any
+  ) => {
+    const fieldKey = getIcdFieldKey(icdType, slot, index);
+    const code = icdType === 'icd10' ? item.kd_penyakit : item.kode;
+    const description = icdType === 'icd10' ? item.nm_penyakit : item.deskripsi_pendek;
+
+    updateModalEntry(icdType, slot, index, (previous) => ({
+      ...previous,
+      code,
+      description,
+      snomedCode: '',
+      snomedTerm: ''
+    }));
+
+    setIcdSearchQueryByKey((previous) => ({ ...previous, [fieldKey]: description }));
+    setSnomedSearchQueryByKey((previous) => ({ ...previous, [fieldKey]: '' }));
+    void fetchSnomedOptions(fieldKey, code, icdType, '');
+  };
+
+  const handleModalSnomedSelection = (
+    icdType: 'icd10' | 'icd9',
+    slot: 'primary' | 'secondary',
+    index: number | undefined,
+    item: SnomedEntry
+  ) => {
+    updateModalEntry(icdType, slot, index, (previous) => ({
+      ...previous,
+      snomedCode: item.kode,
+      snomedTerm: item.istilah
+    }));
+  };
+
+  const handleModalSnomedClear = (
+    icdType: 'icd10' | 'icd9',
+    slot: 'primary' | 'secondary',
+    index: number | undefined
+  ) => {
+    const fieldKey = getIcdFieldKey(icdType, slot, index);
+    updateModalEntry(icdType, slot, index, (previous) => ({
+      ...previous,
+      snomedCode: '',
+      snomedTerm: ''
+    }));
+    setSnomedSearchQueryByKey((previous) => ({ ...previous, [fieldKey]: '' }));
+    setSnomedSearchResultsByKey((previous) => ({ ...previous, [fieldKey]: [] }));
+    setSnomedHasSearchedByKey((previous) => ({ ...previous, [fieldKey]: false }));
+  };
+
+  const handleSaveIcdModal = () => {
+    setIcd10Primary({ ...modalIcd10Primary });
+    setIcd10Secondary(modalIcd10Secondary.length ? modalIcd10Secondary.map((entry) => ({ ...entry })) : [createEmptyIcdEntry()]);
+    setIcd9Primary({ ...modalIcd9Primary });
+    setIcd9Secondary(modalIcd9Secondary.length ? modalIcd9Secondary.map((entry) => ({ ...entry })) : [createEmptyIcdEntry()]);
     setIsIcdModalOpen(false);
     toast({
       title: "Berhasil",
-      description: "Kode ICD berhasil dipilih",
+      description: "Data ICD dan SNOMED-CT berhasil disimpan ke form",
     });
   };
 
-  const handleIcdSort = (field: string) => {
-    if (icdSortField === field) {
-      setIcdSortDirection(icdSortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setIcdSortField(field);
-      setIcdSortDirection('asc');
-    }
-    
-    const sorted = [...icdSearchResults].sort((a, b) => {
-      let aValue, bValue;
-      
-      if (field === 'code') {
-        aValue = icdActiveTab === 'icd10' ? a.kd_penyakit : a.kode;
-        bValue = icdActiveTab === 'icd10' ? b.kd_penyakit : b.kode;
-      } else if (field === 'name_id') {
-        aValue = icdActiveTab === 'icd10' ? a.nm_penyakit : a.deskripsi_pendek;
-        bValue = icdActiveTab === 'icd10' ? b.nm_penyakit : b.deskripsi_pendek;
-      } else {
-        aValue = a[field];
-        bValue = b[field];
-      }
-      
-      if (icdSortDirection === 'asc') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
-    
-    setIcdSearchResults(sorted);
-  };
+  const renderIcdManagerSection = (
+    icdType: 'icd10' | 'icd9',
+    title: string,
+    primaryEntry: IcdEntry,
+    secondaryEntries: IcdEntry[]
+  ) => {
+    const renderEntryBlock = (
+      slot: 'primary' | 'secondary',
+      entry: IcdEntry,
+      index?: number
+    ) => {
+      const fieldKey = getIcdFieldKey(icdType, slot, index);
+      const icdOptions = icdSearchResultsByKey[fieldKey] || [];
+      const snomedOptions = snomedSearchResultsByKey[fieldKey] || [];
+      const searchQuery = icdSearchQueryByKey[fieldKey] || '';
+      const snomedQuery = snomedSearchQueryByKey[fieldKey] || '';
+      const isIcdLoading = Boolean(icdLoadingByKey[fieldKey]);
+      const isSnomedLoading = Boolean(snomedLoadingByKey[fieldKey]);
+      const hasSnomedResults = Boolean(snomedHasSearchedByKey[fieldKey]);
 
-  const IcdSortIcon = ({ field }: { field: string }) => {
-    if (field !== icdSortField) return null;
-    return icdSortDirection === 'asc' ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
-  };
+      return (
+        <div key={fieldKey} className="rounded-lg border p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium">
+                {slot === 'primary'
+                  ? `${title} Primer`
+                  : `${title} Sekunder ${typeof index === 'number' ? index + 1 : ''}`.trim()}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Pilih kode {icdType === 'icd10' ? 'ICD-10' : 'ICD-9-CM'} lalu cari SNOMED-CT di bawahnya.
+              </div>
+            </div>
+            {slot === 'secondary' && typeof index === 'number' && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => removeModalIcdEntry(icdType, index)}
+                disabled={secondaryEntries.length === 1}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
 
-  useEffect(() => {
-    if (icdHasSearched) {
-      fetchIcdData(icdActiveTab, icdSearchQuery);
-    }
-  }, [icdPaginationState.currentPage, icdPaginationState.itemsPerPage]);
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <Input
+              placeholder={`Cari ${icdType === 'icd10' ? 'ICD-10' : 'ICD-9-CM'}...`}
+              value={searchQuery}
+              onChange={(e) => setIcdSearchQueryByKey((previous) => ({
+                ...previous,
+                [fieldKey]: e.target.value
+              }))}
+              className="md:col-span-2"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fetchIcdOptions(fieldKey, icdType, searchQuery)}
+              disabled={isIcdLoading}
+            >
+              <Search className="h-4 w-4 mr-2" />
+              {isIcdLoading ? 'Mencari...' : `Cari ${icdType === 'icd10' ? 'ICD-10' : 'ICD-9'}`}
+            </Button>
+            <Select
+              value={entry.code || undefined}
+              onValueChange={(value) => {
+                const selectedItem = icdOptions.find((option) => (
+                  (icdType === 'icd10' ? option.kd_penyakit : option.kode) === value
+                ));
+
+                if (selectedItem) {
+                  handleModalIcdSelection(icdType, slot, index, selectedItem);
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={`Pilih ${icdType === 'icd10' ? 'ICD-10' : 'ICD-9-CM'}`} />
+              </SelectTrigger>
+              <SelectContent>
+                {icdOptions.length > 0 ? (
+                  icdOptions.map((option, optionIndex) => {
+                    const code = icdType === 'icd10' ? option.kd_penyakit : option.kode;
+                    const description = icdType === 'icd10' ? option.nm_penyakit : option.deskripsi_pendek;
+
+                    return (
+                      <SelectItem key={`${fieldKey}-${code}-${optionIndex}`} value={code}>
+                        {code} - {description}
+                      </SelectItem>
+                    );
+                  })
+                ) : (
+                  <SelectItem value="__empty" disabled>
+                    {searchQuery ? 'Tidak ada hasil, coba cari lagi' : 'Masukkan kata kunci lalu klik cari'}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <Input placeholder="Kode ICD" value={entry.code || ''} readOnly className="bg-muted" />
+            <Input
+              placeholder="Deskripsi ICD"
+              value={entry.description || ''}
+              readOnly
+              className="md:col-span-2 bg-muted"
+            />
+          </div>
+
+          {entry.code && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-4 space-y-4">
+              <div>
+                <div className="font-medium">Pencarian SNOMED-CT</div>
+                <div className="text-sm text-muted-foreground">
+                  Data SNOMED-CT akan disimpan bersama kode {icdType === 'icd10' ? 'ICD-10' : 'ICD-9-CM'} yang dipilih.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <Input
+                  placeholder="Cari kode atau istilah SNOMED-CT"
+                  value={snomedQuery}
+                  onChange={(e) => setSnomedSearchQueryByKey((previous) => ({
+                    ...previous,
+                    [fieldKey]: e.target.value
+                  }))}
+                  className="md:col-span-2"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fetchSnomedOptions(fieldKey, entry.code, icdType, snomedQuery)}
+                  disabled={isSnomedLoading}
+                >
+                  <Search className="h-4 w-4 mr-2" />
+                  {isSnomedLoading ? 'Mencari...' : 'Cari SNOMED'}
+                </Button>
+                <Select
+                  value={entry.snomedCode || undefined}
+                  onValueChange={(value) => {
+                    const selectedItem = snomedOptions.find((option) => option.kode === value);
+                    if (selectedItem) {
+                      handleModalSnomedSelection(icdType, slot, index, selectedItem);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih SNOMED-CT" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {snomedOptions.length > 0 ? (
+                      snomedOptions.map((option, optionIndex) => (
+                        <SelectItem key={`${fieldKey}-snomed-${option.kode}-${optionIndex}`} value={option.kode}>
+                          {option.kode} - {option.istilah}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="__empty-snomed" disabled>
+                        {hasSnomedResults ? 'Tidak ada hasil SNOMED' : 'Pilih ICD lalu cari SNOMED'}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Input placeholder="Kode SNOMED-CT" value={entry.snomedCode || ''} readOnly className="bg-white" />
+                <Input
+                  placeholder="Istilah SNOMED-CT"
+                  value={entry.snomedTerm || ''}
+                  readOnly
+                  className="md:col-span-2 bg-white"
+                />
+              </div>
+
+              {entry.snomedCode && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleModalSnomedClear(icdType, slot, index)}
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Hapus SNOMED
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {renderEntryBlock('primary', primaryEntry)}
+          {secondaryEntries.map((entry, index) => renderEntryBlock('secondary', entry, index))}
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={() => addModalIcdEntry(icdType)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Tambah {title} Sekunder
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   const handleSave = async () => {
     try {
@@ -989,44 +1309,74 @@ const ClinicalPathway = () => {
                     <Search className="h-4 w-4" />
                   </Button>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <Input
+                    placeholder="Kode SNOMED-CT"
+                    value={icd10Primary.snomedCode || ''}
+                    readOnly
+                    className="bg-muted"
+                  />
+                  <Input
+                    placeholder="Istilah SNOMED-CT Diagnosa"
+                    value={icd10Primary.snomedTerm || ''}
+                    readOnly
+                    className="md:col-span-2 bg-muted"
+                  />
+                </div>
               </div>
 
               {/* ICD-10 Secondary */}
               <div>
                 <Label className="text-sm font-semibold mb-3 block">ICD-10 Sekunder</Label>
                 {icd10Secondary.map((icd, index) => (
-                  <div key={index} className="flex gap-2 mb-3">
-                    <Input
-                      placeholder="Kode ICD-10"
-                      value={icd.code}
-                      onChange={(e) => updateIcdEntry('icd10Secondary', index, 'code', e.target.value)}
-                      className="w-32"
-                    />
-                    <Input
-                      placeholder="Deskripsi"
-                      value={icd.description}
-                      onChange={(e) => updateIcdEntry('icd10Secondary', index, 'description', e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openIcdModal('icd10Secondary', index)}
-                      className="px-3"
-                    >
-                      <Search className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeIcdEntry('icd10Secondary', index)}
-                      disabled={icd10Secondary.length === 1}
-                      className="ml-2"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
+                  <div key={index} className="mb-3 rounded-lg border p-3">
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        placeholder="Kode ICD-10"
+                        value={icd.code}
+                        onChange={(e) => updateIcdEntry('icd10Secondary', index, 'code', e.target.value)}
+                        className="w-32"
+                      />
+                      <Input
+                        placeholder="Deskripsi"
+                        value={icd.description}
+                        onChange={(e) => updateIcdEntry('icd10Secondary', index, 'description', e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openIcdModal('icd10Secondary', index)}
+                        className="px-3"
+                      >
+                        <Search className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeIcdEntry('icd10Secondary', index)}
+                        disabled={icd10Secondary.length === 1}
+                        className="ml-2"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <Input
+                        placeholder="Kode SNOMED-CT"
+                        value={icd.snomedCode || ''}
+                        readOnly
+                        className="bg-muted"
+                      />
+                      <Input
+                        placeholder="Istilah SNOMED-CT Diagnosa"
+                        value={icd.snomedTerm || ''}
+                        readOnly
+                        className="md:col-span-2 bg-muted"
+                      />
+                    </div>
                   </div>
                 ))}
                 <Button
@@ -1072,44 +1422,74 @@ const ClinicalPathway = () => {
                     <Search className="h-4 w-4" />
                   </Button>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <Input
+                    placeholder="Kode SNOMED-CT"
+                    value={icd9Primary.snomedCode || ''}
+                    readOnly
+                    className="bg-muted"
+                  />
+                  <Input
+                    placeholder="Istilah SNOMED-CT"
+                    value={icd9Primary.snomedTerm || ''}
+                    readOnly
+                    className="md:col-span-2 bg-muted"
+                  />
+                </div>
               </div>
 
               {/* ICD-9 Secondary */}
               <div>
                 <Label className="text-sm font-semibold mb-3 block">ICD-9 Sekunder</Label>
                 {icd9Secondary.map((icd, index) => (
-                  <div key={index} className="flex gap-2 mb-3">
-                    <Input
-                      placeholder="Kode ICD-9"
-                      value={icd.code}
-                      onChange={(e) => updateIcdEntry('icd9Secondary', index, 'code', e.target.value)}
-                      className="w-32"
-                    />
-                    <Input
-                      placeholder="Deskripsi"
-                      value={icd.description}
-                      onChange={(e) => updateIcdEntry('icd9Secondary', index, 'description', e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openIcdModal('icd9Secondary', index)}
-                      className="px-3"
-                    >
-                      <Search className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeIcdEntry('icd9Secondary', index)}
-                      disabled={icd9Secondary.length === 1}
-                      className="ml-2"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
+                  <div key={index} className="mb-3 rounded-lg border p-3">
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        placeholder="Kode ICD-9"
+                        value={icd.code}
+                        onChange={(e) => updateIcdEntry('icd9Secondary', index, 'code', e.target.value)}
+                        className="w-32"
+                      />
+                      <Input
+                        placeholder="Deskripsi"
+                        value={icd.description}
+                        onChange={(e) => updateIcdEntry('icd9Secondary', index, 'description', e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openIcdModal('icd9Secondary', index)}
+                        className="px-3"
+                      >
+                        <Search className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeIcdEntry('icd9Secondary', index)}
+                        disabled={icd9Secondary.length === 1}
+                        className="ml-2"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <Input
+                        placeholder="Kode SNOMED-CT"
+                        value={icd.snomedCode || ''}
+                        readOnly
+                        className="bg-muted"
+                      />
+                      <Input
+                        placeholder="Istilah SNOMED-CT"
+                        value={icd.snomedTerm || ''}
+                        readOnly
+                        className="md:col-span-2 bg-muted"
+                      />
+                    </div>
                   </div>
                 ))}
                 <Button
@@ -1476,9 +1856,9 @@ const ClinicalPathway = () => {
       <Dialog open={isIcdModalOpen} onOpenChange={setIsIcdModalOpen}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Pilih Data ICD</DialogTitle>
+            <DialogTitle>ICD Management System</DialogTitle>
             <DialogDescription>
-              Cari dan pilih data ICD untuk dimasukkan ke form
+              Kelola data ICD-10, ICD-9-CM, dan SNOMED-CT dalam satu modal lalu simpan ke form.
             </DialogDescription>
           </DialogHeader>
           
@@ -1489,203 +1869,22 @@ const ClinicalPathway = () => {
             </TabsList>
             
             <TabsContent value="icd10" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Database className="h-5 w-5" />
-                    Pencarian ICD-10
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Masukkan kata kunci pencarian..."
-                      value={icdSearchQuery}
-                      onChange={(e) => setIcdSearchQuery(e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button onClick={handleIcdSearch} disabled={icdLoading}>
-                      <Search className="h-4 w-4 mr-2" />
-                      {icdLoading ? 'Mencari...' : 'Cari'}
-                    </Button>
-                    <Button onClick={handleIcdClearSearch} variant="outline">
-                      <Filter className="h-4 w-4 mr-2" />
-                      Clear
-                    </Button>
-                  </div>
-                  
-                  {icdHasSearched && (
-                    <div className="border rounded-lg overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleIcdSort('code')}>
-                                <div className="flex items-center gap-1">
-                                  Kode
-                                  <IcdSortIcon field="code" />
-                                </div>
-                              </th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleIcdSort('name_id')}>
-                                <div className="flex items-center gap-1">
-                                  Nama Penyakit
-                                  <IcdSortIcon field="name_id" />
-                                </div>
-                              </th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Aksi
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {icdSearchResults.length > 0 ? (
-                              icdSearchResults.map((item, index) => (
-                                <tr key={index} className="hover:bg-gray-50">
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    {icdActiveTab === 'icd10' ? item.kd_penyakit : item.kode}
-                                  </td>
-                                  <td className="px-4 py-4 text-sm text-gray-900">
-                                    {icdActiveTab === 'icd10' ? item.nm_penyakit : item.deskripsi_pendek}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <Button
-                                      size="sm"
-                                      onClick={() => handleIcdSelect(item)}
-                                      className="mr-2"
-                                    >
-                                      Pilih
-                                    </Button>
-                                  </td>
-                                </tr>
-                              ))
-                            ) : (
-                              <tr>
-                                <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
-                                  {icdLoading ? 'Mencari data...' : 'Tidak ada hasil ditemukan'}
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                      
-                      {icdSearchResults.length > 0 && (
-                        <div className="px-4 py-3 border-t">
-                          <PaginationControls
-                             currentPage={icdPaginationState.currentPage}
-                             totalPages={icdPaginationState.totalPages}
-                             itemsPerPage={icdPaginationState.itemsPerPage}
-                             totalItems={icdPaginationState.totalItems}
-                             onPageChange={handleIcdPageChange}
-                             onItemsPerPageChange={handleIcdItemsPerPageChange}
-                           />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              {renderIcdManagerSection('icd10', 'ICD-10', modalIcd10Primary, modalIcd10Secondary)}
             </TabsContent>
             
             <TabsContent value="icd9" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Database className="h-5 w-5" />
-                    Pencarian ICD-9-CM
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Masukkan kata kunci pencarian..."
-                      value={icdSearchQuery}
-                      onChange={(e) => setIcdSearchQuery(e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button onClick={handleIcdSearch} disabled={icdLoading}>
-                      <Search className="h-4 w-4 mr-2" />
-                      {icdLoading ? 'Mencari...' : 'Cari'}
-                    </Button>
-                    <Button onClick={handleIcdClearSearch} variant="outline">
-                      <Filter className="h-4 w-4 mr-2" />
-                      Clear
-                    </Button>
-                  </div>
-                  
-                  {icdHasSearched && (
-                    <div className="border rounded-lg overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleIcdSort('code')}>
-                                <div className="flex items-center gap-1">
-                                  Kode
-                                  <IcdSortIcon field="code" />
-                                </div>
-                              </th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleIcdSort('name_id')}>
-                                <div className="flex items-center gap-1">
-                                  Nama Penyakit
-                                  <IcdSortIcon field="name_id" />
-                                </div>
-                              </th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Aksi
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {icdSearchResults.length > 0 ? (
-                              icdSearchResults.map((item, index) => (
-                                <tr key={index} className="hover:bg-gray-50">
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    {icdActiveTab === 'icd10' ? item.kd_penyakit : item.kode}
-                                  </td>
-                                  <td className="px-4 py-4 text-sm text-gray-900">
-                                    {icdActiveTab === 'icd10' ? item.nm_penyakit : item.deskripsi_pendek}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <Button
-                                      size="sm"
-                                      onClick={() => handleIcdSelect(item)}
-                                      className="mr-2"
-                                    >
-                                      Pilih
-                                    </Button>
-                                  </td>
-                                </tr>
-                              ))
-                            ) : (
-                              <tr>
-                                <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
-                                  {icdLoading ? 'Mencari data...' : 'Tidak ada hasil ditemukan'}
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                      
-                      {icdSearchResults.length > 0 && (
-                        <div className="px-4 py-3 border-t">
-                          <PaginationControls
-                             currentPage={icdPaginationState.currentPage}
-                             totalPages={icdPaginationState.totalPages}
-                             itemsPerPage={icdPaginationState.itemsPerPage}
-                             totalItems={icdPaginationState.totalItems}
-                             onPageChange={handleIcdPageChange}
-                             onItemsPerPageChange={handleIcdItemsPerPageChange}
-                           />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              {renderIcdManagerSection('icd9', 'ICD-9-CM', modalIcd9Primary, modalIcd9Secondary)}
             </TabsContent>
           </Tabs>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsIcdModalOpen(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleSaveIcdModal}>
+              <Save className="w-4 h-4 mr-2" />
+              Simpan Data ICD
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -58,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
     { name: 'Presensi', path: '/presensi', icon: <FileCheck className="h-5 w-5" /> },
     { name: 'Booking Operasi', path: '/booking', icon: <CalendarClock className="h-5 w-5" /> },
     { name: 'Tarif INA-CBGs', path: '/tarif', icon: <DollarSign className="h-5 w-5" /> },
-    { name: 'Master ICD', path: '/icd', icon: <FileBarChart className="h-5 w-5" /> },
+    { name: 'Kode Medis', path: '/icd', icon: <FileBarChart className="h-5 w-5" /> },
     { name: 'Statistik', path: '/statistik', icon: <Activity className="h-5 w-5" /> },
     // { name: 'TTD Elektronik', path: '/signature', icon: <Pencil className="h-5 w-5" /> },
     // { name: 'SRQ', path: '/srq', icon: <HelpCircle className="h-5 w-5" /> },
@@ -210,4 +210,3 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
 };
 
 export default Sidebar;
-

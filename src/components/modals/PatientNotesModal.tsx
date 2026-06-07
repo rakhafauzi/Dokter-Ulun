@@ -1,17 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Edit, Trash2, StickyNote } from 'lucide-react';
+import { Plus, Edit, Trash2, StickyNote, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import { API_URLS } from '@/config/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface PatientNote {
-  id?: string;
   tanggal: string;
+  jam: string;
+  no_rawat?: string;
+  kd_dokter: string;
   catatan: string;
   petugas: string;
+  original_tanggal?: string;
+  original_jam?: string;
+  original_kd_dokter?: string;
 }
 
 interface PatientNotesModalProps {
@@ -21,41 +29,70 @@ interface PatientNotesModalProps {
 }
 
 export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, onClose, noRawat }) => {
+  const { user } = useAuth();
   const [notes, setNotes] = useState<PatientNote[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<PatientNote | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<PatientNote>({
-    tanggal: new Date().toISOString().split('T')[0],
-    catatan: '',
-    petugas: 'Dr. Current User'
-  });
   const { toast } = useToast();
+  const currentDoctorCode = user?.kd_dokter || user?.username || '';
+  const currentDoctorName = user?.name || user?.username || '-';
+
+  const createDefaultForm = useMemo(() => {
+    return () => ({
+      tanggal: new Date().toISOString().split('T')[0],
+      jam: new Date().toTimeString().slice(0, 5),
+      no_rawat: noRawat,
+      kd_dokter: currentDoctorCode,
+      catatan: '',
+      petugas: currentDoctorName,
+    });
+  }, [currentDoctorCode, currentDoctorName, noRawat]);
+
+  const [formData, setFormData] = useState<PatientNote>(createDefaultForm);
 
   useEffect(() => {
     if (isOpen) {
-      fetchNotes();
+      void fetchNotes();
     }
-  }, [isOpen]);
+  }, [isOpen, noRawat]);
+
+  useEffect(() => {
+    if (!showForm && !editingItem) {
+      setFormData(createDefaultForm());
+    }
+  }, [createDefaultForm, editingItem, showForm]);
 
   const fetchNotes = async () => {
+    if (!noRawat) {
+      setNotes([]);
+      return;
+    }
+
     setLoading(true);
     try {
-      // Mock data for now - replace with real API call
-      setNotes([
-        {
-          id: '1',
-          tanggal: '2025-01-15',
-          catatan: 'Pasien menunjukkan perbaikan kondisi setelah pemberian obat.',
-          petugas: 'Dr. Sarah'
-        },
-        {
-          id: '2',
-          tanggal: '2025-01-14',
-          catatan: 'Pasien masih mengalami demam ringan, perlu monitoring.',
-          petugas: 'Dr. Ahmad'
-        }
-      ]);
+      const response = await fetch(`${API_URLS.PATIENT_NOTES}/${encodeURIComponent(noRawat)}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const loadedNotes = Array.isArray(result.data) ? result.data : [];
+      setNotes(
+        loadedNotes.map((item: any) => ({
+          tanggal: item.tanggal,
+          jam: item.jam,
+          no_rawat: item.no_rawat,
+          kd_dokter: item.kd_dokter,
+          catatan: item.catatan || '',
+          petugas: item.petugas || item.kd_dokter || '-',
+          original_tanggal: item.tanggal,
+          original_jam: item.jam,
+          original_kd_dokter: item.kd_dokter,
+        }))
+      );
     } catch (error) {
       console.error('Error fetching notes:', error);
       toast({
@@ -69,57 +106,142 @@ export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, on
   };
 
   const handleSave = async () => {
+    if (!noRawat) {
+      toast({
+        title: "Error",
+        description: "No. rawat tidak ditemukan",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!currentDoctorCode) {
+      toast({
+        title: "Error",
+        description: "Identitas dokter login tidak ditemukan",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.tanggal || !formData.jam || !formData.catatan.trim()) {
+      toast({
+        title: "Error",
+        description: "Tanggal, jam, dan catatan wajib diisi",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
     try {
+      const payload = {
+        no_rawat: noRawat,
+        tanggal: formData.tanggal,
+        jam: formData.jam,
+        kd_dokter: editingItem?.original_kd_dokter || currentDoctorCode,
+        catatan: formData.catatan,
+        original_tanggal: editingItem?.original_tanggal,
+        original_jam: editingItem?.original_jam,
+        original_kd_dokter: editingItem?.original_kd_dokter,
+      };
+
+      const response = await fetch(API_URLS.PATIENT_NOTES, {
+        method: editingItem ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal menyimpan catatan pasien');
+      }
+
       if (editingItem) {
-        // Update existing item
-        setNotes(prev => prev.map(item => 
-          item.id === editingItem.id ? { ...formData, id: editingItem.id } : item
-        ));
         toast({
           title: "Berhasil",
           description: "Catatan pasien berhasil diperbarui",
         });
       } else {
-        // Add new item
-        const newItem = { ...formData, id: Date.now().toString() };
-        setNotes(prev => [newItem, ...prev]);
         toast({
           title: "Berhasil",
           description: "Catatan pasien berhasil ditambahkan",
         });
       }
+
+      await fetchNotes();
       resetForm();
     } catch (error) {
       toast({
         title: "Error",
-        description: "Gagal menyimpan catatan pasien",
+        description: error instanceof Error ? error.message : "Gagal menyimpan catatan pasien",
         variant: "destructive",
       });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleEdit = (item: PatientNote) => {
     setEditingItem(item);
-    setFormData(item);
+    setFormData({
+      tanggal: item.tanggal,
+      jam: item.jam,
+      no_rawat: item.no_rawat,
+      kd_dokter: item.kd_dokter,
+      catatan: item.catatan,
+      petugas: item.petugas,
+      original_tanggal: item.original_tanggal,
+      original_jam: item.original_jam,
+      original_kd_dokter: item.original_kd_dokter,
+    });
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (item: PatientNote) => {
     if (confirm('Apakah Anda yakin ingin menghapus catatan ini?')) {
-      setNotes(prev => prev.filter(item => item.id !== id));
-      toast({
-        title: "Berhasil",
-        description: "Catatan pasien berhasil dihapus",
-      });
+      const deleteKey = `${item.original_tanggal || item.tanggal}-${item.original_jam || item.jam}-${item.original_kd_dokter || item.kd_dokter}`;
+      setDeletingKey(deleteKey);
+      try {
+        const response = await fetch(API_URLS.PATIENT_NOTES, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            no_rawat: noRawat,
+            tanggal: item.original_tanggal || item.tanggal,
+            jam: item.original_jam || item.jam,
+            kd_dokter: item.original_kd_dokter || item.kd_dokter,
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Gagal menghapus catatan pasien');
+        }
+
+        await fetchNotes();
+        toast({
+          title: "Berhasil",
+          description: "Catatan pasien berhasil dihapus",
+        });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Gagal menghapus catatan pasien",
+          variant: "destructive",
+        });
+      } finally {
+        setDeletingKey(null);
+      }
     }
   };
 
   const resetForm = () => {
-    setFormData({
-      tanggal: new Date().toISOString().split('T')[0],
-      catatan: '',
-      petugas: 'Dr. Current User'
-    });
+    setFormData(createDefaultForm());
     setEditingItem(null);
     setShowForm(false);
   };
@@ -135,9 +257,11 @@ export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, on
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Add Button */}
-          <div className="flex justify-end">
-            <Button onClick={() => setShowForm(true)}>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="text-sm text-muted-foreground">
+              No. Rawat: <span className="font-medium text-foreground">{noRawat || '-'}</span>
+            </div>
+            <Button onClick={() => setShowForm(true)} disabled={!noRawat}>
               <Plus className="h-4 w-4 mr-2" />
               Tambah Catatan
             </Button>
@@ -152,25 +276,33 @@ export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, on
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label htmlFor="tanggal">Tanggal</Label>
-                    <input
+                    <Input
                       type="date"
                       id="tanggal"
                       value={formData.tanggal}
                       onChange={(e) => setFormData(prev => ({ ...prev, tanggal: e.target.value }))}
-                      className="w-full p-2 border rounded"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="jam">Jam</Label>
+                    <Input
+                      type="time"
+                      id="jam"
+                      value={formData.jam}
+                      onChange={(e) => setFormData(prev => ({ ...prev, jam: e.target.value }))}
                     />
                   </div>
                   <div>
                     <Label htmlFor="petugas">Petugas</Label>
-                    <input
+                    <Input
                       type="text"
                       id="petugas"
-                      value={formData.petugas}
-                      onChange={(e) => setFormData(prev => ({ ...prev, petugas: e.target.value }))}
-                      className="w-full p-2 border rounded"
+                      value={editingItem?.petugas || currentDoctorName}
+                      readOnly
+                      className="bg-muted"
                     />
                   </div>
                 </div>
@@ -182,11 +314,18 @@ export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, on
                     onChange={(e) => setFormData(prev => ({ ...prev, catatan: e.target.value }))}
                     rows={4}
                     placeholder="Tulis catatan untuk pasien..."
+                    maxLength={700}
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formData.catatan.length}/700 karakter
+                  </p>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleSave}>Simpan</Button>
-                  <Button variant="outline" onClick={resetForm}>Batal</Button>
+                  <Button onClick={handleSave} disabled={saving}>
+                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    Simpan
+                  </Button>
+                  <Button variant="outline" onClick={resetForm} disabled={saving}>Batal</Button>
                 </div>
               </CardContent>
             </Card>
@@ -194,13 +333,23 @@ export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, on
 
           {/* Notes List */}
           <div className="space-y-3">
-            {notes.map((note) => (
-              <Card key={note.id}>
+            {loading && (
+              <div className="py-8 flex items-center justify-center text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Memuat catatan pasien...
+              </div>
+            )}
+            {!loading && notes.map((note) => {
+              const noteKey = `${note.original_tanggal || note.tanggal}-${note.original_jam || note.jam}-${note.original_kd_dokter || note.kd_dokter}`;
+              return (
+              <Card key={noteKey}>
                 <CardContent className="pt-4">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                         <span>{note.tanggal}</span>
+                        <span>•</span>
+                        <span>{note.jam}</span>
                         <span>•</span>
                         <span>{note.petugas}</span>
                       </div>
@@ -210,15 +359,15 @@ export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, on
                       <Button size="sm" variant="outline" onClick={() => handleEdit(note)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleDelete(note.id!)}>
-                        <Trash2 className="h-4 w-4" />
+                      <Button size="sm" variant="destructive" onClick={() => handleDelete(note)} disabled={deletingKey === noteKey}>
+                        {deletingKey === noteKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                       </Button>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            ))}
-            {notes.length === 0 && (
+            )})}
+            {!loading && notes.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 Belum ada catatan untuk pasien ini
               </div>

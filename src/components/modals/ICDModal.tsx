@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, Search, Calculator } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Plus, Trash2, Calculator, Save, Check, ChevronsUpDown } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
+import { cn } from "@/lib/utils";
+import { InacbgTariffSimulationDialog } from './InacbgTariffSimulationDialog';
 
 interface ICD10Data {
   id?: string;
@@ -17,6 +19,10 @@ interface ICD10Data {
   ciri_ciri: string;
   keterangan: string;
   status: 'Menular' | 'Tidak Menular';
+  prioritas: 'Utama' | 'Sekunder';
+  status_layanan: 'Ralan' | 'Ranap';
+  snomed_concept_id?: string;
+  snomed_term?: string;
 }
 
 interface ICD9Data {
@@ -24,7 +30,52 @@ interface ICD9Data {
   kode: string;
   deskripsi_panjang: string;
   deskripsi_pendek: string;
+  prioritas: 'Utama' | 'Sekunder';
+  status_layanan: 'Ralan' | 'Ranap';
+  snomed_concept_id?: string;
+  snomed_term?: string;
 }
+
+interface Icd10Option {
+  kd_penyakit: string;
+  nm_penyakit: string;
+  ciri_ciri?: string;
+  keterangan?: string;
+  status?: 'Menular' | 'Tidak Menular';
+}
+
+interface Icd9Option {
+  kode: string;
+  deskripsi_panjang: string;
+  deskripsi_pendek: string;
+}
+
+interface SnomedOption {
+  kode: string;
+  istilah: string;
+}
+
+const createEmptyIcd10Entry = (): ICD10Data => ({
+  kd_penyakit: '',
+  nm_penyakit: '',
+  ciri_ciri: '',
+  keterangan: '',
+  status: 'Tidak Menular',
+  prioritas: 'Utama',
+  status_layanan: 'Ralan',
+  snomed_concept_id: '',
+  snomed_term: ''
+});
+
+const createEmptyIcd9Entry = (): ICD9Data => ({
+  kode: '',
+  deskripsi_panjang: '',
+  deskripsi_pendek: '',
+  prioritas: 'Utama',
+  status_layanan: 'Ralan',
+  snomed_concept_id: '',
+  snomed_term: ''
+});
 
 interface ICDModalProps {
   isOpen: boolean;
@@ -32,175 +83,638 @@ interface ICDModalProps {
   noRawat: string;
 }
 
+type TabType = 'icd10' | 'icd9';
+
+const formatIcd9ProcedureCode = (value: string) => {
+  const normalizedValue = String(value || '').trim();
+  if (!normalizedValue || normalizedValue.includes('.')) {
+    return normalizedValue;
+  }
+
+  if (normalizedValue.length <= 2) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, 2)}.${normalizedValue.slice(2)}`;
+};
+
 export const ICDModal: React.FC<ICDModalProps> = ({ isOpen, onClose, noRawat }) => {
   const [activeTab, setActiveTab] = useState('icd10');
   const [icd10Data, setIcd10Data] = useState<ICD10Data[]>([]);
   const [icd9Data, setIcd9Data] = useState<ICD9Data[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [editingItem, setEditingItem] = useState<any>(null);
-  const [showForm, setShowForm] = useState(false);
   const [showTariffModal, setShowTariffModal] = useState(false);
-  
-  const [icd10Form, setIcd10Form] = useState<ICD10Data>({
-    kd_penyakit: '',
-    nm_penyakit: '',
-    ciri_ciri: '',
-    keterangan: '',
-    status: 'Tidak Menular'
-  });
-
-  const [icd9Form, setIcd9Form] = useState<ICD9Data>({
-    kode: '',
-    deskripsi_panjang: '',
-    deskripsi_pendek: ''
-  });
+  const [loadingSavedData, setLoadingSavedData] = useState(false);
+  const [savingData, setSavingData] = useState(false);
+  const [icd10Drafts, setIcd10Drafts] = useState<ICD10Data[]>([createEmptyIcd10Entry()]);
+  const [icd9Drafts, setIcd9Drafts] = useState<ICD9Data[]>([createEmptyIcd9Entry()]);
+  const [icdSearchOpenByKey, setIcdSearchOpenByKey] = useState<Record<string, boolean>>({});
+  const [icdSearchQueryByKey, setIcdSearchQueryByKey] = useState<Record<string, string>>({});
+  const [icdSearchResultsByKey, setIcdSearchResultsByKey] = useState<Record<string, any[]>>({});
+  const [icdSearchLoadingByKey, setIcdSearchLoadingByKey] = useState<Record<string, boolean>>({});
+  const [snomedSearchOpenByKey, setSnomedSearchOpenByKey] = useState<Record<string, boolean>>({});
+  const [snomedSearchQueryByKey, setSnomedSearchQueryByKey] = useState<Record<string, string>>({});
+  const [snomedSearchResultsByKey, setSnomedSearchResultsByKey] = useState<Record<string, any[]>>({});
+  const [snomedSearchLoadingByKey, setSnomedSearchLoadingByKey] = useState<Record<string, boolean>>({});
 
   const { toast } = useToast();
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchData();
+  const resetSearchState = () => {
+    setIcdSearchOpenByKey({});
+    setIcdSearchQueryByKey({});
+    setIcdSearchResultsByKey({});
+    setIcdSearchLoadingByKey({});
+    setSnomedSearchOpenByKey({});
+    setSnomedSearchQueryByKey({});
+    setSnomedSearchResultsByKey({});
+    setSnomedSearchLoadingByKey({});
+  };
+
+  const applyLoadedData = (data?: { icd10?: ICD10Data[]; icd9?: ICD9Data[] }) => {
+    const nextIcd10 = Array.isArray(data?.icd10) ? data.icd10 : [];
+    const nextIcd9 = Array.isArray(data?.icd9) ? data.icd9 : [];
+
+    setIcd10Data(nextIcd10);
+    setIcd9Data(nextIcd9);
+    setIcd10Drafts(nextIcd10.length ? nextIcd10.map((item) => ({ ...item })) : [createEmptyIcd10Entry()]);
+    setIcd9Drafts(nextIcd9.length ? nextIcd9.map((item) => ({ ...item })) : [createEmptyIcd9Entry()]);
+    resetSearchState();
+  };
+
+  const loadSavedData = async () => {
+    if (!noRawat) {
+      applyLoadedData();
+      return;
     }
-  }, [isOpen]);
 
-  const fetchData = async () => {
-    setLoading(true);
+    setLoadingSavedData(true);
     try {
-      // Fetch ICD-10 data
-      const icd10Response = await fetch(API_URLS.ICD_DATA, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          page: 1,
-          itemsPerPage: 100,
-          search: '',
-          icdType: 'icd10'
-        })
-      });
-      
-      if (icd10Response.ok) {
-        const icd10Data = await icd10Response.json();
-        setIcd10Data(icd10Data.data || []);
+      const response = await fetch(`${API_URLS.ICD_MANAGEMENT}/${encodeURIComponent(noRawat)}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Fetch ICD-9 data
-      const icd9Response = await fetch(API_URLS.ICD_DATA, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          page: 1,
-          itemsPerPage: 100,
-          search: '',
-          icdType: 'icd9'
-        })
-      });
-      
-      if (icd9Response.ok) {
-        const icd9Data = await icd9Response.json();
-        setIcd9Data(icd9Data.data || []);
-      }
+      const result = await response.json();
+      applyLoadedData(result.data);
     } catch (error) {
-      console.error('Error fetching ICD data:', error);
+      console.error('Error loading saved ICD data:', error);
+      applyLoadedData();
       toast({
         title: "Error",
-        description: "Gagal memuat data ICD",
+        description: "Gagal memuat data ICD pasien",
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setLoadingSavedData(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      void loadSavedData();
+    }
+  }, [isOpen, noRawat]);
+
+  const getFieldKey = (tab: TabType, index: number) => `${tab}-${index}`;
+
+  const fetchIcdOptions = async (tab: TabType, index: number, search: string) => {
+    const fieldKey = getFieldKey(tab, index);
+    setIcdSearchLoadingByKey((prev) => ({ ...prev, [fieldKey]: true }));
+
+    try {
+      const response = await fetch(API_URLS.ICD_DATA, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page: 1,
+          itemsPerPage: 20,
+          search,
+          icdType: tab
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setIcdSearchResultsByKey((prev) => ({ ...prev, [fieldKey]: data.data || [] }));
+    } catch (error) {
+      console.error('Error fetching ICD options:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memuat pilihan ICD",
+        variant: "destructive",
+      });
+      setIcdSearchResultsByKey((prev) => ({ ...prev, [fieldKey]: [] }));
+    } finally {
+      setIcdSearchLoadingByKey((prev) => ({ ...prev, [fieldKey]: false }));
+    }
+  };
+
+  const fetchSnomedOptions = async (tab: TabType, index: number, relatedIcdCode: string, search: string) => {
+    const fieldKey = getFieldKey(tab, index);
+    setSnomedSearchLoadingByKey((prev) => ({ ...prev, [fieldKey]: true }));
+
+    try {
+      const response = await fetch(API_URLS.ICD_DATA, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page: 1,
+          itemsPerPage: 20,
+          search,
+          icdType: 'snomed',
+          relatedIcdCode,
+          relatedIcdType: tab
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setSnomedSearchResultsByKey((prev) => ({ ...prev, [fieldKey]: data.data || [] }));
+    } catch (error) {
+      console.error('Error fetching SNOMED options:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memuat pilihan SNOMED-CT",
+        variant: "destructive",
+      });
+      setSnomedSearchResultsByKey((prev) => ({ ...prev, [fieldKey]: [] }));
+    } finally {
+      setSnomedSearchLoadingByKey((prev) => ({ ...prev, [fieldKey]: false }));
+    }
+  };
+
+  const addDraftRow = (tab: TabType) => {
+    if (tab === 'icd10') {
+      setIcd10Drafts((prev) => [...prev, createEmptyIcd10Entry()]);
+      return;
+    }
+    setIcd9Drafts((prev) => [...prev, createEmptyIcd9Entry()]);
+  };
+
+  const removeDraftRow = (tab: TabType, index: number) => {
+    if (tab === 'icd10') {
+      if (icd10Drafts.length > 1) {
+        setIcd10Drafts((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
+      }
+      return;
+    }
+
+    if (icd9Drafts.length > 1) {
+      setIcd9Drafts((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
+    }
+  };
+
+  const updateIcd10Draft = (index: number, updater: (item: ICD10Data) => ICD10Data) => {
+    setIcd10Drafts((prev) => prev.map((item, rowIndex) => rowIndex === index ? updater(item) : item));
+  };
+
+  const updateIcd9Draft = (index: number, updater: (item: ICD9Data) => ICD9Data) => {
+    setIcd9Drafts((prev) => prev.map((item, rowIndex) => rowIndex === index ? updater(item) : item));
+  };
+
+  const handleIcdQueryChange = (tab: TabType, index: number, value: string) => {
+    const fieldKey = getFieldKey(tab, index);
+    setIcdSearchQueryByKey((prev) => ({ ...prev, [fieldKey]: value }));
+    void fetchIcdOptions(tab, index, value);
+  };
+
+  const handleSelectIcd = (tab: TabType, index: number, selectedValue: string) => {
+    const fieldKey = getFieldKey(tab, index);
+    const options = icdSearchResultsByKey[fieldKey] || [];
+    const selectedItem = tab === 'icd10'
+      ? (options as Icd10Option[]).find((item) => item.kd_penyakit === selectedValue)
+      : (options as Icd9Option[]).find((item) => item.kode === selectedValue);
+
+    if (!selectedItem) return;
+
+    if (tab === 'icd10') {
+      const icd10Item = selectedItem as Icd10Option;
+      updateIcd10Draft(index, (item) => ({
+        ...item,
+        kd_penyakit: icd10Item.kd_penyakit,
+        nm_penyakit: icd10Item.nm_penyakit,
+        ciri_ciri: icd10Item.ciri_ciri || item.ciri_ciri,
+        keterangan: icd10Item.keterangan || item.keterangan,
+        status: icd10Item.status || item.status,
+        snomed_concept_id: '',
+        snomed_term: ''
+      }));
+      setIcdSearchQueryByKey((prev) => ({ ...prev, [fieldKey]: `${icd10Item.kd_penyakit} - ${icd10Item.nm_penyakit}` }));
+      setSnomedSearchQueryByKey((prev) => ({ ...prev, [fieldKey]: icd10Item.nm_penyakit || '' }));
+      setSnomedSearchResultsByKey((prev) => ({ ...prev, [fieldKey]: [] }));
+      void fetchSnomedOptions(tab, index, icd10Item.kd_penyakit, icd10Item.nm_penyakit || '');
+      return;
+    }
+
+    const icd9Item = selectedItem as Icd9Option;
+    updateIcd9Draft(index, (item) => ({
+      ...item,
+      kode: icd9Item.kode,
+      deskripsi_pendek: icd9Item.deskripsi_pendek,
+      deskripsi_panjang: icd9Item.deskripsi_panjang || item.deskripsi_panjang,
+      snomed_concept_id: '',
+      snomed_term: ''
+    }));
+    setIcdSearchQueryByKey((prev) => ({ ...prev, [fieldKey]: `${formatIcd9ProcedureCode(icd9Item.kode)} - ${icd9Item.deskripsi_pendek}` }));
+    setSnomedSearchQueryByKey((prev) => ({ ...prev, [fieldKey]: icd9Item.deskripsi_pendek || '' }));
+    setSnomedSearchResultsByKey((prev) => ({ ...prev, [fieldKey]: [] }));
+    void fetchSnomedOptions(tab, index, icd9Item.kode, icd9Item.deskripsi_pendek || '');
+  };
+
+  const handleSnomedQueryChange = (tab: TabType, index: number, relatedIcdCode: string, value: string) => {
+    const fieldKey = getFieldKey(tab, index);
+    setSnomedSearchQueryByKey((prev) => ({ ...prev, [fieldKey]: value }));
+    if (!relatedIcdCode) {
+      setSnomedSearchResultsByKey((prev) => ({ ...prev, [fieldKey]: [] }));
+      return;
+    }
+    void fetchSnomedOptions(tab, index, relatedIcdCode, value);
+  };
+
+  const handleSelectSnomed = (tab: TabType, index: number, selectedValue: string) => {
+    const fieldKey = getFieldKey(tab, index);
+    const options = snomedSearchResultsByKey[fieldKey] || [];
+    const selectedItem = options.find((item: SnomedOption) => item.kode === selectedValue);
+
+    if (!selectedItem) return;
+
+    if (tab === 'icd10') {
+      updateIcd10Draft(index, (item) => ({
+        ...item,
+        snomed_concept_id: selectedItem.kode,
+        snomed_term: selectedItem.istilah
+      }));
+      setSnomedSearchQueryByKey((prev) => ({ ...prev, [fieldKey]: `${selectedItem.kode} - ${selectedItem.istilah}` }));
+      return;
+    }
+
+    updateIcd9Draft(index, (item) => ({
+      ...item,
+      snomed_concept_id: selectedItem.kode,
+      snomed_term: selectedItem.istilah
+    }));
+    setSnomedSearchQueryByKey((prev) => ({ ...prev, [fieldKey]: `${selectedItem.kode} - ${selectedItem.istilah}` }));
+  };
+
+  const handleDeleteSaved = async (tab: TabType, item: ICD10Data | ICD9Data) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus data ini?')) return;
+
+    try {
+      const response = await fetch(API_URLS.ICD_MANAGEMENT, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          no_rawat: noRawat,
+          icdType: tab,
+          prioritas: item.prioritas,
+          status_layanan: item.status_layanan,
+          ...(tab === 'icd10'
+            ? { kd_penyakit: (item as ICD10Data).kd_penyakit }
+            : { kode: (item as ICD9Data).kode })
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      applyLoadedData(result.data);
+      toast({ title: "Berhasil", description: `Data ${tab === 'icd10' ? 'ICD-10' : 'ICD-9'} berhasil dihapus` });
+    } catch (error) {
+      console.error('Error deleting ICD item:', error);
+      toast({
+        title: "Error",
+        description: "Gagal menghapus data ICD",
+        variant: "destructive",
+      });
     }
   };
 
   const handleSave = async () => {
     try {
-      if (activeTab === 'icd10') {
-        if (editingItem) {
-          setIcd10Data(prev => prev.map(item => 
-            item.id === editingItem.id ? { ...icd10Form, id: editingItem.id } : item
-          ));
-          toast({ title: "Berhasil", description: "Data ICD-10 berhasil diperbarui" });
-        } else {
-          const newItem = { ...icd10Form, id: Date.now().toString() };
-          setIcd10Data(prev => [...prev, newItem]);
-          toast({ title: "Berhasil", description: "Data ICD-10 berhasil ditambahkan" });
-        }
-      } else {
-        if (editingItem) {
-          setIcd9Data(prev => prev.map(item => 
-            item.id === editingItem.id ? { ...icd9Form, id: editingItem.id } : item
-          ));
-          toast({ title: "Berhasil", description: "Data ICD-9 berhasil diperbarui" });
-        } else {
-          const newItem = { ...icd9Form, id: Date.now().toString() };
-          setIcd9Data(prev => [...prev, newItem]);
-          toast({ title: "Berhasil", description: "Data ICD-9 berhasil ditambahkan" });
-        }
+      if (!noRawat) {
+        toast({
+          title: "Error",
+          description: "No. rawat tidak tersedia",
+          variant: "destructive",
+        });
+        return;
       }
-      resetForm();
+
+      setSavingData(true);
+
+      if (activeTab === 'icd10') {
+        const validItems = icd10Drafts
+          .filter((item) => item.kd_penyakit && item.nm_penyakit);
+
+        const response = await fetch(API_URLS.ICD_MANAGEMENT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            no_rawat: noRawat,
+            icdType: 'icd10',
+            items: validItems
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        applyLoadedData(result.data);
+        toast({ title: "Berhasil", description: "Data ICD-10 dan SNOMED-CT berhasil disimpan" });
+      } else {
+        const validItems = icd9Drafts
+          .filter((item) => item.kode && item.deskripsi_pendek);
+
+        const response = await fetch(API_URLS.ICD_MANAGEMENT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            no_rawat: noRawat,
+            icdType: 'icd9',
+            items: validItems
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        applyLoadedData(result.data);
+        toast({ title: "Berhasil", description: "Data ICD-9 dan SNOMED-CT berhasil disimpan" });
+      }
     } catch (error) {
+      console.error('Error saving ICD data:', error);
       toast({
         title: "Error",
         description: "Gagal menyimpan data ICD",
         variant: "destructive",
       });
+    } finally {
+      setSavingData(false);
     }
-  };
-
-  const handleEdit = (item: any) => {
-    setEditingItem(item);
-    if (activeTab === 'icd10') {
-      setIcd10Form(item);
-    } else {
-      setIcd9Form(item);
-    }
-    setShowForm(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus data ini?')) {
-      if (activeTab === 'icd10') {
-        setIcd10Data(prev => prev.filter(item => item.id !== id));
-        toast({ title: "Berhasil", description: "Data ICD-10 berhasil dihapus" });
-      } else {
-        setIcd9Data(prev => prev.filter(item => item.id !== id));
-        toast({ title: "Berhasil", description: "Data ICD-9 berhasil dihapus" });
-      }
-    }
-  };
-
-  const resetForm = () => {
-    setIcd10Form({
-      kd_penyakit: '',
-      nm_penyakit: '',
-      ciri_ciri: '',
-      keterangan: '',
-      status: 'Tidak Menular'
-    });
-    setIcd9Form({
-      kode: '',
-      deskripsi_panjang: '',
-      deskripsi_pendek: ''
-    });
-    setEditingItem(null);
-    setShowForm(false);
   };
 
   const handleTariffSimulation = () => {
     setShowTariffModal(true);
   };
 
-  const currentData = activeTab === 'icd10' ? icd10Data : icd9Data;
-  const filteredData = currentData.filter((item: any) => {
-    const searchLower = search.toLowerCase();
-    if (activeTab === 'icd10') {
-      return item.kd_penyakit.toLowerCase().includes(searchLower) ||
-             item.nm_penyakit.toLowerCase().includes(searchLower);
-    } else {
-      return item.kode.toLowerCase().includes(searchLower) ||
-             item.deskripsi_panjang.toLowerCase().includes(searchLower);
+  const currentSavedData = activeTab === 'icd10' ? icd10Data : icd9Data;
+
+  const getSelectedIcdLabel = (tab: TabType, draft: ICD10Data | ICD9Data) => {
+    if (tab === 'icd10') {
+      const icd10Item = draft as ICD10Data;
+      return icd10Item.kd_penyakit && icd10Item.nm_penyakit
+        ? `${icd10Item.kd_penyakit} - ${icd10Item.nm_penyakit}`
+        : '';
     }
-  });
+
+    const icd9Item = draft as ICD9Data;
+    return icd9Item.kode && icd9Item.deskripsi_pendek
+      ? `${formatIcd9ProcedureCode(icd9Item.kode)} - ${icd9Item.deskripsi_pendek}`
+      : '';
+  };
+
+  const getSelectedSnomedLabel = (tab: TabType, draft: ICD10Data | ICD9Data) => {
+    const conceptId = tab === 'icd10'
+      ? (draft as ICD10Data).snomed_concept_id
+      : (draft as ICD9Data).snomed_concept_id;
+    const term = tab === 'icd10'
+      ? (draft as ICD10Data).snomed_term
+      : (draft as ICD9Data).snomed_term;
+
+    return conceptId && term ? `${conceptId} - ${term}` : '';
+  };
+
+  const getSnomedTriggerLabel = (tab: TabType, draft: ICD10Data | ICD9Data, fieldKey: string) => {
+    const selectedLabel = getSelectedSnomedLabel(tab, draft);
+    if (selectedLabel) {
+      return selectedLabel;
+    }
+
+    return snomedSearchQueryByKey[fieldKey] || 'Cari dan pilih SNOMED-CT';
+  };
+
+  const renderIcdDraftRows = (tab: TabType) => {
+    const drafts = tab === 'icd10' ? icd10Drafts : icd9Drafts;
+
+    return drafts.map((draft: ICD10Data | ICD9Data, index: number) => {
+      const fieldKey = getFieldKey(tab, index);
+      const icdOptions = icdSearchResultsByKey[fieldKey] || [];
+      const snomedOptions = snomedSearchResultsByKey[fieldKey] || [];
+      const isIcdLoading = Boolean(icdSearchLoadingByKey[fieldKey]);
+      const isSnomedLoading = Boolean(snomedSearchLoadingByKey[fieldKey]);
+      const selectedIcdCode = tab === 'icd10' ? (draft as ICD10Data).kd_penyakit : (draft as ICD9Data).kode;
+      const selectedIcdLabel = getSelectedIcdLabel(tab, draft);
+      const selectedSnomedLabel = getSnomedTriggerLabel(tab, draft, fieldKey);
+
+      return (
+        <div key={fieldKey} className="rounded-lg border p-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)_160px_110px] gap-4 items-end">
+            <div className="space-y-2">
+              <Label>{tab === 'icd10' ? 'Cari ICD-10' : 'Cari ICD-9-CM'}</Label>
+              <Popover
+                open={!!icdSearchOpenByKey[fieldKey]}
+                onOpenChange={(open) => {
+                  setIcdSearchOpenByKey((prev) => ({ ...prev, [fieldKey]: open }));
+                  if (open && !icdSearchResultsByKey[fieldKey]?.length) {
+                    void fetchIcdOptions(tab, index, icdSearchQueryByKey[fieldKey] || '');
+                  }
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={!!icdSearchOpenByKey[fieldKey]}
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate text-left">
+                      {selectedIcdLabel || `Cari dan pilih ${tab === 'icd10' ? 'ICD-10' : 'ICD-9-CM'}`}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[350px] p-0 md:w-[520px]" align="start">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder={tab === 'icd10' ? 'Cari kode atau nama penyakit...' : 'Cari kode atau deskripsi tindakan...'}
+                      value={icdSearchQueryByKey[fieldKey] ?? ''}
+                      onValueChange={(value) => {
+                        handleIcdQueryChange(tab, index, value);
+                      }}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        {isIcdLoading ? 'Memuat data ICD...' : 'Tidak ada data ICD ditemukan.'}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {icdOptions.map((option: Icd10Option | Icd9Option) => {
+                          const value = tab === 'icd10'
+                            ? (option as Icd10Option).kd_penyakit
+                            : (option as Icd9Option).kode;
+                          return (
+                            <CommandItem
+                              key={value}
+                              value={tab === 'icd10'
+                                ? `${(option as Icd10Option).kd_penyakit} ${(option as Icd10Option).nm_penyakit}`
+                                : `${formatIcd9ProcedureCode((option as Icd9Option).kode)} ${(option as Icd9Option).deskripsi_pendek}`
+                              }
+                              onSelect={() => {
+                                handleSelectIcd(tab, index, value);
+                                setIcdSearchOpenByKey((prev) => ({ ...prev, [fieldKey]: false }));
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  selectedIcdCode === value ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              <div className="flex flex-col">
+                                <span>{tab === 'icd10' ? (option as Icd10Option).nm_penyakit : (option as Icd9Option).deskripsi_pendek}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {tab === 'icd10' ? value : formatIcd9ProcedureCode(value)}
+                                </span>
+                              </div>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label>Prioritas</Label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={tab === 'icd10' ? (draft as ICD10Data).prioritas : (draft as ICD9Data).prioritas}
+                onChange={(e) => {
+                  const value = e.target.value as 'Utama' | 'Sekunder';
+                  if (tab === 'icd10') {
+                    updateIcd10Draft(index, (item) => ({ ...item, prioritas: value }));
+                    return;
+                  }
+                  updateIcd9Draft(index, (item) => ({ ...item, prioritas: value }));
+                }}
+              >
+                <option value="Utama">Utama</option>
+                <option value="Sekunder">Sekunder</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Cari SNOMED-CT</Label>
+              <Popover
+                open={!!snomedSearchOpenByKey[fieldKey]}
+                onOpenChange={(open) => {
+                  setSnomedSearchOpenByKey((prev) => ({ ...prev, [fieldKey]: open }));
+                  if (open && selectedIcdCode && !snomedSearchResultsByKey[fieldKey]?.length) {
+                    void fetchSnomedOptions(tab, index, selectedIcdCode, snomedSearchQueryByKey[fieldKey] || '');
+                  }
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={!!snomedSearchOpenByKey[fieldKey]}
+                    className="w-full justify-between"
+                    disabled={!selectedIcdCode}
+                  >
+                    <span className="truncate text-left">
+                      {selectedSnomedLabel}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[350px] p-0 md:w-[520px]" align="start">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Cari concept id atau istilah SNOMED-CT..."
+                      value={snomedSearchQueryByKey[fieldKey] ?? ''}
+                      onValueChange={(value) => {
+                        handleSnomedQueryChange(tab, index, selectedIcdCode, value);
+                      }}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        {isSnomedLoading ? 'Memuat data SNOMED-CT...' : 'Tidak ada data SNOMED-CT ditemukan.'}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {snomedOptions.map((option: SnomedOption) => (
+                          <CommandItem
+                            key={option.kode}
+                            value={`${option.kode} ${option.istilah}`}
+                            onSelect={() => {
+                              handleSelectSnomed(tab, index, option.kode);
+                              setSnomedSearchOpenByKey((prev) => ({ ...prev, [fieldKey]: false }));
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                (tab === 'icd10'
+                                  ? (draft as ICD10Data).snomed_concept_id
+                                  : (draft as ICD9Data).snomed_concept_id) === option.kode ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="flex flex-col">
+                              <span>{option.istilah}</span>
+                              <span className="text-xs text-muted-foreground">{option.kode}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={tab === 'icd10' ? (draft as ICD10Data).status_layanan : (draft as ICD9Data).status_layanan}
+                onChange={(e) => {
+                  const value = e.target.value as 'Ralan' | 'Ranap';
+                  if (tab === 'icd10') {
+                    updateIcd10Draft(index, (item) => ({ ...item, status_layanan: value }));
+                    return;
+                  }
+                  updateIcd9Draft(index, (item) => ({ ...item, status_layanan: value }));
+                }}
+              >
+                <option value="Ralan">Ralan</option>
+                <option value="Ranap">Ranap</option>
+              </select>
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => removeDraftRow(tab, index)}
+              disabled={drafts.length === 1}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      );
+    });
+  };
 
   return (
     <>
@@ -217,198 +731,138 @@ export const ICDModal: React.FC<ICDModalProps> = ({ isOpen, onClose, noRawat }) 
             </TabsList>
 
             <div className="space-y-4 mt-4">
-              {/* Search, Add Button, and INACBG Button */}
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder={`Cari ${activeTab === 'icd10' ? 'kode atau nama penyakit' : 'kode atau deskripsi'}...`}
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-10"
-                  />
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="font-medium">No. Rawat: {noRawat || '-'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Gunakan input ringkas untuk ICD, prioritas, SNOMED-CT, dan status layanan per baris.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={() => addDraftRow(activeTab as TabType)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Tambah Baris
+                    </Button>
+                    <Button type="button" onClick={handleSave} disabled={savingData || loadingSavedData}>
+                      <Save className="h-4 w-4 mr-2" />
+                      {savingData ? 'Menyimpan...' : 'Simpan Data'}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={handleTariffSimulation}>
+                      <Calculator className="h-4 w-4 mr-2" />
+                      Tarif INACBG's
+                    </Button>
+                  </div>
                 </div>
-                <Button onClick={() => setShowForm(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Tambah
-                </Button>
-                <Button variant="outline" onClick={handleTariffSimulation}>
-                  <Calculator className="h-4 w-4 mr-2" />
-                  Tarif INACBG's
-                </Button>
               </div>
 
               <TabsContent value="icd10" className="space-y-4">
-                {/* ICD-10 Form */}
-                {showForm && activeTab === 'icd10' && (
-                  <div className="border rounded-lg p-4 space-y-4">
-                    <h3 className="font-semibold">
-                      {editingItem ? 'Edit Data ICD-10' : 'Tambah Data ICD-10'}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="kd_penyakit">Kode Penyakit</Label>
-                        <Input
-                          id="kd_penyakit"
-                          value={icd10Form.kd_penyakit}
-                          onChange={(e) => setIcd10Form(prev => ({ ...prev, kd_penyakit: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="status">Status</Label>
-                        <select
-                          id="status"
-                          value={icd10Form.status}
-                          onChange={(e) => setIcd10Form(prev => ({ ...prev, status: e.target.value as 'Menular' | 'Tidak Menular' }))}
-                          className="w-full p-2 border rounded"
-                        >
-                          <option value="Tidak Menular">Tidak Menular</option>
-                          <option value="Menular">Menular</option>
-                        </select>
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor="nm_penyakit">Nama Penyakit</Label>
-                        <Input
-                          id="nm_penyakit"
-                          value={icd10Form.nm_penyakit}
-                          onChange={(e) => setIcd10Form(prev => ({ ...prev, nm_penyakit: e.target.value }))}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor="ciri_ciri">Ciri-ciri</Label>
-                        <Textarea
-                          id="ciri_ciri"
-                          value={icd10Form.ciri_ciri}
-                          onChange={(e) => setIcd10Form(prev => ({ ...prev, ciri_ciri: e.target.value }))}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor="keterangan">Keterangan</Label>
-                        <Input
-                          id="keterangan"
-                          value={icd10Form.keterangan}
-                          onChange={(e) => setIcd10Form(prev => ({ ...prev, keterangan: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button onClick={handleSave}>Simpan</Button>
-                      <Button variant="outline" onClick={resetForm}>Batal</Button>
-                    </div>
-                  </div>
+                {loadingSavedData && (
+                  <div className="text-sm text-muted-foreground">Memuat data ICD-10...</div>
                 )}
+                <div className="space-y-4">
+                  {renderIcdDraftRows('icd10')}
+                </div>
 
-                {/* ICD-10 Data Table */}
                 <div className="border rounded-lg">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Kode</TableHead>
                         <TableHead>Nama Penyakit</TableHead>
+                        <TableHead>SNOMED-CT</TableHead>
+                        <TableHead>Prioritas</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Keterangan</TableHead>
                         <TableHead>Aksi</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredData.map((item: any, index: number) => (
-                        <TableRow key={item.kd_penyakit || item.id || index}>
-                          <TableCell className="font-mono">{item.kd_penyakit}</TableCell>
-                          <TableCell>{item.nm_penyakit}</TableCell>
-                          <TableCell>
-                            <span className={`px-2 py-1 rounded text-xs ${
-                              item.status === 'Menular' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-                            }`}>
-                              {item.status}
-                            </span>
+                      {currentSavedData.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground">
+                            Belum ada data ICD-10 yang disimpan.
                           </TableCell>
-                          <TableCell>{item.keterangan}</TableCell>
+                        </TableRow>
+                      ) : currentSavedData.map((item: ICD10Data | ICD9Data, index: number) => {
+                        const icd10Item = item as ICD10Data;
+                        return (
+                        <TableRow key={icd10Item.kd_penyakit || icd10Item.id || index}>
+                          <TableCell className="font-mono">{icd10Item.kd_penyakit}</TableCell>
+                          <TableCell>{icd10Item.nm_penyakit}</TableCell>
                           <TableCell>
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="outline" onClick={() => handleEdit(item)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" variant="destructive" onClick={() => handleDelete(item.id!)}>
+                            <div className="text-sm">
+                              <div className="font-mono">{icd10Item.snomed_concept_id || '-'}</div>
+                              <div className="text-muted-foreground">{icd10Item.snomed_term || '-'}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {icd10Item.prioritas}
+                          </TableCell>
+                          <TableCell>{icd10Item.status_layanan}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="destructive" onClick={() => handleDeleteSaved('icd10', icd10Item)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                      )})}
                     </TableBody>
                   </Table>
                 </div>
               </TabsContent>
 
               <TabsContent value="icd9" className="space-y-4">
-                {/* ICD-9 Form */}
-                {showForm && activeTab === 'icd9' && (
-                  <div className="border rounded-lg p-4 space-y-4">
-                    <h3 className="font-semibold">
-                      {editingItem ? 'Edit Data ICD-9' : 'Tambah Data ICD-9'}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="kode">Kode ICD-9</Label>
-                        <Input
-                          id="kode"
-                          value={icd9Form.kode}
-                          onChange={(e) => setIcd9Form(prev => ({ ...prev, kode: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="deskripsi_pendek">Deskripsi Pendek</Label>
-                        <Input
-                          id="deskripsi_pendek"
-                          value={icd9Form.deskripsi_pendek}
-                          onChange={(e) => setIcd9Form(prev => ({ ...prev, deskripsi_pendek: e.target.value }))}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor="deskripsi_panjang">Deskripsi Panjang</Label>
-                        <Input
-                          id="deskripsi_panjang"
-                          value={icd9Form.deskripsi_panjang}
-                          onChange={(e) => setIcd9Form(prev => ({ ...prev, deskripsi_panjang: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button onClick={handleSave}>Simpan</Button>
-                      <Button variant="outline" onClick={resetForm}>Batal</Button>
-                    </div>
-                  </div>
+                {loadingSavedData && (
+                  <div className="text-sm text-muted-foreground">Memuat data ICD-9...</div>
                 )}
+                <div className="space-y-4">
+                  {renderIcdDraftRows('icd9')}
+                </div>
 
-                {/* ICD-9 Data Table */}
                 <div className="border rounded-lg">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Kode</TableHead>
                         <TableHead>Deskripsi Pendek</TableHead>
-                        <TableHead>Deskripsi Panjang</TableHead>
+                        <TableHead>SNOMED-CT</TableHead>
+                        <TableHead>Prioritas</TableHead>
+                        <TableHead>Status</TableHead>
                         <TableHead>Aksi</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredData.map((item: any, index: number) => (
-                        <TableRow key={item.kode || item.id || index}>
-                          <TableCell className="font-mono">{item.kode}</TableCell>
-                          <TableCell>{item.deskripsi_pendek}</TableCell>
-                          <TableCell>{item.deskripsi_panjang}</TableCell>
+                      {currentSavedData.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground">
+                            Belum ada data ICD-9 yang disimpan.
+                          </TableCell>
+                        </TableRow>
+                      ) : currentSavedData.map((item: ICD10Data | ICD9Data, index: number) => {
+                        const icd9Item = item as ICD9Data;
+                        return (
+                        <TableRow key={icd9Item.kode || icd9Item.id || index}>
+                          <TableCell className="font-mono">{formatIcd9ProcedureCode(icd9Item.kode)}</TableCell>
+                          <TableCell>{icd9Item.deskripsi_pendek}</TableCell>
                           <TableCell>
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="outline" onClick={() => handleEdit(item)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" variant="destructive" onClick={() => handleDelete(item.id!)}>
+                            <div className="text-sm">
+                              <div className="font-mono">{icd9Item.snomed_concept_id || '-'}</div>
+                              <div className="text-muted-foreground">{icd9Item.snomed_term || '-'}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{icd9Item.prioritas}</TableCell>
+                          <TableCell>{icd9Item.status_layanan}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="destructive" onClick={() => handleDeleteSaved('icd9', icd9Item)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                      )})}
                     </TableBody>
                   </Table>
                 </div>
@@ -418,164 +872,11 @@ export const ICDModal: React.FC<ICDModalProps> = ({ isOpen, onClose, noRawat }) 
         </DialogContent>
       </Dialog>
 
-      {/* INACBG Tariff Simulation Modal */}
-      <Dialog open={showTariffModal} onOpenChange={setShowTariffModal}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Simulasi Tarif INACBG's</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-6">
-            {/* Patient Info */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="tanggal_lahir">Tanggal Lahir</Label>
-                <Input type="date" id="tanggal_lahir" />
-              </div>
-              <div>
-                <Label htmlFor="jenis_kelamin">Jenis Kelamin</Label>
-                <select id="jenis_kelamin" className="w-full p-2 border rounded">
-                  <option value="">Pilih Jenis Kelamin</option>
-                  <option value="L">Laki-laki</option>
-                  <option value="P">Perempuan</option>
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="jenis_rawat">Jenis Rawat</Label>
-                <select id="jenis_rawat" className="w-full p-2 border rounded">
-                  <option value="">Pilih Jenis Rawat</option>
-                  <option value="Rawat Jalan">Rawat Jalan</option>
-                  <option value="Rawat Inap">Rawat Inap</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Care Class */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="kelas_rawat">Kelas Rawat</Label>
-                <select id="kelas_rawat" className="w-full p-2 border rounded">
-                  <option value="">Pilih Kelas Rawat</option>
-                  <option value="1">Kelas 1</option>
-                  <option value="2">Kelas 2</option>
-                  <option value="3">Kelas 3</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Primary Diagnosis */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-lg">Diagnosa</h3>
-              <div>
-                <Label htmlFor="diagnosa_primer">Diagnosa Primer</Label>
-                <Input id="diagnosa_primer" placeholder="Masukkan diagnosa primer..." />
-              </div>
-              
-              {/* Secondary Diagnosis - Repeatable */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Diagnosa Sekunder</Label>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      const container = document.getElementById('secondary-diagnosis-container');
-                      if (container) {
-                        const newInput = document.createElement('div');
-                        newInput.className = 'flex gap-2 items-center';
-                        newInput.innerHTML = `
-                          <input class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder="Masukkan diagnosa sekunder..." />
-                          <button type="button" class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10" onclick="this.parentElement.remove()">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                          </button>
-                        `;
-                        container.appendChild(newInput);
-                      }
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Tambah
-                  </Button>
-                </div>
-                <div id="secondary-diagnosis-container" className="space-y-2">
-                  <Input placeholder="Masukkan diagnosa sekunder..." />
-                </div>
-              </div>
-            </div>
-
-            {/* Procedures */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-lg">Prosedur</h3>
-              <div>
-                <Label htmlFor="prosedur_primer">Prosedur Primer</Label>
-                <Input id="prosedur_primer" placeholder="Masukkan prosedur primer..." />
-              </div>
-              
-              {/* Secondary Procedures - Repeatable */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Prosedur Sekunder</Label>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      const container = document.getElementById('secondary-procedure-container');
-                      if (container) {
-                        const newInput = document.createElement('div');
-                        newInput.className = 'flex gap-2 items-center';
-                        newInput.innerHTML = `
-                          <input class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder="Masukkan prosedur sekunder..." />
-                          <button type="button" class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10" onclick="this.parentElement.remove()">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                          </button>
-                        `;
-                        container.appendChild(newInput);
-                      }
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Tambah
-                  </Button>
-                </div>
-                <div id="secondary-procedure-container" className="space-y-2">
-                  <Input placeholder="Masukkan prosedur sekunder..." />
-                </div>
-              </div>
-            </div>
-
-            {/* Simulation Result */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-4">Hasil Simulasi</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600">Kode CBG</p>
-                  <p className="font-semibold">-</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Severity Level</p>
-                  <p className="font-semibold">-</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Tarif INA-CBG's</p>
-                  <p className="font-semibold text-green-600">Rp 0</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowTariffModal(false)}>
-                Tutup
-              </Button>
-              <Button>
-                <Calculator className="h-4 w-4 mr-2" />
-                Simulasi
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <InacbgTariffSimulationDialog
+        open={showTariffModal}
+        onOpenChange={setShowTariffModal}
+        noRawat={noRawat}
+      />
     </>
   );
 };

@@ -7,6 +7,7 @@ interface User {
   id: string;
   username: string;
   name: string;
+  kd_dokter?: string;
   role: 'doctor' | 'admin' | 'nurse' | 'staff' | 'medis';
   kd_poli: string;
   all_poli?: string[];
@@ -62,6 +63,7 @@ const loginApi = async (username: string, password: string): Promise<{token: str
           id: data.user.id_user || data.user.username,
           username: data.user.username,
           name: data.user.fullname || data.user.username, // Use fullname or username as fallback
+          kd_dokter: data.user.username,
           role: 'medis', // Default role, you can enhance this based on your DB
           kd_poli: data.user.kd_poli || '',
           all_poli: data.user.all_poli || [],

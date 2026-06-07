@@ -176,7 +176,7 @@ const Statistik = () => {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-2 md:p-6 space-y-6 md:space-y-8 w-full mx-auto animate-fade-in shadow-md bg-white rounded-md">
       <div className="mb-6">
         <h1 className="text-3xl font-bold">Statistik</h1>
         <p className="text-muted-foreground">Dashboard analitik data medis</p>

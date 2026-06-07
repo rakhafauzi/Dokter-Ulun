@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { AuthService } from './services/authService.js';
 import { DashboardService } from './services/dashboardService.js';
 import { AttendanceService } from './services/attendanceService.js';
@@ -14,8 +16,10 @@ import GetMedicalRecordService from './services/getMedicalRecordService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
 import IcdDataService from './services/icdDataService.js';
 import IgdDataService from './services/igdDataService.js';
+import InacbgSimulationService from './services/inacbgSimulationService.js';
 import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
+import PatientNotesService from './services/patientNotesService.js';
 import ProcedureService from './services/procedureService.js';
 import PrescriptionDataService from './services/prescriptionDataService.js';
 import RadiologyDataService from './services/radiologyDataService.js';
@@ -29,7 +33,10 @@ import clinicalPathwayRoutes from './routes/clinicalPathway.js';
 import { testConnection } from './config/database.js';
 
 // Load environment variables
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 // #region debug-point A:save-exam-route-reporter
 const reportSaveExaminationDebug = (hypothesisId, location, msg, data = {}, runId = 'pre-fix') => {
@@ -503,6 +510,67 @@ app.post('/api/get-medical-record', async (req, res) => {
   }
 });
 
+app.get('/api/patient-notes/:no_rawat', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+
+    if (!no_rawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat wajib diisi'
+      });
+    }
+
+    const result = await PatientNotesService.getNotes(no_rawat);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-notes GET endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/patient-notes', async (req, res) => {
+  try {
+    const result = await PatientNotesService.createNote(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-notes POST endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.put('/api/patient-notes', async (req, res) => {
+  try {
+    const result = await PatientNotesService.updateNote(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-notes PUT endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.delete('/api/patient-notes', async (req, res) => {
+  try {
+    const result = await PatientNotesService.deleteNote(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-notes DELETE endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/procedure-options', async (req, res) => {
   try {
     const { no_rawat, search = '', limit = 20, status_rawat } = req.query;
@@ -572,11 +640,92 @@ app.post('/api/delete-examination', async (req, res) => {
 // ICD data endpoint
 app.post('/api/icd-data', async (req, res) => {
   try {
-    const { page, itemsPerPage, search, icdType } = req.body;
-    const data = await IcdDataService.getIcdData(page, itemsPerPage, search, icdType);
+    const { page, itemsPerPage, search, icdType, relatedIcdCode, relatedIcdType } = req.body;
+    const data = await IcdDataService.getIcdData(page, itemsPerPage, search, icdType, relatedIcdCode, relatedIcdType);
     res.json(data);
   } catch (error) {
     console.error('ICD data error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/icd-management/:no_rawat', async (req, res) => {
+  try {
+    const data = await IcdDataService.getPatientIcdData(req.params.no_rawat);
+    res.json(data);
+  } catch (error) {
+    console.error('ICD management load error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/icd-management', async (req, res) => {
+  try {
+    const data = await IcdDataService.savePatientIcdData(req.body);
+    res.json(data);
+  } catch (error) {
+    console.error('ICD management save error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/icd-management', async (req, res) => {
+  try {
+    const data = await IcdDataService.deletePatientIcdItem(req.body);
+    res.json(data);
+  } catch (error) {
+    console.error('ICD management delete error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/inacbg-simulation/:no_rawat/defaults', async (req, res) => {
+  try {
+    const data = await InacbgSimulationService.getDefaults(req.params.no_rawat);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('INACBG defaults error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/inacbg-simulation/defaults', async (_req, res) => {
+  try {
+    const data = await InacbgSimulationService.getDefaults('');
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('INACBG global defaults error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/inacbg-simulation/search', async (req, res) => {
+  try {
+    const data = await InacbgSimulationService.searchCodes(req.query.q, req.query.type);
+    res.json(data);
+  } catch (error) {
+    console.error('INACBG search error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/inacbg-simulation/code-info', async (req, res) => {
+  try {
+    const data = await InacbgSimulationService.getCodeInfo(req.query.code, req.query.type);
+    res.json(data);
+  } catch (error) {
+    console.error('INACBG code info error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/inacbg-simulation/api-call', async (req, res) => {
+  try {
+    const { method, data, nomor_sep } = req.body;
+    const result = await InacbgSimulationService.apiCall(method, data, nomor_sep);
+    res.json(result);
+  } catch (error) {
+    console.error('INACBG api_call error:', error);
     res.status(500).json({ error: error.message });
   }
 });
