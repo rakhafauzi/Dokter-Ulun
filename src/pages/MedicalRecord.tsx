@@ -138,6 +138,40 @@ interface MedicalRecordData {
   };
   outpatient_visits: any[];
   inpatient_visits: any[];
+  focused_examinations?: {
+    ralan?: any[];
+    ranap?: any[];
+  };
+  focused_procedures?: {
+    ralan?: any[];
+    ranap?: any[];
+  };
+  focused_medications_request?: {
+    ralan?: any[];
+    ranap?: any[];
+    pulang?: any[];
+    ibs?: any[];
+  };
+  focused_medications?: {
+    ralan?: any[];
+    ranap?: any[];
+  };
+  focused_laboratory_request?: {
+    ralan?: any[];
+    ranap?: any[];
+  };
+  focused_laboratory?: {
+    ralan?: LabData[];
+    ranap?: LabData[];
+  };
+  focused_radiology_request?: {
+    ralan?: any[];
+    ranap?: any[];
+  };
+  focused_radiology?: {
+    ralan?: any[];
+    ranap?: any[];
+  };
 }
 
 interface PaginationMeta {
@@ -342,6 +376,83 @@ const mergeVisitsByNoRawat = (existingVisits: any[] = [], incomingVisits: any[] 
   ];
 };
 
+const getVisitSortTimestamp = (visit: any, type: 'outpatient' | 'inpatient') => {
+  const sourceValue = type === 'outpatient'
+    ? visit?.tanggal
+    : visit?.tanggal_masuk || visit?.tanggal_keluar || '';
+
+  const normalized = String(sourceValue || '').trim();
+  if (!normalized) {
+    return 0;
+  }
+
+  const [datePart = '', timePart = '00:00'] = normalized.split(' ');
+  const parsed = new Date(`${datePart}T${timePart.length === 5 ? `${timePart}:00` : timePart}`);
+  const timestamp = parsed.getTime();
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const buildExaminationHistory = (visits: any[] = [], rawatType: 'Ralan' | 'Ranap') => {
+  return visits
+    .flatMap((visit) =>
+      (visit.examinations || []).map((exam: any, examIndex: number) => {
+        const examDate = String(exam.tgl_perawatan || exam.tanggal || '').trim();
+        const examTime = String(exam.jam_rawat || '00:00').trim() || '00:00';
+        const parsedDate = examDate
+          ? new Date(`${examDate}T${examTime.length === 5 ? `${examTime}:00` : examTime}`).getTime()
+          : 0;
+
+        return {
+          key: `${rawatType.toLowerCase()}-${visit.no_rawat}-${examDate}-${examTime}-${examIndex}`,
+          visit,
+          exam,
+          rawatType,
+          timestamp: Number.isNaN(parsedDate) ? 0 : parsedDate,
+        };
+      })
+    )
+    .sort((a, b) => b.timestamp - a.timestamp);
+};
+
+const getRecordTimestamp = (value?: string | null) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return 0;
+  }
+
+  const [datePart = '', timePart = '00:00'] = normalized.split(' ');
+  const parsed = new Date(`${datePart}T${timePart.length === 5 ? `${timePart}:00` : timePart}`);
+  const timestamp = parsed.getTime();
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const buildFocusedItems = <T,>(
+  records: T[] = [],
+  noRawat: string,
+  source: string,
+  extra: Record<string, any> = {},
+  getDateValue?: (record: T) => string | undefined | null
+) => {
+  return records
+    .map((record, index) => ({
+      ...record,
+      no_rawat: noRawat,
+      source,
+      ...extra,
+      __timestamp: getRecordTimestamp(getDateValue ? getDateValue(record) : (record as any)?.tanggal),
+      __index: index
+    }))
+    .sort((a, b) => {
+      if (b.__timestamp !== a.__timestamp) {
+        return b.__timestamp - a.__timestamp;
+      }
+
+      return a.__index - b.__index;
+    });
+};
+
 const MedicalRecord = () => {
   const { no_rkm_medis, no_rawat: rawatParam } = useParams();
   const [searchParams] = useSearchParams();
@@ -440,12 +551,20 @@ const MedicalRecord = () => {
   const hasMoreRecords = pagination.outpatient.hasMore || pagination.inpatient.hasMore;
   const allOutpatientVisits = medicalData?.outpatient_visits || [];
   const allInpatientVisits = medicalData?.inpatient_visits || [];
+  const sortedOutpatientVisits = React.useMemo(
+    () => [...allOutpatientVisits].sort((a, b) => getVisitSortTimestamp(b, 'outpatient') - getVisitSortTimestamp(a, 'outpatient')),
+    [allOutpatientVisits]
+  );
+  const sortedInpatientVisits = React.useMemo(
+    () => [...allInpatientVisits].sort((a, b) => getVisitSortTimestamp(b, 'inpatient') - getVisitSortTimestamp(a, 'inpatient')),
+    [allInpatientVisits]
+  );
   const scopedOutpatientVisits = formattedNoRawat
-    ? allOutpatientVisits.filter((visit) => visit.no_rawat === formattedNoRawat)
-    : allOutpatientVisits;
+    ? sortedOutpatientVisits.filter((visit) => visit.no_rawat === formattedNoRawat)
+    : sortedOutpatientVisits;
   const scopedInpatientVisits = formattedNoRawat
-    ? allInpatientVisits.filter((visit) => visit.no_rawat === formattedNoRawat)
-    : allInpatientVisits;
+    ? sortedInpatientVisits.filter((visit) => visit.no_rawat === formattedNoRawat)
+    : sortedInpatientVisits;
   const vitalChartData = React.useMemo(() => {
     return [...scopedOutpatientVisits, ...scopedInpatientVisits]
       .flatMap((visit) => (visit.examinations || []).map((exam: any) => {
@@ -475,7 +594,820 @@ const MedicalRecord = () => {
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
   }, [scopedInpatientVisits, scopedOutpatientVisits]);
+  const outpatientExaminationHistory = React.useMemo(() => {
+    if (formattedNoRawat) {
+      const focusedExaminations = medicalData?.focused_examinations?.ralan || [];
+      return focusedExaminations
+        .map((exam: any, examIndex: number) => {
+          const examDate = String(exam.tgl_perawatan || exam.tanggal || '').trim();
+          const examTime = String(exam.jam_rawat || '00:00').trim() || '00:00';
+          const parsedDate = examDate
+            ? new Date(`${examDate}T${examTime.length === 5 ? `${examTime}:00` : examTime}`).getTime()
+            : 0;
+
+          return {
+            key: `focused-ralan-${formattedNoRawat}-${examDate}-${examTime}-${examIndex}`,
+            visit: { no_rawat: formattedNoRawat, status_lanjut: 'Ralan' },
+            exam,
+            rawatType: 'Ralan' as const,
+            timestamp: Number.isNaN(parsedDate) ? 0 : parsedDate,
+          };
+        })
+        .sort((a, b) => b.timestamp - a.timestamp);
+    }
+
+    return buildExaminationHistory(scopedOutpatientVisits, 'Ralan');
+  }, [formattedNoRawat, medicalData?.focused_examinations?.ralan, scopedOutpatientVisits]);
+  const inpatientExaminationHistory = React.useMemo(() => {
+    if (formattedNoRawat) {
+      const focusedExaminations = medicalData?.focused_examinations?.ranap || [];
+      return focusedExaminations
+        .map((exam: any, examIndex: number) => {
+          const examDate = String(exam.tgl_perawatan || exam.tanggal || '').trim();
+          const examTime = String(exam.jam_rawat || '00:00').trim() || '00:00';
+          const parsedDate = examDate
+            ? new Date(`${examDate}T${examTime.length === 5 ? `${examTime}:00` : examTime}`).getTime()
+            : 0;
+
+          return {
+            key: `focused-ranap-${formattedNoRawat}-${examDate}-${examTime}-${examIndex}`,
+            visit: { no_rawat: formattedNoRawat, status_lanjut: 'Ranap' },
+            exam,
+            rawatType: 'Ranap' as const,
+            timestamp: Number.isNaN(parsedDate) ? 0 : parsedDate,
+          };
+        })
+        .sort((a, b) => b.timestamp - a.timestamp);
+    }
+
+    return buildExaminationHistory(scopedInpatientVisits, 'Ranap');
+  }, [formattedNoRawat, medicalData?.focused_examinations?.ranap, scopedInpatientVisits]);
+  const outpatientProcedures = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(
+        medicalData?.focused_procedures?.ralan || [],
+        formattedNoRawat,
+        'Rawat Jalan',
+        { status_rawat: 'Ralan' },
+        (record: any) => record?.tanggal
+      );
+    }
+
+    return buildFocusedItems(
+      scopedOutpatientVisits.flatMap((visit) => (visit.procedures || []).map((proc: any) => ({ ...proc, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Jalan',
+      {},
+      (record: any) => record?.tanggal
+    );
+  }, [formattedNoRawat, medicalData?.focused_procedures?.ralan, scopedOutpatientVisits]);
+  const inpatientProcedures = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(
+        medicalData?.focused_procedures?.ranap || [],
+        formattedNoRawat,
+        'Rawat Inap',
+        { status_rawat: 'Ranap' },
+        (record: any) => record?.tanggal
+      );
+    }
+
+    return buildFocusedItems(
+      scopedInpatientVisits.flatMap((visit) => (visit.procedures || []).map((proc: any) => ({ ...proc, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Inap',
+      {},
+      (record: any) => record?.tanggal
+    );
+  }, [formattedNoRawat, medicalData?.focused_procedures?.ranap, scopedInpatientVisits]);
+  const outpatientMedicationRequests = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(
+        medicalData?.focused_medications_request?.ralan || [],
+        formattedNoRawat,
+        'Rawat Jalan',
+        { status: 'Ralan' },
+        (record: any) => record?.tanggal
+      );
+    }
+
+    return buildFocusedItems(
+      scopedOutpatientVisits.flatMap((visit) =>
+        (visit.medicationsRequest || []).map((med: any) => ({
+          ...med,
+          no_rawat: visit.no_rawat,
+          status: 'Ralan'
+        }))
+      ),
+      '',
+      'Rawat Jalan',
+      {},
+      (record: any) => record?.tanggal
+    );
+  }, [formattedNoRawat, medicalData?.focused_medications_request?.ralan, scopedOutpatientVisits]);
+  const inpatientMedicationRequests = React.useMemo(() => {
+    if (formattedNoRawat) {
+      const ranap = buildFocusedItems(
+        medicalData?.focused_medications_request?.ranap || [],
+        formattedNoRawat,
+        'Rawat Inap',
+        { status: 'Ranap' },
+        (record: any) => record?.tanggal
+      );
+      const pulang = buildFocusedItems(
+        medicalData?.focused_medications_request?.pulang || [],
+        formattedNoRawat,
+        'Obat Pulang',
+        { status: 'Pulang' },
+        (record: any) => record?.tanggal
+      );
+      const ibs = buildFocusedItems(
+        medicalData?.focused_medications_request?.ibs || [],
+        formattedNoRawat,
+        'IBS',
+        { status: 'IBS' },
+        (record: any) => record?.tanggal
+      );
+
+      return [...ranap, ...pulang, ...ibs].sort((a, b) => b.__timestamp - a.__timestamp);
+    }
+
+    return buildFocusedItems(
+      scopedInpatientVisits.flatMap((visit) => {
+        const ranap = (visit.medicationsRequest || []).map((med: any) => ({
+          ...med,
+          no_rawat: visit.no_rawat,
+          source: 'Rawat Inap',
+          status: 'Ranap',
+        }));
+        const pulang = (visit.medicationsRequestPulang || []).map((med: any) => ({
+          ...med,
+          no_rawat: visit.no_rawat,
+          source: 'Obat Pulang',
+          status: 'Pulang',
+        }));
+        const ibs = (visit.medicationsRequestIbs || []).map((med: any) => ({
+          ...med,
+          no_rawat: visit.no_rawat,
+          source: 'IBS',
+          status: 'IBS',
+        }));
+        return [...ranap, ...pulang, ...ibs];
+      }),
+      '',
+      'Rawat Inap',
+      {},
+      (record: any) => record?.tanggal
+    );
+  }, [
+    formattedNoRawat,
+    medicalData?.focused_medications_request?.ibs,
+    medicalData?.focused_medications_request?.pulang,
+    medicalData?.focused_medications_request?.ralan,
+    medicalData?.focused_medications_request?.ranap,
+    scopedInpatientVisits
+  ]);
+  const outpatientMedicationHistory = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(
+        medicalData?.focused_medications?.ralan || [],
+        formattedNoRawat,
+        'Rawat Jalan',
+        {},
+        (record: any) => record?.tanggal
+      );
+    }
+
+    return buildFocusedItems(
+      scopedOutpatientVisits.flatMap((visit) => (visit.medications || []).map((med: any) => ({ ...med, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Jalan',
+      {},
+      (record: any) => record?.tanggal
+    );
+  }, [formattedNoRawat, medicalData?.focused_medications?.ralan, scopedOutpatientVisits]);
+  const inpatientMedicationHistory = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(
+        medicalData?.focused_medications?.ranap || [],
+        formattedNoRawat,
+        'Rawat Inap',
+        {},
+        (record: any) => record?.tanggal
+      );
+    }
+
+    return buildFocusedItems(
+      scopedInpatientVisits.flatMap((visit) => (visit.medications || []).map((med: any) => ({ ...med, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Inap',
+      {},
+      (record: any) => record?.tanggal
+    );
+  }, [formattedNoRawat, medicalData?.focused_medications?.ranap, scopedInpatientVisits]);
+  const outpatientLaboratoryRequests = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(medicalData?.focused_laboratory_request?.ralan || [], formattedNoRawat, 'Rawat Jalan');
+    }
+
+    return buildFocusedItems(
+      scopedOutpatientVisits.flatMap((visit) => (visit.laboratoryRequest || []).map((lab: any) => ({ ...lab, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Jalan'
+    );
+  }, [formattedNoRawat, medicalData?.focused_laboratory_request?.ralan, scopedOutpatientVisits]);
+  const inpatientLaboratoryRequests = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(medicalData?.focused_laboratory_request?.ranap || [], formattedNoRawat, 'Rawat Inap');
+    }
+
+    return buildFocusedItems(
+      scopedInpatientVisits.flatMap((visit) => (visit.laboratoryRequest || []).map((lab: any) => ({ ...lab, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Inap'
+    );
+  }, [formattedNoRawat, medicalData?.focused_laboratory_request?.ranap, scopedInpatientVisits]);
+  const outpatientLaboratoryHistory = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(
+        medicalData?.focused_laboratory?.ralan || [],
+        formattedNoRawat,
+        'Rawat Jalan'
+      );
+    }
+
+    return buildFocusedItems(
+      scopedOutpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Jalan'
+    );
+  }, [formattedNoRawat, medicalData?.focused_laboratory?.ralan, scopedOutpatientVisits]);
+  const inpatientLaboratoryHistory = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(
+        medicalData?.focused_laboratory?.ranap || [],
+        formattedNoRawat,
+        'Rawat Inap'
+      );
+    }
+
+    return buildFocusedItems(
+      scopedInpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Inap'
+    );
+  }, [formattedNoRawat, medicalData?.focused_laboratory?.ranap, scopedInpatientVisits]);
+  const outpatientRadiologyRequests = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(medicalData?.focused_radiology_request?.ralan || [], formattedNoRawat, 'Rawat Jalan');
+    }
+
+    return buildFocusedItems(
+      scopedOutpatientVisits.flatMap((visit) => ((visit.radiologyRequest || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Jalan'
+    );
+  }, [formattedNoRawat, medicalData?.focused_radiology_request?.ralan, scopedOutpatientVisits]);
+  const inpatientRadiologyRequests = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(medicalData?.focused_radiology_request?.ranap || [], formattedNoRawat, 'Rawat Inap');
+    }
+
+    return buildFocusedItems(
+      scopedInpatientVisits.flatMap((visit) => ((visit.radiologyRequest || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Inap'
+    );
+  }, [formattedNoRawat, medicalData?.focused_radiology_request?.ranap, scopedInpatientVisits]);
+  const outpatientRadiologyHistory = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(medicalData?.focused_radiology?.ralan || [], formattedNoRawat, 'Rawat Jalan');
+    }
+
+    return buildFocusedItems(
+      scopedOutpatientVisits.flatMap((visit) => ((visit.radiology || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Jalan'
+    );
+  }, [formattedNoRawat, medicalData?.focused_radiology?.ralan, scopedOutpatientVisits]);
+  const inpatientRadiologyHistory = React.useMemo(() => {
+    if (formattedNoRawat) {
+      return buildFocusedItems(medicalData?.focused_radiology?.ranap || [], formattedNoRawat, 'Rawat Inap');
+    }
+
+    return buildFocusedItems(
+      scopedInpatientVisits.flatMap((visit) => ((visit.radiology || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat }))),
+      '',
+      'Rawat Inap'
+    );
+  }, [formattedNoRawat, medicalData?.focused_radiology?.ranap, scopedInpatientVisits]);
   const activeVitalSeries = vitalChartSeries.filter((series) => visibleVitalSeries[series.key]);
+  const renderExaminationCards = (history: Array<{ key: string; visit: any; exam: any; rawatType: 'Ralan' | 'Ranap' }>) => {
+    if (history.length === 0) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Belum ada data pemeriksaan pada kategori ini untuk nomor rawat tersebut.
+        </div>
+      );
+    }
+
+    return history.map(({ key, visit, exam, rawatType }) => (
+      <div key={key} className="border rounded-lg p-4">
+        <div className="flex justify-between items-start mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+            <div>
+              <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
+              <p className="font-medium">{exam.tgl_perawatan} {exam.jam_rawat}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">No. Rawat</p>
+              <p className="font-medium">{visit.no_rawat}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Jenis Rawat</p>
+              <p className="font-medium">{rawatType}</p>
+            </div>
+          </div>
+          <div className="flex space-x-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => handleCopyExamination(exam, visit)}
+            >
+              <Copy className="h-4 w-4 mr-1" />
+              Copy
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleEditExamination(exam, visit)}
+            >
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => handleDeleteExamination(exam, visit)}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <h4 className="font-medium">Tanda Vital</h4>
+            <p className="text-sm">Tekanan Darah: {exam.tekanan_darah || exam.tensi || '-'}</p>
+            <p className="text-sm">Nadi: {exam.nadi || '-'}</p>
+            <p className="text-sm">Respirasi: {exam.respirasi || '-'}</p>
+            <p className="text-sm">Suhu: {exam.suhu_tubuh || exam.suhu || '-'}</p>
+            <p className="text-sm">GCS: {exam.gcs || '-'}</p>
+            <p className="text-sm">SpO2: {exam.spo2 || '-'}</p>
+            <p className="text-sm">Tinggi: {exam.tinggi || '-'} cm</p>
+            <p className="text-sm">Berat: {exam.berat || '-'} kg</p>
+          </div>
+          <div className="space-y-2">
+            <h4 className="font-medium">SOAPIE</h4>
+            <p className="text-sm"><strong>S (Subjektif):</strong> {exam.s || exam.keluhan || '-'}</p>
+            <p className="text-sm"><strong>O (Objektif):</strong> {exam.o || exam.pemeriksaan || '-'}</p>
+            <p className="text-sm"><strong>A (Assessment):</strong> {exam.a || exam.penilaian || '-'}</p>
+            <p className="text-sm"><strong>P (Planning):</strong> {exam.p || exam.rtl || '-'}</p>
+            <p className="text-sm"><strong>I (Implementation):</strong> {exam.i || exam.instruksi || '-'}</p>
+            <p className="text-sm"><strong>E (Evaluation):</strong> {exam.e || exam.evaluasi || '-'}</p>
+            <p className="text-sm"><strong>Petugas:</strong> {exam.pegawai || exam.nip || '-'}</p>
+          </div>
+        </div>
+      </div>
+    ));
+  };
+  const renderProcedureCards = (procedures: any[]) => {
+    if (procedures.length === 0) {
+      return (
+        <p className="text-sm italic text-muted-foreground">
+          Belum ada data tindakan pada kategori ini.
+        </p>
+      );
+    }
+
+    const groupedProcedures = procedures.reduce((groups, proc) => {
+      const groupKey = formatDateTimeToMinute(proc.tanggal);
+      if (!groups[groupKey]) {
+        groups[groupKey] = [];
+      }
+      groups[groupKey].push(proc);
+      return groups;
+    }, {} as Record<string, any[]>);
+
+    return (Object.entries(groupedProcedures) as Array<[string, any[]]>).map(([tanggal, items]) => (
+      <div key={tanggal} className="border rounded-lg p-4 space-y-4">
+        <div className="flex flex-col gap-3 border-b pb-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
+            <p className="font-semibold">{formatDateTimeToMinute(tanggal)}</p>
+          </div>
+          <div className="text-left md:text-right">
+            <p className="font-medium">{items[0]?.source || '-'}</p>
+            <p className="font-medium">{items[0]?.no_rawat || '-'}</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {items.map((proc, procIndex) => {
+            const procedureKey = [
+              proc.no_rawat,
+              proc.kd_jenis_prw,
+              proc.tgl_perawatan,
+              proc.jam_rawat,
+              proc.record_type
+            ].join('|');
+
+            return (
+              <div
+                key={`${proc.no_rawat}-${tanggal}-${proc.nm_perawatan}-${procIndex}`}
+                className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-md border bg-muted/20 p-3"
+              >
+                <div>
+                  <p className="text-sm text-muted-foreground">Nama Perawatan</p>
+                  <p className="font-medium">{proc.nm_perawatan || proc.nama || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Nama Pelaksana</p>
+                  <p className="font-medium">{proc.nama_pelaksana || proc.hasil || '-'}</p>
+                </div>
+                <div className="md:col-span-2 flex justify-end">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDeleteProcedure(proc)}
+                    disabled={deletingProcedureKey === procedureKey}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {deletingProcedureKey === procedureKey ? 'Menghapus...' : 'Hapus'}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    ));
+  };
+  const renderMedicationCards = (items: any[], isRequestTab: boolean) => {
+    if (items.length === 0) {
+      return (
+        <p className="text-sm italic text-muted-foreground">
+          {isRequestTab ? 'Belum ada data riwayat resep obat.' : 'Belum ada data riwayat pemberian obat.'}
+        </p>
+      );
+    }
+
+    return items.map((med, index) => (
+      <div key={`${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Nomor Resep</p>
+            <p className="font-medium">{med.no_resep || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Tanggal</p>
+            <p className="font-medium">{formatDateSafe(med.tanggal)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">No. Rawat</p>
+            <p className="font-medium">{med.no_rawat}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Sumber</p>
+            <p className="font-medium">{med.source}</p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-medium">Obat:</h4>
+            <div className="flex flex-wrap gap-2">
+              {isRequestTab ? (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => handleEditResep(med)}>
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit Resep
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDeleteResep(med)}
+                    disabled={deletingPrescriptionNo === med.no_resep}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    {deletingPrescriptionNo === med.no_resep ? 'Menghapus...' : 'Hapus'}
+                  </Button>
+                </>
+              ) : null}
+              <Button variant="outline" size="sm" onClick={() => handleCopyResep(med)}>
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Resep
+              </Button>
+            </div>
+          </div>
+          {(med.obat || []).map((obat: any, i: number) => (
+            <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Nama</p>
+                <p className="font-medium">{obat.nama}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Jumlah</p>
+                <p className="font-medium">{obat.jumlah}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Aturan Pakai</p>
+                <p className="font-medium">{obat.aturan_pakai}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ));
+  };
+  const renderLaboratoryRequestCards = (items: any[]) => {
+    if (items.length === 0) {
+      return <p className="text-sm italic text-muted-foreground">Belum ada data permintaan laboratorium.</p>;
+    }
+
+    return items.map((lab, labIndex) => (
+      <div key={`${lab.no_rawat}-${lab.noorder}-${labIndex}`} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Tanggal</p>
+            <p className="font-medium">{formatDateSafe(lab.tanggal)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">No. Rawat</p>
+            <p className="font-medium">{lab.no_rawat}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Sumber</p>
+            <p className="font-medium">{lab.source}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">No. Order</p>
+            <p className="font-medium">{lab.noorder || '-'}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Button variant="outline" size="sm" onClick={() => handleEditLabRequest(lab)}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleCopyLabRequest(lab)}>
+            <Copy className="h-4 w-4 mr-2" />
+            Copy
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => handleDeleteLabRequest(lab)}
+            disabled={deletingLabRequestNo === lab.noorder}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {deletingLabRequestNo === lab.noorder ? 'Menghapus...' : 'Hapus'}
+          </Button>
+        </div>
+        <div className="space-y-2">
+          <h4 className="font-medium">Pemeriksaan:</h4>
+          {(lab.pemeriksaan || []).map((test: any, testIndex: number) => (
+            <div key={testIndex} className="grid grid-cols-1 md:grid-cols-1 gap-4 border-l-2 border-primary pl-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Nama</p>
+                <p className="font-medium">{test.nama}</p>
+              </div>
+              {test.kode ? (
+                <div>
+                  <p className="text-sm text-muted-foreground">Kode Pemeriksaan</p>
+                  <p className="font-medium">{test.kode}</p>
+                </div>
+              ) : null}
+              <div>
+                <p className="text-sm text-muted-foreground">Template</p>
+                {Array.isArray(test.templates) && test.templates.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    {test.templates.map((template: any, templateIndex: number) => (
+                      <div key={`${template.id_template}-${templateIndex}`} className="rounded border bg-muted/20 p-3">
+                        <p className="font-medium">{template.nama || '-'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          ID Template: {template.id_template || '-'}
+                          {template.satuan ? ` • Satuan: ${template.satuan}` : ''}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Rujukan LD: {template.nilai_rujukan_ld || '-'} {' • '}LA: {template.nilai_rujukan_la || '-'} {' • '}PD: {template.nilai_rujukan_pd || '-'} {' • '}PA: {template.nilai_rujukan_pa || '-'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm italic text-muted-foreground">Tidak ada template tersimpan.</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ));
+  };
+  const renderLaboratoryHistoryCards = (items: any[]) => {
+    if (items.length === 0) {
+      return <p className="text-sm italic text-muted-foreground">Belum ada riwayat pemeriksaan laboratorium.</p>;
+    }
+
+    return items.map((labGroup, groupIndex) => (
+      <div
+        key={`${labGroup.no_rawat}-${labGroup.tanggal}-${groupIndex}`}
+        className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
+        draggable
+        onDragStart={(e) => {
+          setDraggingLab({
+            tanggal: labGroup.tanggal,
+            pemeriksaan: labGroup.pemeriksaan
+          });
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Tanggal</p>
+            <p className="font-medium">{formatDateSafe(labGroup.tanggal)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">No. Rawat</p>
+            <p className="font-medium">{labGroup.no_rawat}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Sumber</p>
+            <p className="font-medium">{labGroup.source}</p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <h4 className="font-medium">Pemeriksaan:</h4>
+          {Array.isArray(labGroup.pemeriksaan) && labGroup.pemeriksaan.length > 0 ? (
+            (() => {
+              const groupedTests = (labGroup.pemeriksaan as LabTest[]).reduce((groups, test) => {
+                const key = test.nama?.trim() || '-';
+                if (!groups[key]) {
+                  groups[key] = [];
+                }
+                groups[key].push(test);
+                return groups;
+              }, {} as Record<string, LabTest[]>);
+
+              return Object.entries(groupedTests).map(([groupName, tests], groupIdx) => (
+              <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
+                <div>
+                  <p className="text-sm text-muted-foreground">Nama</p>
+                  <p className="font-semibold">{groupName}</p>
+                </div>
+                <div className="space-y-2">
+                  {(tests as LabTest[]).map((test, testIndex) => (
+                    <div
+                      key={`${groupName}-${testIndex}`}
+                      className={cn(
+                        "grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2 bg-background",
+                        test.keterangan === 'H' && "bg-red-100 text-red-900",
+                        test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                      )}
+                    >
+                      <div>
+                        <p className="text-sm text-muted-foreground">Pemeriksaan</p>
+                        <p className="font-medium">{test.pemeriksaan || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Hasil</p>
+                        <p className="font-medium">{test.hasil || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Rujukan</p>
+                        <p className="font-medium">{test.rujukan || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Keterangan</p>
+                        <p className="font-medium">{test.keterangan || '-'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              ));
+            })()
+          ) : (
+            <p className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan</p>
+          )}
+        </div>
+      </div>
+    ));
+  };
+  const renderRadiologyRequestCards = (items: any[]) => {
+    if (items.length === 0) {
+      return <p className="text-sm italic text-muted-foreground">Belum ada data permintaan radiologi.</p>;
+    }
+
+    return items.map((rad, radIndex) => (
+      <div key={`${rad.no_rawat}-${rad.noorder}-${radIndex}`} className="border rounded-lg p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Tanggal</p>
+            <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">No. Rawat</p>
+            <p className="font-medium">{rad.no_rawat}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Sumber</p>
+            <p className="font-medium">{rad.source}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">No. Order</p>
+            <p className="font-medium">{rad.noorder || '-'}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Button variant="outline" size="sm" onClick={() => handleEditRadiologyRequest(rad)}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleCopyRadiologyRequest(rad)}>
+            <Copy className="h-4 w-4 mr-2" />
+            Copy
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => handleDeleteRadiologyRequest(rad)}
+            disabled={deletingRadiologyRequestNo === rad.noorder}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {deletingRadiologyRequestNo === rad.noorder ? 'Menghapus...' : 'Hapus'}
+          </Button>
+        </div>
+        <div className="space-y-2">
+          <h4 className="font-medium">Pemeriksaan:</h4>
+          {Array.isArray(rad.pemeriksaan) && rad.pemeriksaan.length > 0 ? (
+            rad.pemeriksaan.map((test: any, testIndex: number) => (
+              <div key={testIndex} className="grid grid-cols-1 md:grid-cols-2 gap-4 border-l-2 border-primary pl-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Nama</p>
+                  <p className="font-medium">{test.nama || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Kode Pemeriksaan</p>
+                  <p className="font-medium">{test.kode || '-'}</p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm italic text-muted-foreground">Tidak ada pemeriksaan radiologi tersimpan.</p>
+          )}
+        </div>
+      </div>
+    ));
+  };
+  const renderRadiologyHistoryCards = (items: any[]) => {
+    if (items.length === 0) {
+      return <p className="text-sm italic text-muted-foreground">Belum ada riwayat radiologi.</p>;
+    }
+
+    return items.map((rad, radIndex) => (
+      <div
+        key={`${rad.no_rawat}-${rad.tanggal}-${radIndex}`}
+        className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
+        draggable
+        onDragStart={(e) => {
+          setDraggingRad(rad);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Tanggal</p>
+            <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">No. Rawat</p>
+            <p className="font-medium">{rad.no_rawat}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Sumber</p>
+            <p className="font-medium">{rad.source}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Pemeriksaan</p>
+            <p className="font-medium">{rad.pemeriksaan}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Hasil</p>
+            <p className="font-medium">{rad.hasil || '-'}</p>
+          </div>
+        </div>
+      </div>
+    ));
+  };
   
   useEffect(() => {
     const searchQuery = searchParams.get('search');
@@ -561,7 +1493,15 @@ const MedicalRecord = () => {
             inpatient_visits: mergeVisitsByNoRawat(
               previousData.inpatient_visits,
               responseData.inpatient_visits || []
-            )
+            ),
+            focused_examinations: responseData.focused_examinations || previousData.focused_examinations,
+            focused_procedures: responseData.focused_procedures || previousData.focused_procedures,
+            focused_medications_request: responseData.focused_medications_request || previousData.focused_medications_request,
+            focused_medications: responseData.focused_medications || previousData.focused_medications,
+            focused_laboratory_request: responseData.focused_laboratory_request || previousData.focused_laboratory_request,
+            focused_laboratory: responseData.focused_laboratory || previousData.focused_laboratory,
+            focused_radiology_request: responseData.focused_radiology_request || previousData.focused_radiology_request,
+            focused_radiology: responseData.focused_radiology || previousData.focused_radiology
           };
         });
 
@@ -2440,12 +3380,12 @@ const MedicalRecord = () => {
                 </TabsList>
 
                 <TabsContent value="outpatient">
-                  {allOutpatientVisits.length === 0 ? (
+                  {sortedOutpatientVisits.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       Tidak ada data kunjungan rawat jalan
                     </div>
                   ) : (
-                    allOutpatientVisits.map((visit: any, index) => (
+                    sortedOutpatientVisits.map((visit: any, index) => (
                     <div key={index} className="mb-8 rounded-lg p-0 shadow-sm">
                       <div className="bg-muted p-2 rounded-t-lg mb-4">
                         <div className="flex justify-between items-start">
@@ -2763,7 +3703,7 @@ const MedicalRecord = () => {
                 </TabsContent>
 
                 <TabsContent value="inpatient">
-                  {allInpatientVisits.map((visit: any, index) => (
+                  {sortedInpatientVisits.map((visit: any, index) => (
                     <div key={index} className="mb-8 rounded-lg p-0 shadow-sm">
                       <div className="bg-muted p-2 rounded-t-lg mb-4">
                         <div className="flex justify-between items-start">
@@ -3525,138 +4465,30 @@ const MedicalRecord = () => {
               {/* Data Existing */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Data Pemeriksaan</h3>
-                {/* Outpatient Examinations */}
-                {scopedOutpatientVisits.map((visit) => 
-                  visit.examinations?.map((exam, examIndex) => (
-                    <div key={examIndex} className="border rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-                            <p className="font-medium">{exam.tgl_perawatan} {exam.jam_rawat}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">No. Rawat</p>
-                            <p className="font-medium">{visit.no_rawat}</p>
-                          </div>
-                        </div>
-                        <div className="flex space-x-2">
-                          <Button 
-                            size="sm" 
-                            variant="secondary"
-                            onClick={() => handleCopyExamination(exam, visit)}
-                          >
-                            <Copy className="h-4 w-4 mr-1" />
-                            Copy
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleEditExamination(exam, visit)}
-                          >
-                            Edit
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="destructive"
-                            onClick={() => handleDeleteExamination(exam, visit)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <h4 className="font-medium">Tanda Vital</h4>
-                          <p className="text-sm">Tekanan Darah: {exam.tensi || '-'}</p>
-                          <p className="text-sm">Nadi: {exam.nadi || '-'}</p>
-                          <p className="text-sm">Respirasi: {exam.respirasi || '-'}</p>
-                          <p className="text-sm">Suhu: {exam.suhu_tubuh || '-'}</p>
-                          <p className="text-sm">GCS: {exam.gcs || '-'}</p>
-                          <p className="text-sm">SpO2: {exam.spo2 || '-'}</p>
-                          <p className="text-sm">Tinggi: {exam.tinggi || '-'} cm</p>
-                          <p className="text-sm">Berat: {exam.berat || '-'} kg</p>
-                        </div>
-                        <div className="space-y-2">
-                          <h4 className="font-medium">SOAPIE</h4>
-                          <p className="text-sm"><strong>Keluhan:</strong> {exam.keluhan || '-'}</p>
-                          <p className="text-sm"><strong>Pemeriksaan:</strong> {exam.pemeriksaan || '-'}</p>
-                          <p className="text-sm"><strong>RTL:</strong> {exam.rtl || '-'}</p>
-                          <p className="text-sm"><strong>Penilaian:</strong> {exam.penilaian || '-'}</p>
-                          <p className="text-sm"><strong>Instruksi:</strong> {exam.instruksi || '-'}</p>
-                          <p className="text-sm"><strong>Evaluasi:</strong> {exam.evaluasi || '-'}</p>
-                          <p className="text-sm"><strong>Petugas:</strong> {exam.nip || '-'}</p>
-                        </div>
-                      </div>
+                <Tabs defaultValue="outpatient" className="mt-2">
+                  <TabsList className="mb-4">
+                    <TabsTrigger value="outpatient">
+                      <User className="mr-2 h-4 w-4" />
+                      Rawat Jalan
+                    </TabsTrigger>
+                    <TabsTrigger value="inpatient">
+                      <BedDouble className="mr-2 h-4 w-4" />
+                      Rawat Inap
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="outpatient">
+                    <div className="space-y-4">
+                      {renderExaminationCards(outpatientExaminationHistory)}
                     </div>
-                  ))
-                )}
-                {/* Inpatient Examinations */}
-                {scopedInpatientVisits.map((visit) => 
-                  visit.examinations?.map((exam, examIndex) => (
-                    <div key={`inpatient-${examIndex}`} className="border rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-                            <p className="font-medium">{exam.tgl_perawatan} {exam.jam_rawat}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">No. Rawat</p>
-                            <p className="font-medium">{visit.no_rawat}</p>
-                          </div>
-                        </div>
-                        <div className="flex space-x-2">
-                          <Button 
-                            size="sm" 
-                            variant="secondary"
-                            onClick={() => handleCopyExamination(exam, visit)}
-                          >
-                            <Copy className="h-4 w-4 mr-1" />
-                            Copy
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleEditExamination(exam, visit)}
-                          >
-                            Edit
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="destructive"
-                            onClick={() => handleDeleteExamination(exam, visit)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <h4 className="font-medium">Tanda Vital</h4>
-                          <p className="text-sm">Tekanan Darah: {exam.tekanan_darah || exam.tensi || '-'}</p>
-                          <p className="text-sm">Nadi: {exam.nadi || '-'}</p>
-                          <p className="text-sm">Respirasi: {exam.respirasi || '-'}</p>
-                          <p className="text-sm">Suhu: {exam.suhu || '-'}</p>
-                          <p className="text-sm">GCS: {exam.gcs || '-'}</p>
-                          <p className="text-sm">SpO2: {exam.spo2 || '-'}</p>
-                          <p className="text-sm">Tinggi: {exam.tinggi || '-'} cm</p>
-                          <p className="text-sm">Berat: {exam.berat || '-'} kg</p>
-                        </div>
-                        <div className="space-y-2">
-                          <h4 className="font-medium">SOAPIE</h4>
-                          <p className="text-sm"><strong>S (Subjektif):</strong> {exam.s || exam.keluhan || '-'}</p>
-                          <p className="text-sm"><strong>O (Objektif):</strong> {exam.o || exam.pemeriksaan || '-'}</p>
-                          <p className="text-sm"><strong>A (Assessment):</strong> {exam.a || exam.penilaian || '-'}</p>
-                          <p className="text-sm"><strong>P (Planning):</strong> {exam.p || exam.rtl || '-'}</p>
-                          <p className="text-sm"><strong>I (Implementation):</strong> {exam.i || exam.instruksi || '-'}</p>
-                          <p className="text-sm"><strong>E (Evaluation):</strong> {exam.e || exam.evaluasi || '-'}</p>
-                          <p className="text-sm"><strong>Petugas:</strong> {exam.pegawai || exam.nip || '-'}</p>
-                        </div>
-                      </div>
+                  </TabsContent>
+
+                  <TabsContent value="inpatient">
+                    <div className="space-y-4">
+                      {renderExaminationCards(inpatientExaminationHistory)}
                     </div>
-                  ))
-                )}
+                  </TabsContent>
+                </Tabs>
               </div>
             </CardContent>
           </Card>
@@ -3837,104 +4669,24 @@ const MedicalRecord = () => {
               {/* Data Existing */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Data Tindakan</h3>
-                {(() => {
-                  const allProcedures = [
-                    ...scopedOutpatientVisits.flatMap((visit) =>
-                      (visit.procedures || []).map((proc) => ({
-                        ...proc,
-                        no_rawat: visit.no_rawat,
-                        source: 'Rawat Jalan'
-                      }))
-                    ),
-                    ...scopedInpatientVisits.flatMap((visit) =>
-                      (visit.procedures || []).map((proc) => ({
-                        ...proc,
-                        no_rawat: visit.no_rawat,
-                        source: 'Rawat Inap'
-                      }))
-                    )
-                  ];
-
-                  const sortedProcedures = allProcedures.sort((a, b) => {
-                    const dateA = new Date(a.tanggal || 0).getTime();
-                    const dateB = new Date(b.tanggal || 0).getTime();
-                    return dateB - dateA;
-                  });
-
-                  if (sortedProcedures.length === 0) {
-                    return (
-                      <p className="text-sm italic text-muted-foreground">
-                        Belum ada data tindakan pada batch riwayat yang sudah dimuat.
-                      </p>
-                    );
-                  }
-
-                  const groupedProcedures = sortedProcedures.reduce((groups, proc) => {
-                    const groupKey = formatDateTimeToMinute(proc.tanggal);
-                    if (!groups[groupKey]) {
-                      groups[groupKey] = [];
-                    }
-                    groups[groupKey].push(proc);
-                    return groups;
-                  }, {} as Record<string, any[]>);
-
-                  return (Object.entries(groupedProcedures) as Array<[string, any[]]>).map(([tanggal, procedures]) => (
-                    <div key={tanggal} className="border rounded-lg p-4 space-y-4">
-                      <div className="flex flex-col gap-3 border-b pb-3 md:flex-row md:items-start md:justify-between">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-                          <p className="font-semibold">{formatDateTimeToMinute(tanggal)}</p>
-                        </div>
-
-                        <div className="text-left md:text-right">
-                          <p className="font-medium">{procedures[0]?.source || '-'}</p>
-                          <p className="font-medium">{procedures[0]?.no_rawat || '-'}</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        {procedures.map((proc, procIndex) => (
-                          (() => {
-                            const procedureKey = [
-                              proc.no_rawat,
-                              proc.kd_jenis_prw,
-                              proc.tgl_perawatan,
-                              proc.jam_rawat,
-                              proc.record_type
-                            ].join('|');
-
-                            return (
-                          <div
-                            key={`${proc.no_rawat}-${tanggal}-${proc.nm_perawatan}-${procIndex}`}
-                            className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-md border bg-muted/20 p-3"
-                          >
-                            <div>
-                              <p className="text-sm text-muted-foreground">Nama Perawatan</p>
-                              <p className="font-medium">{proc.nm_perawatan || proc.nama || '-'}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Nama Pelaksana</p>
-                              <p className="font-medium">{proc.nama_pelaksana || proc.hasil || '-'}</p>
-                            </div>
-                            <div className="md:col-span-2 flex justify-end">
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleDeleteProcedure(proc)}
-                                disabled={deletingProcedureKey === procedureKey}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                {deletingProcedureKey === procedureKey ? 'Menghapus...' : 'Hapus'}
-                              </Button>
-                            </div>
-                          </div>
-                            );
-                          })()
-                        ))}
-                      </div>
-                    </div>
-                  ));
-                })()}
+                <Tabs defaultValue="outpatient" className="mt-2">
+                  <TabsList className="mb-4">
+                    <TabsTrigger value="outpatient">
+                      <User className="mr-2 h-4 w-4" />
+                      Rawat Jalan
+                    </TabsTrigger>
+                    <TabsTrigger value="inpatient">
+                      <BedDouble className="mr-2 h-4 w-4" />
+                      Rawat Inap
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="outpatient">
+                    <div className="space-y-4">{renderProcedureCards(outpatientProcedures)}</div>
+                  </TabsContent>
+                  <TabsContent value="inpatient">
+                    <div className="space-y-4">{renderProcedureCards(inpatientProcedures)}</div>
+                  </TabsContent>
+                </Tabs>
               </div>
             </CardContent>
           </Card>
@@ -4453,121 +5205,24 @@ const MedicalRecord = () => {
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Resep Obat</h3>
-
-                    {(() => {
-                      const allMedications = [
-                        ...scopedOutpatientVisits.flatMap((visit) =>
-                          (visit.medicationsRequest || []).map((med) => ({
-                            ...med,
-                            no_rawat: visit.no_rawat,
-                            source: "Rawat Jalan",
-                            status: "Ralan",
-                          }))
-                        ),
-                        ...scopedInpatientVisits.flatMap((visit) => {
-                          const ranap = (visit.medicationsRequest || []).map((med) => ({
-                            ...med,
-                            no_rawat: visit.no_rawat,
-                            source: "Rawat Inap",
-                            status: "Ranap",
-                          }));
-                          const pulang = (visit.medicationsRequestPulang || []).map((med) => ({
-                            ...med,
-                            no_rawat: visit.no_rawat,
-                            source: "Obat Pulang",
-                            status: "Pulang",
-                          }));
-                          const ibs = (visit.medicationsRequestIbs || []).map((med) => ({
-                            ...med,
-                            no_rawat: visit.no_rawat,
-                            source: "IBS",
-                            status: "IBS",
-                          }));
-                          return [...ranap, ...pulang, ...ibs];
-                        }),
-                      ];
-
-                      const sortedMedications = allMedications.sort((a, b) => {
-                        const dateA = new Date(`${a.tanggal}T${a.jam || "00:00:00"}`);
-                        const dateB = new Date(`${b.tanggal}T${b.jam || "00:00:00"}`);
-                        return dateB.getTime() - dateA.getTime(); // newest first
-                      });
-
-                      if (sortedMedications.length === 0) {
-                        return <p className="text-sm italic text-muted-foreground">Belum ada data riwayat resep obat.</p>;
-                      }
-
-                      return sortedMedications.map((med, index) => (
-                        <div key={index} className="border rounded-lg p-4">
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                            <div>
-                              <p className="text-sm text-muted-foreground">Nomor Resep</p>
-                              <p className="font-medium">{med.no_resep}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Tanggal</p>
-                              <p className="font-medium">{formatDateSafe(med.tanggal)}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">No. Rawat</p>
-                              <p className="font-medium">{med.no_rawat}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Sumber</p>
-                              <p className="font-medium">{med.source}</p>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center mb-2">
-                              <h4 className="font-medium">Obat:</h4>
-                              <div className="flex flex-wrap gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleEditResep(med)}
-                                >
-                                  <Pencil className="h-4 w-4 mr-2" />
-                                  Edit Resep
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => handleDeleteResep(med)}
-                                  disabled={deletingPrescriptionNo === med.no_resep}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  {deletingPrescriptionNo === med.no_resep ? 'Menghapus...' : 'Hapus'}
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleCopyResep(med)}
-                                >
-                                  <Copy className="h-4 w-4 mr-2" />
-                                  Copy Resep
-                                </Button>
-                              </div>
-                            </div>
-                            {med.obat.map((obat, i) => (
-                              <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Nama</p>
-                                  <p className="font-medium">{obat.nama}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Jumlah</p>
-                                  <p className="font-medium">{obat.jumlah}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Aturan Pakai</p>
-                                  <p className="font-medium">{obat.aturan_pakai}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ));
-                    })()}
+                    <Tabs defaultValue="outpatient" className="mt-2">
+                      <TabsList className="mb-4">
+                        <TabsTrigger value="outpatient">
+                          <User className="mr-2 h-4 w-4" />
+                          Rawat Jalan
+                        </TabsTrigger>
+                        <TabsTrigger value="inpatient">
+                          <BedDouble className="mr-2 h-4 w-4" />
+                          Rawat Inap
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="outpatient">
+                        <div className="space-y-4">{renderMedicationCards(outpatientMedicationRequests, true)}</div>
+                      </TabsContent>
+                      <TabsContent value="inpatient">
+                        <div className="space-y-4">{renderMedicationCards(inpatientMedicationRequests, true)}</div>
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 </TabsContent>
 
@@ -4575,87 +5230,24 @@ const MedicalRecord = () => {
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Pemberian Obat</h3>
-
-                    {(() => {
-                      const allMedications = [
-                        ...scopedOutpatientVisits.flatMap((visit) =>
-                          (visit.medications || []).map((med) => ({
-                            ...med,
-                            no_rawat: visit.no_rawat,
-                            source: "Rawat Jalan",
-                          }))
-                        ),
-                        ...scopedInpatientVisits.flatMap((visit) =>
-                          (visit.medications || []).map((med) => ({
-                            ...med,
-                            no_rawat: visit.no_rawat,
-                            source: "Rawat Inap",
-                          }))
-                        ),
-                      ];
-
-                      const sortedMedications = allMedications.sort((a, b) => {
-                        const dateA = new Date(`${a.tanggal}T${a.jam || "00:00:00"}`);
-                        const dateB = new Date(`${b.tanggal}T${b.jam || "00:00:00"}`);
-                        return dateB.getTime() - dateA.getTime(); // newest first
-                      });
-
-                      if (sortedMedications.length === 0) {
-                        return <p className="text-sm italic text-muted-foreground">Belum ada data riwayat pemberian obat.</p>;
-                      }
-
-                      return sortedMedications.map((med, index) => (
-                        <div key={index} className="border rounded-lg p-4">
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                            <div>
-                              <p className="text-sm text-muted-foreground">Nomor Resep</p>
-                              <p className="font-medium">{med.no_resep}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Tanggal</p>
-                              <p className="font-medium">{formatDateSafe(med.tanggal)}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">No. Rawat</p>
-                              <p className="font-medium">{med.no_rawat}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Sumber</p>
-                              <p className="font-medium">{med.source}</p>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center mb-2">
-                              <h4 className="font-medium">Obat:</h4>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleCopyResep(med)}
-                              >
-                                <Copy className="h-4 w-4 mr-2" />
-                                Copy Resep
-                              </Button>
-                            </div>
-                            {med.obat.map((obat, i) => (
-                              <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Nama</p>
-                                  <p className="font-medium">{obat.nama}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Jumlah</p>
-                                  <p className="font-medium">{obat.jumlah}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Aturan Pakai</p>
-                                  <p className="font-medium">{obat.aturan_pakai}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ));
-                    })()}
+                    <Tabs defaultValue="outpatient" className="mt-2">
+                      <TabsList className="mb-4">
+                        <TabsTrigger value="outpatient">
+                          <User className="mr-2 h-4 w-4" />
+                          Rawat Jalan
+                        </TabsTrigger>
+                        <TabsTrigger value="inpatient">
+                          <BedDouble className="mr-2 h-4 w-4" />
+                          Rawat Inap
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="outpatient">
+                        <div className="space-y-4">{renderMedicationCards(outpatientMedicationHistory, false)}</div>
+                      </TabsContent>
+                      <TabsContent value="inpatient">
+                        <div className="space-y-4">{renderMedicationCards(inpatientMedicationHistory, false)}</div>
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 </TabsContent>
 
@@ -5035,128 +5627,24 @@ const MedicalRecord = () => {
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Data Permintaan Laboratorium</h3>
-                    <div className="space-y-4">
-                      {(() => {
-                        const allLabRequests = [
-                          ...scopedOutpatientVisits.flatMap((visit) =>
-                            (visit.laboratoryRequest || []).map((lab) => ({
-                              ...lab,
-                              no_rawat: visit.no_rawat,
-                              source: 'Rawat Jalan'
-                            }))
-                          ),
-                          ...scopedInpatientVisits.flatMap((visit) =>
-                            (visit.laboratoryRequest || []).map((lab) => ({
-                              ...lab,
-                              no_rawat: visit.no_rawat,
-                              source: 'Rawat Inap'
-                            }))
-                          )
-                        ];
-
-                        if (allLabRequests.length === 0) {
-                          return (
-                            <p className="text-sm italic text-muted-foreground">
-                              Belum ada data permintaan laboratorium.
-                            </p>
-                          );
-                        }
-
-                        return allLabRequests.map((lab, labIndex) => (
-                          <div
-                            key={`${lab.no_rawat}-${labIndex}`}
-                            className="border rounded-lg p-4 hover:shadow-lg transition-shadow"
-                          >
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                              <div>
-                                <p className="text-sm text-muted-foreground">Tanggal</p>
-                                <p className="font-medium">{formatDateSafe(lab.tanggal)}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">No. Rawat</p>
-                                <p className="font-medium">{lab.no_rawat}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">Sumber</p>
-                                <p className="font-medium">{lab.source}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">No. Order</p>
-                                <p className="font-medium">{lab.noorder || '-'}</p>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2 mb-4">
-                              <Button variant="outline" size="sm" onClick={() => handleEditLabRequest(lab)}>
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Edit
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleCopyLabRequest(lab)}>
-                                <Copy className="h-4 w-4 mr-2" />
-                                Copy
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleDeleteLabRequest(lab)}
-                                disabled={deletingLabRequestNo === lab.noorder}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                {deletingLabRequestNo === lab.noorder ? 'Menghapus...' : 'Hapus'}
-                              </Button>
-                            </div>
-                            <div className="space-y-2">
-                              <h4 className="font-medium">Pemeriksaan:</h4>
-                              {lab.pemeriksaan.map((test: any, testIndex: number) => (
-                                <div key={testIndex} className="grid grid-cols-1 md:grid-cols-1 gap-4 border-l-2 border-primary pl-4">
-                                  <div>
-                                    <p className="text-sm text-muted-foreground">Nama</p>
-                                    <p className="font-medium">{test.nama}</p>
-                                  </div>
-                                  {test.kode ? (
-                                    <div>
-                                      <p className="text-sm text-muted-foreground">Kode Pemeriksaan</p>
-                                      <p className="font-medium">{test.kode}</p>
-                                    </div>
-                                  ) : null}
-                                  <div>
-                                    <p className="text-sm text-muted-foreground">Template</p>
-                                    {Array.isArray(test.templates) && test.templates.length > 0 ? (
-                                      <div className="mt-2 space-y-2">
-                                        {test.templates.map((template: any, templateIndex: number) => (
-                                          <div
-                                            key={`${template.id_template}-${templateIndex}`}
-                                            className="rounded border bg-muted/20 p-3"
-                                          >
-                                            <p className="font-medium">{template.nama || '-'}</p>
-                                            <p className="text-xs text-muted-foreground">
-                                              ID Template: {template.id_template || '-'}
-                                              {template.satuan ? ` • Satuan: ${template.satuan}` : ''}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                              Rujukan LD: {template.nilai_rujukan_ld || '-'}
-                                              {' • '}
-                                              LA: {template.nilai_rujukan_la || '-'}
-                                              {' • '}
-                                              PD: {template.nilai_rujukan_pd || '-'}
-                                              {' • '}
-                                              PA: {template.nilai_rujukan_pa || '-'}
-                                            </p>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-sm italic text-muted-foreground">
-                                        Tidak ada template tersimpan.
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ));
-                      })()}
-                    </div>
+                    <Tabs defaultValue="outpatient" className="mt-2">
+                      <TabsList className="mb-4">
+                        <TabsTrigger value="outpatient">
+                          <User className="mr-2 h-4 w-4" />
+                          Rawat Jalan
+                        </TabsTrigger>
+                        <TabsTrigger value="inpatient">
+                          <BedDouble className="mr-2 h-4 w-4" />
+                          Rawat Inap
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="outpatient">
+                        <div className="space-y-4">{renderLaboratoryRequestCards(outpatientLaboratoryRequests)}</div>
+                      </TabsContent>
+                      <TabsContent value="inpatient">
+                        <div className="space-y-4">{renderLaboratoryRequestCards(inpatientLaboratoryRequests)}</div>
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 </TabsContent>
 
@@ -5164,122 +5652,28 @@ const MedicalRecord = () => {
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Pemeriksaan Laboratorium (Draggable)</h3>
-                    <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                      <div className="space-y-4">
-                        {(() => {
-                          const allLaboratoryHistory = [
-                            ...scopedOutpatientVisits.flatMap((visit) =>
-                              ((visit.laboratory || []) as LabData[]).map((lab) => ({
-                                ...lab,
-                                no_rawat: visit.no_rawat,
-                                source: 'Rawat Jalan'
-                              }))
-                            ),
-                            ...scopedInpatientVisits.flatMap((visit) =>
-                              ((visit.laboratory || []) as LabData[]).map((lab) => ({
-                                ...lab,
-                                no_rawat: visit.no_rawat,
-                                source: 'Rawat Inap'
-                              }))
-                            )
-                          ];
-
-                          if (allLaboratoryHistory.length === 0) {
-                            return (
-                              <p className="text-sm italic text-muted-foreground">
-                                Belum ada riwayat pemeriksaan laboratorium.
-                              </p>
-                            );
-                          }
-
-                          return allLaboratoryHistory.map((labGroup, groupIndex) => (
-                            <div
-                              key={`${labGroup.no_rawat}-${labGroup.tanggal}-${groupIndex}`}
-                              className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
-                              draggable
-                              onDragStart={(e) => {
-                                setDraggingLab({
-                                  tanggal: labGroup.tanggal,
-                                  pemeriksaan: labGroup.pemeriksaan
-                                });
-                                e.dataTransfer.effectAllowed = 'move';
-                              }}
-                            >
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Tanggal</p>
-                                  <p className="font-medium">{formatDateSafe(labGroup.tanggal)}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">No. Rawat</p>
-                                  <p className="font-medium">{labGroup.no_rawat}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Sumber</p>
-                                  <p className="font-medium">{labGroup.source}</p>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2">
-                                <h4 className="font-medium">Pemeriksaan:</h4>
-                                {Array.isArray(labGroup.pemeriksaan) && labGroup.pemeriksaan.length > 0 ? (
-                                  Object.entries(
-                                    labGroup.pemeriksaan.reduce<Record<string, LabTest[]>>((groups, test) => {
-                                      const key = test.nama?.trim() || '-';
-                                      if (!groups[key]) {
-                                        groups[key] = [];
-                                      }
-                                      groups[key].push(test);
-                                      return groups;
-                                    }, {})
-                                  ).map(([groupName, tests], groupIdx) => (
-                                    <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
-                                      <div>
-                                        <p className="text-sm text-muted-foreground">Nama</p>
-                                        <p className="font-semibold">{groupName}</p>
-                                      </div>
-                                      <div className="space-y-2">
-                                        {tests.map((test, testIndex) => (
-                                          <div
-                                            key={`${groupName}-${testIndex}`}
-                                            className={cn(
-                                              "grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2 bg-background",
-                                              test.keterangan === 'H' && "bg-red-100 text-red-900",
-                                              test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
-                                            )}
-                                          >
-                                            <div>
-                                              <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-                                              <p className="font-medium">{test.pemeriksaan || '-'}</p>
-                                            </div>
-                                            <div>
-                                              <p className="text-sm text-muted-foreground">Hasil</p>
-                                              <p className="font-medium">{test.hasil || '-'}</p>
-                                            </div>
-                                            <div>
-                                              <p className="text-sm text-muted-foreground">Rujukan</p>
-                                              <p className="font-medium">{test.rujukan || '-'}</p>
-                                            </div>
-                                            <div>
-                                              <p className="text-sm text-muted-foreground">Keterangan</p>
-                                              <p className="font-medium">{test.keterangan || '-'}</p>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))
-                                ) : (
-                                  <p className="text-sm italic text-muted-foreground">
-                                    Tidak ada hasil pemeriksaan
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    </ScrollArea>
+                    <Tabs defaultValue="outpatient" className="mt-2">
+                      <TabsList className="mb-4">
+                        <TabsTrigger value="outpatient">
+                          <User className="mr-2 h-4 w-4" />
+                          Rawat Jalan
+                        </TabsTrigger>
+                        <TabsTrigger value="inpatient">
+                          <BedDouble className="mr-2 h-4 w-4" />
+                          Rawat Inap
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="outpatient">
+                        <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                          <div className="space-y-4">{renderLaboratoryHistoryCards(outpatientLaboratoryHistory)}</div>
+                        </ScrollArea>
+                      </TabsContent>
+                      <TabsContent value="inpatient">
+                        <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                          <div className="space-y-4">{renderLaboratoryHistoryCards(inpatientLaboratoryHistory)}</div>
+                        </ScrollArea>
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 </TabsContent>
 
@@ -5565,168 +5959,52 @@ const MedicalRecord = () => {
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Data Permintaan Radiologi</h3>
-                    <div className="space-y-4">
-                      {(() => {
-                        const allRadiologyRequests = [
-                          ...scopedOutpatientVisits.flatMap((visit) =>
-                            ((visit.radiologyRequest || []) as any[]).map((rad) => ({
-                              ...rad,
-                              no_rawat: visit.no_rawat,
-                              source: 'Rawat Jalan'
-                            }))
-                          ),
-                          ...scopedInpatientVisits.flatMap((visit) =>
-                            ((visit.radiologyRequest || []) as any[]).map((rad) => ({
-                              ...rad,
-                              no_rawat: visit.no_rawat,
-                              source: 'Rawat Inap'
-                            }))
-                          )
-                        ];
-
-                        if (allRadiologyRequests.length === 0) {
-                          return (
-                            <p className="text-sm italic text-muted-foreground">
-                              Belum ada data permintaan radiologi.
-                            </p>
-                          );
-                        }
-
-                        return allRadiologyRequests.map((rad, radIndex) => (
-                          <div key={`${rad.no_rawat}-${rad.noorder}-${radIndex}`} className="border rounded-lg p-4">
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                              <div>
-                                <p className="text-sm text-muted-foreground">Tanggal</p>
-                                <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">No. Rawat</p>
-                                <p className="font-medium">{rad.no_rawat}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">Sumber</p>
-                                <p className="font-medium">{rad.source}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">No. Order</p>
-                                <p className="font-medium">{rad.noorder || '-'}</p>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2 mb-4">
-                              <Button variant="outline" size="sm" onClick={() => handleEditRadiologyRequest(rad)}>
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Edit
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleCopyRadiologyRequest(rad)}>
-                                <Copy className="h-4 w-4 mr-2" />
-                                Copy
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleDeleteRadiologyRequest(rad)}
-                                disabled={deletingRadiologyRequestNo === rad.noorder}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                {deletingRadiologyRequestNo === rad.noorder ? 'Menghapus...' : 'Hapus'}
-                              </Button>
-                            </div>
-                            <div className="space-y-2">
-                              <h4 className="font-medium">Pemeriksaan:</h4>
-                              {Array.isArray(rad.pemeriksaan) && rad.pemeriksaan.length > 0 ? (
-                                rad.pemeriksaan.map((test: any, testIndex: number) => (
-                                  <div key={testIndex} className="grid grid-cols-1 md:grid-cols-2 gap-4 border-l-2 border-primary pl-4">
-                                    <div>
-                                      <p className="text-sm text-muted-foreground">Nama</p>
-                                      <p className="font-medium">{test.nama || '-'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-sm text-muted-foreground">Kode Pemeriksaan</p>
-                                      <p className="font-medium">{test.kode || '-'}</p>
-                                    </div>
-                                  </div>
-                                ))
-                              ) : (
-                                <p className="text-sm italic text-muted-foreground">
-                                  Tidak ada pemeriksaan radiologi tersimpan.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ));
-                      })()}
-                    </div>
+                    <Tabs defaultValue="outpatient" className="mt-2">
+                      <TabsList className="mb-4">
+                        <TabsTrigger value="outpatient">
+                          <User className="mr-2 h-4 w-4" />
+                          Rawat Jalan
+                        </TabsTrigger>
+                        <TabsTrigger value="inpatient">
+                          <BedDouble className="mr-2 h-4 w-4" />
+                          Rawat Inap
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="outpatient">
+                        <div className="space-y-4">{renderRadiologyRequestCards(outpatientRadiologyRequests)}</div>
+                      </TabsContent>
+                      <TabsContent value="inpatient">
+                        <div className="space-y-4">{renderRadiologyRequestCards(inpatientRadiologyRequests)}</div>
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 </TabsContent>
 
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Radiologi (Draggable)</h3>
-                    <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                      <div className="space-y-4">
-                        {(() => {
-                          const allRadiologyHistory = [
-                            ...scopedOutpatientVisits.flatMap((visit) =>
-                              ((visit.radiology || []) as any[]).map((rad) => ({
-                                ...rad,
-                                no_rawat: visit.no_rawat,
-                                source: 'Rawat Jalan'
-                              }))
-                            ),
-                            ...scopedInpatientVisits.flatMap((visit) =>
-                              ((visit.radiology || []) as any[]).map((rad) => ({
-                                ...rad,
-                                no_rawat: visit.no_rawat,
-                                source: 'Rawat Inap'
-                              }))
-                            )
-                          ];
-
-                          if (allRadiologyHistory.length === 0) {
-                            return (
-                              <p className="text-sm italic text-muted-foreground">
-                                Belum ada riwayat radiologi.
-                              </p>
-                            );
-                          }
-
-                          return allRadiologyHistory.map((rad, radIndex) => (
-                            <div
-                              key={`${rad.no_rawat}-${rad.tanggal}-${radIndex}`}
-                              className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
-                              draggable
-                              onDragStart={(e) => {
-                                setDraggingRad(rad);
-                                e.dataTransfer.effectAllowed = 'move';
-                              }}
-                            >
-                              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Tanggal</p>
-                                  <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">No. Rawat</p>
-                                  <p className="font-medium">{rad.no_rawat}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Sumber</p>
-                                  <p className="font-medium">{rad.source}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-                                  <p className="font-medium">{rad.pemeriksaan}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Hasil</p>
-                                  <p className="font-medium">{rad.hasil || '-'}</p>
-                                </div>
-                              </div>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    </ScrollArea>
+                    <Tabs defaultValue="outpatient" className="mt-2">
+                      <TabsList className="mb-4">
+                        <TabsTrigger value="outpatient">
+                          <User className="mr-2 h-4 w-4" />
+                          Rawat Jalan
+                        </TabsTrigger>
+                        <TabsTrigger value="inpatient">
+                          <BedDouble className="mr-2 h-4 w-4" />
+                          Rawat Inap
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="outpatient">
+                        <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                          <div className="space-y-4">{renderRadiologyHistoryCards(outpatientRadiologyHistory)}</div>
+                        </ScrollArea>
+                      </TabsContent>
+                      <TabsContent value="inpatient">
+                        <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                          <div className="space-y-4">{renderRadiologyHistoryCards(inpatientRadiologyHistory)}</div>
+                        </ScrollArea>
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 </TabsContent>
               </Tabs>

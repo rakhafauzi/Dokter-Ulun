@@ -313,7 +313,7 @@ class GetMedicalRecordService {
   }
 
   // Helper function to fetch lab results
-  static async fetchLaboratory(noRawat) {
+  static async fetchLaboratory(noRawat, status = null) {
     const labQuery = `
       SELECT pl.*, jp.nm_perawatan, dpl.nilai, dpl.nilai_rujukan, dpl.keterangan, tl.Pemeriksaan AS pemeriksaan
       FROM periksa_lab pl 
@@ -324,10 +324,11 @@ class GetMedicalRecordService {
         AND pl.tgl_periksa = dpl.tgl_periksa
         AND pl.jam = dpl.jam
       LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
-      WHERE pl.no_rawat = ? 
+      WHERE pl.no_rawat = ?
+        AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
       ORDER BY pl.tgl_periksa, pl.jam, tl.Pemeriksaan
     `;
-    const [rows] = await db.execute(labQuery, [noRawat]);
+    const [rows] = await db.execute(labQuery, [noRawat, status, status]);
     
     const labsByDate = {};
     rows.forEach(row => {
@@ -353,16 +354,17 @@ class GetMedicalRecordService {
   }
 
   // Helper function to fetch radiology results
-  static async fetchRadiology(noRawat) {
+  static async fetchRadiology(noRawat, status = null) {
     const radQuery = `
       SELECT pr.*, jp.nm_perawatan, hpr.hasil
       FROM periksa_radiologi pr 
       LEFT JOIN jns_perawatan_radiologi jp ON pr.kd_jenis_prw = jp.kd_jenis_prw 
       LEFT JOIN hasil_radiologi hpr ON pr.no_rawat = hpr.no_rawat AND pr.tgl_periksa = hpr.tgl_periksa 
-      WHERE pr.no_rawat = ? 
+      WHERE pr.no_rawat = ?
+        AND (? IS NULL OR LOWER(pr.status) = LOWER(?))
       ORDER BY pr.tgl_periksa, pr.jam
     `;
-    const [rows] = await db.execute(radQuery, [noRawat]);
+    const [rows] = await db.execute(radQuery, [noRawat, status, status]);
     
     return rows.map(row => ({
       tanggal: this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam,
@@ -582,7 +584,30 @@ class GetMedicalRecordService {
         focusNoRawat
       } = this.normalizeOptions(options);
 
-      const [patientRows, latestVisitRows, outpatientPageResult, inpatientPageResult] = await Promise.all([
+      const [
+        patientRows,
+        latestVisitRows,
+        outpatientPageResult,
+        inpatientPageResult,
+        focusedRalanExaminations,
+        focusedRanapExaminations,
+        focusedRalanProcedures,
+        focusedRanapProcedures,
+        focusedRalanMedicationRequests,
+        focusedRanapMedicationRequests,
+        focusedPulangMedicationRequests,
+        focusedIbsMedicationRequests,
+        focusedRalanMedications,
+        focusedRanapMedications,
+        focusedRalanLaboratoryRequests,
+        focusedRanapLaboratoryRequests,
+        focusedRalanLaboratory,
+        focusedRanapLaboratory,
+        focusedRalanRadiologyRequests,
+        focusedRanapRadiologyRequests,
+        focusedRalanRadiology,
+        focusedRanapRadiology
+      ] = await Promise.all([
         db.execute(
           "SELECT * FROM pasien WHERE no_rkm_medis = ?",
           [no_rm]
@@ -598,7 +623,25 @@ class GetMedicalRecordService {
           [no_rm]
         ),
         this.fetchVisitsPage(no_rm, 'Ralan', outpatientPage, limit, focusNoRawat),
-        this.fetchVisitsPage(no_rm, 'Ranap', inpatientPage, limit, focusNoRawat)
+        this.fetchVisitsPage(no_rm, 'Ranap', inpatientPage, limit, focusNoRawat),
+        focusNoRawat ? this.fetchExaminations(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat ? this.fetchExaminations(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat ? this.fetchProcedures(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat ? this.fetchProcedures(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat ? this.fetchMedicationsRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat ? this.fetchMedicationsRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat ? this.fetchMedicationsRequest(focusNoRawat, 'pulang') : Promise.resolve([]),
+        focusNoRawat ? this.fetchMedicationsRequest(focusNoRawat, 'ibs') : Promise.resolve([]),
+        focusNoRawat ? this.fetchMedications(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat ? this.fetchMedications(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat ? this.fetchLaboratoryRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat ? this.fetchLaboratoryRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat ? this.fetchLaboratory(focusNoRawat, 'Ralan') : Promise.resolve([]),
+        focusNoRawat ? this.fetchLaboratory(focusNoRawat, 'Ranap') : Promise.resolve([]),
+        focusNoRawat ? this.fetchRadiologyRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat ? this.fetchRadiologyRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat ? this.fetchRadiology(focusNoRawat, 'Ralan') : Promise.resolve([]),
+        focusNoRawat ? this.fetchRadiology(focusNoRawat, 'Ranap') : Promise.resolve([])
       ]);
 
       const patientList = patientRows[0];
@@ -653,7 +696,41 @@ class GetMedicalRecordService {
           status_lanjut: latestVisits[0]?.status_lanjut || 'Ralan'
         },
         outpatient_visits: finalOutpatientVisits,
-        inpatient_visits: finalInpatientVisits
+        inpatient_visits: finalInpatientVisits,
+        focused_examinations: {
+          ralan: focusedRalanExaminations,
+          ranap: focusedRanapExaminations
+        },
+        focused_procedures: {
+          ralan: focusedRalanProcedures,
+          ranap: focusedRanapProcedures
+        },
+        focused_medications_request: {
+          ralan: focusedRalanMedicationRequests,
+          ranap: focusedRanapMedicationRequests,
+          pulang: focusedPulangMedicationRequests,
+          ibs: focusedIbsMedicationRequests
+        },
+        focused_medications: {
+          ralan: focusedRalanMedications,
+          ranap: focusedRanapMedications
+        },
+        focused_laboratory_request: {
+          ralan: focusedRalanLaboratoryRequests,
+          ranap: focusedRanapLaboratoryRequests
+        },
+        focused_laboratory: {
+          ralan: focusedRalanLaboratory,
+          ranap: focusedRanapLaboratory
+        },
+        focused_radiology_request: {
+          ralan: focusedRalanRadiologyRequests,
+          ranap: focusedRanapRadiologyRequests
+        },
+        focused_radiology: {
+          ralan: focusedRalanRadiology,
+          ranap: focusedRanapRadiology
+        }
       };
 
       return {
