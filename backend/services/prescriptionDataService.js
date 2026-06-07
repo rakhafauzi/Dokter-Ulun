@@ -314,7 +314,7 @@ class PrescriptionDataService {
   }
 
   // Update existing prescription
-  async updatePrescription(no_resep, medicines, compounds, prescriptionDate, prescriptionStatus) {
+  async updatePrescription(no_resep, medicines, compounds, prescriptionDate, prescriptionStatus, username = '') {
     if (!no_resep) {
       throw new Error('no_resep is required');
     }
@@ -323,6 +323,22 @@ class PrescriptionDataService {
     
     try {
       await connection.beginTransaction();
+      const normalizedUsername = String(username || '').trim();
+
+      if (normalizedUsername) {
+        const [ownerRows] = await connection.execute(
+          'SELECT kd_dokter FROM resep_obat WHERE no_resep = ? LIMIT 1',
+          [no_resep]
+        );
+
+        if (!ownerRows.length) {
+          throw new Error('Resep tidak ditemukan atau sudah dihapus');
+        }
+
+        if (String(ownerRows[0].kd_dokter || '').trim() !== normalizedUsername) {
+          throw new Error('Anda tidak berhak mengedit resep ini');
+        }
+      }
 
       const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate);
       const normalizedPrescriptionStatus = this.normalizePrescriptionStatus(prescriptionStatus);
@@ -388,7 +404,7 @@ class PrescriptionDataService {
   }
 
   // Delete prescription
-  async deletePrescription(no_resep) {
+  async deletePrescription(no_resep, username = '') {
     if (!no_resep) {
       throw new Error('no_resep is required');
     }
@@ -397,6 +413,22 @@ class PrescriptionDataService {
     
     try {
       await connection.beginTransaction();
+      const normalizedUsername = String(username || '').trim();
+
+      if (normalizedUsername) {
+        const [ownerRows] = await connection.execute(
+          'SELECT kd_dokter FROM resep_obat WHERE no_resep = ? LIMIT 1',
+          [no_resep]
+        );
+
+        if (!ownerRows.length) {
+          throw new Error('Resep tidak ditemukan atau sudah dihapus');
+        }
+
+        if (String(ownerRows[0].kd_dokter || '').trim() !== normalizedUsername) {
+          throw new Error('Anda tidak berhak menghapus resep ini');
+        }
+      }
       
       // Delete related records first
       await connection.execute('DELETE FROM resep_dokter WHERE no_resep = ?', [no_resep]);

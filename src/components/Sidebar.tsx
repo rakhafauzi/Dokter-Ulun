@@ -38,9 +38,7 @@ interface PasienSubmenuItem {
 
 const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose, onLogout }) => {
   const location = useLocation();
-  const [pasienOpen, setPasienOpen] = useState(() => {
-    return location.pathname.startsWith('/pasien');
-  });
+  const [pasienOpen, setPasienOpen] = useState(true);
   
   const [aboutOpen, setAboutOpen] = useState(false);
 

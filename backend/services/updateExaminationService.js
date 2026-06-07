@@ -23,13 +23,15 @@ export const updateExaminationData = async (examinationData) => {
     penilaian,
     instruksi,
     evaluasi,
-    nip
+    nip,
+    username
   } = examinationData;
 
   try {
     let query;
     let params;
     let tableName;
+    const normalizedUsername = String(username || '').trim();
 
     if (status_rawat === 'Ralan') {
       // Update pemeriksaan_ralan table (no spo2, instruksi, evaluasi, kesadaran columns)
@@ -90,6 +92,24 @@ export const updateExaminationData = async (examinationData) => {
     }
 
     console.log(`🔄 Updating ${tableName} for no_rawat: ${no_rawat}`);
+
+    if (normalizedUsername) {
+      const ownerQuery = `
+        SELECT nip
+        FROM ${tableName}
+        WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ?
+        LIMIT 1
+      `;
+      const ownerRows = await executeQuery(ownerQuery, [no_rawat, original_date, original_time]);
+
+      if (!ownerRows.length) {
+        throw new Error(`No examination record found to update in ${tableName}`);
+      }
+
+      if (String(ownerRows[0].nip || '').trim() !== normalizedUsername) {
+        throw new Error('Anda tidak berhak mengedit data pemeriksaan ini');
+      }
+    }
     
     const result = await executeQuery(query, params);
     

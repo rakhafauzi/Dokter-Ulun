@@ -152,12 +152,28 @@ class RadiologyDataService {
     }
   }
 
-  async updateRadiologyRequest(noorder, examinations, status_rawat) {
+  async updateRadiologyRequest(noorder, examinations, status_rawat, username = '') {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
+      const normalizedUsername = String(username || '').trim();
 
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat);
+
+      if (normalizedUsername) {
+        const [rows] = await connection.execute(
+          'SELECT dokter_perujuk FROM permintaan_radiologi WHERE noorder = ? LIMIT 1',
+          [noorder]
+        );
+
+        if (!rows.length) {
+          throw new Error('Permintaan radiologi tidak ditemukan atau sudah dihapus');
+        }
+
+        if (String(rows[0].dokter_perujuk || '').trim() !== normalizedUsername) {
+          throw new Error('Anda tidak berhak mengedit permintaan radiologi ini');
+        }
+      }
 
       if (normalizedStatusRawat) {
         await connection.execute(
@@ -189,9 +205,26 @@ class RadiologyDataService {
     }
   }
 
-  async deleteRadiologyRequest(noorder) {
+  async deleteRadiologyRequest(noorder, username = '') {
     const connection = await this.getConnection();
     try {
+      const normalizedUsername = String(username || '').trim();
+
+      if (normalizedUsername) {
+        const [rows] = await connection.execute(
+          'SELECT dokter_perujuk FROM permintaan_radiologi WHERE noorder = ? LIMIT 1',
+          [noorder]
+        );
+
+        if (!rows.length) {
+          throw new Error('Permintaan radiologi tidak ditemukan atau sudah dihapus');
+        }
+
+        if (String(rows[0].dokter_perujuk || '').trim() !== normalizedUsername) {
+          throw new Error('Anda tidak berhak menghapus permintaan radiologi ini');
+        }
+      }
+
       await connection.execute('DELETE FROM permintaan_radiologi WHERE noorder = ?', [noorder]);
       return { success: true };
     } finally {

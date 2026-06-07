@@ -5,6 +5,32 @@ class ResumePasienDataService {
   enumKeadaan = ['Membaik', 'Sembuh', 'Keadaan Khusus', 'Meninggal'];
   enumDilanjutkan = ['Kembali Ke RS', 'RS Lain', 'Dokter Luar', 'Puskesmes', 'Lainnya'];
 
+  applyStatusRawatFilter(whereConditions, params, statusPulang) {
+    const normalizedStatus = String(statusPulang || 'all').trim();
+
+    if (!normalizedStatus || normalizedStatus === 'all') {
+      return;
+    }
+
+    if (normalizedStatus === 'masih-dirawat') {
+      whereConditions.push(`COALESCE(ki.stts_pulang, '') = '-'`);
+      return;
+    }
+
+    if (normalizedStatus === 'pindah-kamar') {
+      whereConditions.push(`COALESCE(ki.stts_pulang, '') = 'Pindah Kamar'`);
+      return;
+    }
+
+    if (normalizedStatus === 'sudah-pulang') {
+      whereConditions.push(`COALESCE(ki.stts_pulang, '') NOT IN ('', '-', 'Pindah Kamar')`);
+      return;
+    }
+
+    whereConditions.push('ki.stts_pulang = ?');
+    params.push(normalizedStatus);
+  }
+
   // Format date to YYYY-MM-DD format
   formatDateOnly(dateStr) {
     if (!dateStr) return '';
@@ -121,6 +147,8 @@ class ResumePasienDataService {
     itemsPerPage = "50", 
     search = "",
     statusPulang = "all",
+    username = "",
+    resumeStatus = "all",
     startDate,
     endDate
   }) {
@@ -133,6 +161,18 @@ class ResumePasienDataService {
       // Build the WHERE clause - start with kamar_inap filter
       let whereConditions = ['ki.no_rawat IS NOT NULL'];
       let params = [];
+      const normalizedUsername = String(username || '').trim();
+      const normalizedResumeStatus = String(resumeStatus || 'all').trim();
+
+      if (normalizedUsername) {
+        whereConditions.push(`EXISTS (
+          SELECT 1
+          FROM dpjp_ranap dr_user
+          WHERE dr_user.no_rawat = ki.no_rawat
+            AND dr_user.kd_dokter = ?
+        )`);
+        params.push(normalizedUsername);
+      }
 
       // Search filter
       if (search && search.trim()) {
@@ -148,16 +188,19 @@ class ResumePasienDataService {
         params.push(searchParam, searchParam, searchParam, searchParam, searchParam, searchParam);
       }
 
-      // Status pulang filter
-      if (statusPulang && statusPulang !== 'all') {
-        whereConditions.push('ki.stts_pulang = ?');
-        params.push(statusPulang);
-      }
+      // Status rawat filter
+      this.applyStatusRawatFilter(whereConditions, params, statusPulang);
 
       // Date range filter - using tgl_keluar from kamar_inap
       if (startDate && endDate) {
         whereConditions.push('DATE(ki.tgl_keluar) BETWEEN ? AND ?');
         params.push(startDate, endDate);
+      }
+
+      if (normalizedResumeStatus === 'sudah_resume') {
+        whereConditions.push('rpr.no_rawat IS NOT NULL');
+      } else if (normalizedResumeStatus === 'belum_resume') {
+        whereConditions.push('rpr.no_rawat IS NULL');
       }
 
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -172,12 +215,52 @@ class ResumePasienDataService {
           p.nm_pasien,
           p.jk as jenis_kelamin,
           p.tgl_lahir,
-          ki.tgl_masuk,
-          ki.tgl_keluar,
-          ki.lama,
-          ki.stts_pulang,
-          k.kd_kamar,
-          b.nm_bangsal,
+          MIN(ki.tgl_masuk) as tgl_masuk,
+          NULLIF(
+            SUBSTRING_INDEX(
+              GROUP_CONCAT(COALESCE(DATE_FORMAT(ki.tgl_keluar, '%Y-%m-%d'), '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+              '||',
+              1
+            ),
+            ''
+          ) as tgl_keluar,
+          CASE
+            WHEN SUBSTRING_INDEX(
+              GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+              '||',
+              1
+            ) IN ('', '-', 'Pindah Kamar')
+              THEN DATEDIFF(CURDATE(), MIN(DATE(ki.tgl_masuk))) + 1
+            ELSE DATEDIFF(
+              STR_TO_DATE(
+                NULLIF(
+                  SUBSTRING_INDEX(
+                    GROUP_CONCAT(COALESCE(DATE_FORMAT(ki.tgl_keluar, '%Y-%m-%d'), '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+                    '||',
+                    1
+                  ),
+                  ''
+                ),
+                '%Y-%m-%d'
+              ),
+              MIN(DATE(ki.tgl_masuk))
+            ) + 1
+          END as lama,
+          SUBSTRING_INDEX(
+            GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+            '||',
+            1
+          ) as stts_pulang,
+          SUBSTRING_INDEX(
+            GROUP_CONCAT(COALESCE(k.kd_kamar, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+            '||',
+            1
+          ) as kd_kamar,
+          SUBSTRING_INDEX(
+            GROUP_CONCAT(COALESCE(b.nm_bangsal, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+            '||',
+            1
+          ) as nm_bangsal,
           GROUP_CONCAT(DISTINCT CONCAT(d.nm_dokter, ' (', COALESCE(dr.jenis_dpjp, 'Tidak Diketahui'), ')') SEPARATOR ', ') as dokter_dpjp,
           rpr.diagnosa_awal,
           rpr.kd_diagnosa_utama,
@@ -201,14 +284,14 @@ class ResumePasienDataService {
         LEFT JOIN kamar k ON ki.kd_kamar = k.kd_kamar
         LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
         ${whereClause}
-        GROUP BY ki.no_rawat, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, ki.tgl_masuk, ki.tgl_keluar, ki.lama, ki.stts_pulang, k.kd_kamar, b.nm_bangsal, rpr.diagnosa_awal, rpr.kd_diagnosa_utama, rpr.diagnosa_utama, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder, rpr.prosedur_utama, rpr.prosedur_sekunder, rpr.keadaan, rpr.ket_keadaan
-        ORDER BY ki.tgl_keluar DESC
+        GROUP BY ki.no_rawat, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, rpr.diagnosa_awal, rpr.kd_diagnosa_utama, rpr.diagnosa_utama, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder, rpr.prosedur_utama, rpr.prosedur_sekunder, rpr.keadaan, rpr.ket_keadaan
+        ORDER BY MIN(ki.tgl_masuk) DESC
         LIMIT ? OFFSET ?
       `;
 
       // Count query - start from kamar_inap
       const countQuery = `
-        SELECT COUNT(*) as total
+        SELECT COUNT(DISTINCT ki.no_rawat) as total
         FROM kamar_inap ki
         LEFT JOIN resume_pasien_ranap rpr ON ki.no_rawat = rpr.no_rawat
         LEFT JOIN reg_periksa rp ON ki.no_rawat = rp.no_rawat
@@ -269,12 +352,52 @@ class ResumePasienDataService {
         p.nm_pasien,
         p.jk as jenis_kelamin,
         p.tgl_lahir,
-        ki.tgl_masuk,
-        ki.tgl_keluar,
-        ki.lama,
-        ki.stts_pulang,
-        k.kd_kamar,
-        b.nm_bangsal,
+        MIN(ki.tgl_masuk) as tgl_masuk,
+        NULLIF(
+          SUBSTRING_INDEX(
+            GROUP_CONCAT(COALESCE(DATE_FORMAT(ki.tgl_keluar, '%Y-%m-%d'), '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+            '||',
+            1
+          ),
+          ''
+        ) as tgl_keluar,
+        CASE
+          WHEN SUBSTRING_INDEX(
+            GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+            '||',
+            1
+          ) IN ('', '-', 'Pindah Kamar')
+            THEN DATEDIFF(CURDATE(), MIN(DATE(ki.tgl_masuk))) + 1
+          ELSE DATEDIFF(
+            STR_TO_DATE(
+              NULLIF(
+                SUBSTRING_INDEX(
+                  GROUP_CONCAT(COALESCE(DATE_FORMAT(ki.tgl_keluar, '%Y-%m-%d'), '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+                  '||',
+                  1
+                ),
+                ''
+              ),
+              '%Y-%m-%d'
+            ),
+            MIN(DATE(ki.tgl_masuk))
+          ) + 1
+        END as lama,
+        SUBSTRING_INDEX(
+          GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+          '||',
+          1
+        ) as stts_pulang,
+        SUBSTRING_INDEX(
+          GROUP_CONCAT(COALESCE(k.kd_kamar, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+          '||',
+          1
+        ) as kd_kamar,
+        SUBSTRING_INDEX(
+          GROUP_CONCAT(COALESCE(b.nm_bangsal, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
+          '||',
+          1
+        ) as nm_bangsal,
         GROUP_CONCAT(DISTINCT CONCAT(d.nm_dokter, ' (', COALESCE(dr.jenis_dpjp, 'Tidak Diketahui'), ')') SEPARATOR ', ') as dokter_dpjp,
         rpr.kd_dokter,
         COALESCE(penulis.nm_dokter, rpr.kd_dokter, '') AS dokter_penulis,
@@ -329,7 +452,7 @@ class ResumePasienDataService {
       LEFT JOIN kamar k ON ki.kd_kamar = k.kd_kamar
       LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
       WHERE rp.no_rawat = ?
-      GROUP BY rp.no_rawat, rp.kd_dokter, regDok.nm_dokter, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, ki.tgl_masuk, ki.tgl_keluar, ki.lama, ki.stts_pulang, k.kd_kamar, b.nm_bangsal, rpr.kd_dokter, penulis.nm_dokter, rpr.diagnosa_awal, rpr.alasan, rpr.keluhan_utama, rpr.pemeriksaan_fisik, rpr.jalannya_penyakit, rpr.pemeriksaan_penunjang, rpr.hasil_laborat, rpr.tindakan_dan_operasi, rpr.obat_di_rs, rpr.diagnosa_utama, rpr.kd_diagnosa_utama, rpr.diagnosa_sekunder, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder2, rpr.kd_diagnosa_sekunder2, rpr.diagnosa_sekunder3, rpr.kd_diagnosa_sekunder3, rpr.diagnosa_sekunder4, rpr.kd_diagnosa_sekunder4, rpr.prosedur_utama, rpr.kd_prosedur_utama, rpr.prosedur_sekunder, rpr.kd_prosedur_sekunder, rpr.prosedur_sekunder2, rpr.kd_prosedur_sekunder2, rpr.prosedur_sekunder3, rpr.kd_prosedur_sekunder3, rpr.alergi, rpr.diet, rpr.lab_belum, rpr.edukasi, rpr.cara_keluar, rpr.ket_keluar, rpr.keadaan, rpr.ket_keadaan, rpr.dilanjutkan, rpr.ket_dilanjutkan, rpr.kontrol
+      GROUP BY rp.no_rawat, rp.kd_dokter, regDok.nm_dokter, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, rpr.kd_dokter, penulis.nm_dokter, rpr.diagnosa_awal, rpr.alasan, rpr.keluhan_utama, rpr.pemeriksaan_fisik, rpr.jalannya_penyakit, rpr.pemeriksaan_penunjang, rpr.hasil_laborat, rpr.tindakan_dan_operasi, rpr.obat_di_rs, rpr.diagnosa_utama, rpr.kd_diagnosa_utama, rpr.diagnosa_sekunder, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder2, rpr.kd_diagnosa_sekunder2, rpr.diagnosa_sekunder3, rpr.kd_diagnosa_sekunder3, rpr.diagnosa_sekunder4, rpr.kd_diagnosa_sekunder4, rpr.prosedur_utama, rpr.kd_prosedur_utama, rpr.prosedur_sekunder, rpr.kd_prosedur_sekunder, rpr.prosedur_sekunder2, rpr.kd_prosedur_sekunder2, rpr.prosedur_sekunder3, rpr.kd_prosedur_sekunder3, rpr.alergi, rpr.diet, rpr.lab_belum, rpr.edukasi, rpr.cara_keluar, rpr.ket_keluar, rpr.keadaan, rpr.ket_keadaan, rpr.dilanjutkan, rpr.ket_dilanjutkan, rpr.kontrol
     `;
 
     try {

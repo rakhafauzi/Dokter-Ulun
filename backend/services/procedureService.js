@@ -354,7 +354,8 @@ class ProcedureService {
       jam_rawat: jamRawat,
       record_type: recordType,
       kd_dokter: kdDokter,
-      nip
+      nip,
+      username
     } = payload;
 
     if (!noRawat || !kdJenisPrw || !tglPerawatan || !jamRawat || !recordType) {
@@ -375,6 +376,7 @@ class ProcedureService {
       const statusRawat = String(statusRawatInput || derivedStatusRawat).trim();
       const baseTable = statusRawat === 'Ranap' ? 'rawat_inap' : 'rawat_jl';
       const procedureTable = `${baseTable}_${normalizedRecordType}`;
+      const normalizedUsername = String(username || '').trim();
       const conditions = [
         'no_rawat = ?',
         'kd_jenis_prw = ?',
@@ -396,6 +398,32 @@ class ProcedureService {
         if (normalizedNip) {
           conditions.push('nip = ?');
           values.push(normalizedNip);
+        }
+      }
+
+      if (normalizedUsername) {
+        const [ownershipRows] = await connection.execute(
+          `
+            SELECT kd_dokter, nip
+            FROM ${procedureTable}
+            WHERE ${conditions.join(' AND ')}
+            LIMIT 1
+          `,
+          values
+        );
+
+        if (!ownershipRows.length) {
+          throw new Error('Data tindakan tidak ditemukan atau sudah dihapus');
+        }
+
+        const owner = ownershipRows[0];
+        const isOwner = [
+          String(owner.kd_dokter || '').trim(),
+          String(owner.nip || '').trim()
+        ].some((value) => value && value === normalizedUsername);
+
+        if (!isOwner) {
+          throw new Error('Anda tidak berhak menghapus data tindakan ini');
         }
       }
 

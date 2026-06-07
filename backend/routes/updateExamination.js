@@ -65,7 +65,8 @@ router.put('/', async (req, res) => {
       penilaian,
       instruksi,
       evaluasi,
-      nip
+      nip,
+      username
     } = req.body;
 
     console.log('📝 Update examination request:', {
@@ -99,7 +100,8 @@ router.put('/', async (req, res) => {
       penilaian,
       instruksi,
       evaluasi,
-      nip
+      nip,
+      username
     });
 
     console.log('✅ Examination updated successfully');

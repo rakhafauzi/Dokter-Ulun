@@ -1,9 +1,9 @@
 import db from '../config/database.js';
 
 class DeleteExaminationService {
-  static async deleteExamination(no_rawat, status_rawat, tgl_perawatan, jam_rawat) {
+  static async deleteExamination(no_rawat, status_rawat, tgl_perawatan, jam_rawat, username = '') {
     try {
-      console.log('Delete examination request:', { no_rawat, status_rawat, tgl_perawatan, jam_rawat });
+      console.log('Delete examination request:', { no_rawat, status_rawat, tgl_perawatan, jam_rawat, username });
 
       if (!no_rawat || !status_rawat || !tgl_perawatan || !jam_rawat) {
         throw new Error('Missing required parameters: no_rawat, status_rawat, tgl_perawatan, jam_rawat');
@@ -12,9 +12,25 @@ class DeleteExaminationService {
       let result;
       let table;
       
+      const normalizedUsername = String(username || '').trim();
+
       if (status_rawat === 'Ralan') {
         // Delete from pemeriksaan_ralan table
         table = 'pemeriksaan_ralan';
+        if (normalizedUsername) {
+          const [rows] = await db.execute(
+            `SELECT nip FROM pemeriksaan_ralan WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ? LIMIT 1`,
+            [no_rawat, tgl_perawatan, jam_rawat]
+          );
+
+          if (!rows.length) {
+            throw new Error('No examination record found to delete');
+          }
+
+          if (String(rows[0].nip || '').trim() !== normalizedUsername) {
+            throw new Error('Anda tidak berhak menghapus data pemeriksaan ini');
+          }
+        }
         [result] = await db.execute(`
           DELETE FROM pemeriksaan_ralan 
           WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ?
@@ -22,6 +38,20 @@ class DeleteExaminationService {
       } else {
         // Delete from pemeriksaan_ranap table
         table = 'pemeriksaan_ranap';
+        if (normalizedUsername) {
+          const [rows] = await db.execute(
+            `SELECT nip FROM pemeriksaan_ranap WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ? LIMIT 1`,
+            [no_rawat, tgl_perawatan, jam_rawat]
+          );
+
+          if (!rows.length) {
+            throw new Error('No examination record found to delete');
+          }
+
+          if (String(rows[0].nip || '').trim() !== normalizedUsername) {
+            throw new Error('Anda tidak berhak menghapus data pemeriksaan ini');
+          }
+        }
         [result] = await db.execute(`
           DELETE FROM pemeriksaan_ranap 
           WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ?

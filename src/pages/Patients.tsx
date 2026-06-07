@@ -50,7 +50,7 @@ import {
   CommandList
 } from "@/components/ui/command";
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { format, addDays, differenceInDays } from 'date-fns';
+import { format, addDays, differenceInDays, subMonths } from 'date-fns';
 import { indonesianLocale } from '@/lib/date-utils';
 import PatientTable from '@/components/PatientTable';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -1028,30 +1028,139 @@ const rawatInapColumns = [
 
 
 const RawatInapTabs = () => {
+  const { user } = useAuth();
+  type RawatInapListTab = 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung';
+  type RawatInapTab = RawatInapListTab | 'resume-pasien';
+  const emptyTabCounts = {
+    rawat_inap: 0,
+    rawat_bersama: 0,
+    rawat_gabung: 0,
+    resume_pasien: 0
+  };
   const [rawatInapData, setRawatInapData] = useState<any[]>([]);
   const [resumeData, setResumeData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<RawatInapTab>('rawat-inap');
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusPulang, setStatusPulang] = useState("-");
+  const [statusPulang, setStatusPulang] = useState("masih-dirawat");
+  const [resumeStatus, setResumeStatus] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: new Date(),
+    from: subMonths(new Date(), 6),
     to: new Date()
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [tabCounts, setTabCounts] = useState(emptyTabCounts);
 
-  const fetchRawatInapData = async () => {
+  const buildRawatInapRequestBody = (tabValue: RawatInapListTab, overrides: Partial<Record<string, string>> = {}) => ({
+    page: currentPage.toString(),
+    itemsPerPage: itemsPerPage.toString(),
+    search: searchQuery,
+    statusPulang: statusPulang,
+    username: user?.username || '',
+    tab: tabValue,
+    startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
+    endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
+    ...overrides
+  });
+
+  const buildResumeRequestBody = (overrides: Partial<Record<string, string>> = {}) => ({
+    page: currentPage.toString(),
+    itemsPerPage: itemsPerPage.toString(),
+    search: searchQuery,
+    statusPulang: statusPulang,
+    username: user?.username || '',
+    resumeStatus,
+    startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
+    endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
+    ...overrides
+  });
+
+  const applyTabCounts = (counts: any) => {
+    setTabCounts({
+      rawat_inap: Number(counts?.rawat_inap || 0),
+      rawat_bersama: Number(counts?.rawat_bersama || 0),
+      rawat_gabung: Number(counts?.rawat_gabung || 0),
+      resume_pasien: Number(counts?.resume_pasien || 0)
+    });
+  };
+
+  const applyResumeCount = (resumeCount: number) => {
+    setTabCounts((prev) => ({
+      ...prev,
+      resume_pasien: Number(resumeCount || 0)
+    }));
+  };
+
+  const fetchRawatInapTabCounts = async () => {
+    try {
+      const response = await fetch(API_URLS.RAWAT_INAP_DATA, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(
+          buildRawatInapRequestBody('rawat-inap', {
+            page: '1',
+            itemsPerPage: '1'
+          })
+        )
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error);
+      }
+
+      applyTabCounts(data?.tabCounts);
+    } catch (error) {
+      console.error('Error fetching Rawat Inap tab counts:', error);
+      setTabCounts(emptyTabCounts);
+    }
+  };
+
+  const fetchResumeTabCount = async () => {
+    try {
+      const response = await fetch(API_URLS.RESUME_PASIEN_DATA, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(
+          buildResumeRequestBody({
+            page: '1',
+            itemsPerPage: '1'
+          })
+        )
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error);
+      }
+
+      applyResumeCount(data?.total || 0);
+    } catch (error) {
+      console.error('Error fetching Resume Pasien tab count:', error);
+      applyResumeCount(0);
+    }
+  };
+
+  const fetchRawatInapData = async (tabValue: RawatInapListTab = activeTab as RawatInapListTab) => {
     setLoading(true);
     try {
-      const requestBody = {
-        page: currentPage.toString(),
-        itemsPerPage: itemsPerPage.toString(),
-        search: searchQuery,
-        statusPulang: statusPulang,
-        startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
-        endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''
-      };
+      const requestBody = buildRawatInapRequestBody(tabValue);
 
       console.log('Fetching Rawat Inap data:', requestBody);
 
@@ -1079,11 +1188,14 @@ const RawatInapTabs = () => {
       console.log('Rawat Inap data response:', data);
       setRawatInapData(data?.data || []);
       setTotal(data?.total || 0);
+      applyTabCounts(data?.tabCounts);
+      await fetchResumeTabCount();
 
     } catch (error) {
       console.error('Error fetching Rawat Inap data:', error);
       setRawatInapData([]);
       setTotal(0);
+      setTabCounts(emptyTabCounts);
     } finally {
       setLoading(false);
     }
@@ -1092,14 +1204,7 @@ const RawatInapTabs = () => {
   const fetchResumeData = async () => {
     setLoading(true);
     try {
-      const requestBody = {
-        page: currentPage.toString(),
-        itemsPerPage: itemsPerPage.toString(),
-        search: searchQuery,
-        statusPulang: statusPulang,
-        startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
-        endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''
-      };
+      const requestBody = buildResumeRequestBody();
 
       console.log('Fetching Resume Pasien data:', requestBody);
 
@@ -1127,6 +1232,8 @@ const RawatInapTabs = () => {
       console.log('Resume Pasien data response:', data);
       setResumeData(data?.data || []);
       setTotal(data?.total || 0);
+      applyResumeCount(data?.total || 0);
+      await fetchRawatInapTabCounts();
 
     } catch (error) {
       console.error('Error fetching Resume Pasien data:', error);
@@ -1142,28 +1249,33 @@ const RawatInapTabs = () => {
     if (tab === 'resume-pasien') {
       fetchResumeData();
     } else {
-      fetchRawatInapData();
+      fetchRawatInapData(tab as 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung');
     }
   };
 
   const handleClearFilters = (tab: string) => {
     setSearchQuery("");
-    setStatusPulang("all");
+    setStatusPulang("masih-dirawat");
+    setResumeStatus("all");
     setDateRange({
-      from: new Date(),
+      from: subMonths(new Date(), 6),
       to: new Date()
     });
     setCurrentPage(1);
     if (tab === 'resume-pasien') {
       fetchResumeData();
     } else {
-      fetchRawatInapData();
+      fetchRawatInapData(tab as 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung');
     }
   };
 
   useEffect(() => {
-    fetchRawatInapData();
-  }, [currentPage, itemsPerPage]);
+    if (activeTab === 'resume-pasien') {
+      fetchResumeData();
+    } else {
+      fetchRawatInapData(activeTab);
+    }
+  }, [activeTab, currentPage, itemsPerPage]);
 
   // Use the global rawatInapColumns definition
 
@@ -1213,6 +1325,17 @@ const RawatInapTabs = () => {
     // This will redirect to resume creation page or open a modal
   };
 
+  const getInapTitle = (tab: string) => {
+    switch (tab) {
+      case 'rawat-bersama':
+        return 'Data Pasien Rawat Bersama';
+      case 'rawat-gabung':
+        return 'Data Pasien Rawat Gabung';
+      default:
+        return 'Data Pasien Rawat Inap';
+    }
+  };
+
   const renderFilterSection = (tab: string) => (
     <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
       <div className="relative w-full sm:w-full">
@@ -1260,25 +1383,28 @@ const RawatInapTabs = () => {
 
         <Select value={statusPulang} onValueChange={setStatusPulang}>
           <SelectTrigger className="w-full sm:w-auto min-w-[160px]">
-            <SelectValue placeholder="Status Pulang" />
+            <SelectValue placeholder="Status Rawat" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="-">Masih Dirawat (-)</SelectItem>
-            <SelectItem value="Sehat">Sehat</SelectItem>
-            <SelectItem value="Rujuk">Rujuk</SelectItem>
-            <SelectItem value="APS">APS</SelectItem>
-            <SelectItem value="Meninggal">Meninggal</SelectItem>
-            <SelectItem value="Sembuh">Sembuh</SelectItem>
-            <SelectItem value="Membaik">Membaik</SelectItem>
-            <SelectItem value="Pulang Paksa">Pulang Paksa</SelectItem>
-            <SelectItem value="Pindah Kamar">Pindah Kamar</SelectItem>
-            <SelectItem value="Status Belum Lengkap">Status Belum Lengkap</SelectItem>
-            <SelectItem value="Atas Persetujuan Dokter">Atas Persetujuan Dokter</SelectItem>
-            <SelectItem value="Atas Permintaan Sendiri">Atas Permintaan Sendiri</SelectItem>
-            <SelectItem value="Lain-lain">Lain-lain</SelectItem>
+            <SelectItem value="masih-dirawat">Masih Dirawat (-)</SelectItem>
+            <SelectItem value="pindah-kamar">Pindah Kamar</SelectItem>
+            <SelectItem value="sudah-pulang">Sudah Pulang</SelectItem>
           </SelectContent>
         </Select>
+
+        {tab === 'resume-pasien' ? (
+          <Select value={resumeStatus} onValueChange={setResumeStatus}>
+            <SelectTrigger className="w-full sm:w-auto min-w-[170px]">
+              <SelectValue placeholder="Status Resume" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Resume</SelectItem>
+              <SelectItem value="belum_resume">Belum Resume</SelectItem>
+              <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : null}
 
         <Button 
           variant="secondary"
@@ -1302,29 +1428,33 @@ const RawatInapTabs = () => {
   );
 
   return (
-    <Tabs defaultValue="rawat-inap" onValueChange={(value) => {
+    <Tabs value={activeTab} onValueChange={(value) => {
       setCurrentPage(1);
-      if (value === 'resume-pasien') {
-        fetchResumeData();
-      } else {
-        fetchRawatInapData();
-      }
+      setActiveTab(value as RawatInapTab);
     }}>
       <TabsList className="mb-4">
         <TabsTrigger value="rawat-inap">
           <Home className="mr-2 h-4 w-4" />
-          <span>Rawat Inap</span>
+          <span>Rawat Inap ({tabCounts.rawat_inap})</span>
+        </TabsTrigger>
+        <TabsTrigger value="rawat-bersama">
+          <Home className="mr-2 h-4 w-4" />
+          <span>Rawat Bersama ({tabCounts.rawat_bersama})</span>
+        </TabsTrigger>
+        <TabsTrigger value="rawat-gabung">
+          <Home className="mr-2 h-4 w-4" />
+          <span>Rawat Gabung ({tabCounts.rawat_gabung})</span>
         </TabsTrigger>
         <TabsTrigger value="resume-pasien">
           <File className="mr-2 h-4 w-4" />
-          <span>Resume Pasien</span>
+          <span>Resume Pasien ({tabCounts.resume_pasien})</span>
         </TabsTrigger>
       </TabsList>
       
       <TabsContent value="rawat-inap" className="space-y-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle>Data Pasien Rawat Inap</CardTitle>
+            <CardTitle>{getInapTitle('rawat-inap')}</CardTitle>
             {renderFilterSection('rawat-inap')}
           </CardHeader>
           <CardContent>
@@ -1347,6 +1477,68 @@ const RawatInapTabs = () => {
                   }
                 }}
               />              
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="rawat-bersama" className="space-y-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle>{getInapTitle('rawat-bersama')}</CardTitle>
+            {renderFilterSection('rawat-bersama')}
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <PatientTable 
+                patients={rawatInapData} 
+                columns={rawatInapColumns}
+                loading={loading}
+                pagination={{
+                  currentPage,
+                  totalPages: Math.ceil(total / itemsPerPage),
+                  totalItems: total,
+                  itemsPerPage,
+                  onPageChange: (page) => {
+                    setCurrentPage(page);
+                  },
+                  onItemsPerPageChange: (newItemsPerPage) => {
+                    setItemsPerPage(newItemsPerPage);
+                    setCurrentPage(1);
+                  }
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="rawat-gabung" className="space-y-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle>{getInapTitle('rawat-gabung')}</CardTitle>
+            {renderFilterSection('rawat-gabung')}
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <PatientTable 
+                patients={rawatInapData} 
+                columns={rawatInapColumns}
+                loading={loading}
+                pagination={{
+                  currentPage,
+                  totalPages: Math.ceil(total / itemsPerPage),
+                  totalItems: total,
+                  itemsPerPage,
+                  onPageChange: (page) => {
+                    setCurrentPage(page);
+                  },
+                  onItemsPerPageChange: (newItemsPerPage) => {
+                    setItemsPerPage(newItemsPerPage);
+                    setCurrentPage(1);
+                  }
+                }}
+              />
             </div>
           </CardContent>
         </Card>

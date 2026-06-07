@@ -192,7 +192,7 @@ class GetMedicalRecordService {
   static async fetchMedicationsRequest(noRawat, status) {
     // Step 1: Get list of unique prescriptions
     const prescRequestQuery = `
-      SELECT DISTINCT no_resep, tgl_peresepan, jam_peresepan
+      SELECT DISTINCT no_resep, tgl_peresepan, jam_peresepan, kd_dokter
       FROM resep_obat 
       WHERE no_rawat = ? AND status = ?
       ORDER BY tgl_peresepan, jam_peresepan
@@ -227,6 +227,7 @@ class GetMedicalRecordService {
         medicationsRequest.push({
           tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
           no_resep: prescRequestRow.no_resep,
+          kd_dokter: prescRequestRow.kd_dokter || '',
           obat: obatList
         });
       }
@@ -242,6 +243,7 @@ class GetMedicalRecordService {
         pl.noorder,
         pl.tgl_permintaan,
         pl.jam_permintaan,
+        pl.dokter_perujuk,
         ppl.kd_jenis_prw,
         jpl.nm_perawatan,
         pdpl.id_template,
@@ -272,6 +274,7 @@ class GetMedicalRecordService {
         requestsByOrder.set(requestKey, {
           noorder: row.noorder || '',
           tanggal: this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan,
+          dokter_perujuk: row.dokter_perujuk || '',
           pemeriksaanMap: new Map()
         });
       }
@@ -308,6 +311,7 @@ class GetMedicalRecordService {
     return Array.from(requestsByOrder.values()).map((requestEntry) => ({
       noorder: requestEntry.noorder,
       tanggal: requestEntry.tanggal,
+      dokter_perujuk: requestEntry.dokter_perujuk,
       pemeriksaan: Array.from(requestEntry.pemeriksaanMap.values())
     }));
   }
@@ -380,6 +384,7 @@ class GetMedicalRecordService {
         pr.noorder,
         pr.tgl_permintaan,
         pr.jam_permintaan,
+        pr.dokter_perujuk,
         ppr.kd_jenis_prw,
         jpr.nm_perawatan
       FROM permintaan_radiologi pr
@@ -399,6 +404,7 @@ class GetMedicalRecordService {
         requestsByOrder.set(requestKey, {
           noorder: row.noorder || '',
           tanggal: this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan,
+          dokter_perujuk: row.dokter_perujuk || '',
           pemeriksaan: []
         });
       }

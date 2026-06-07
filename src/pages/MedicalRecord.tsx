@@ -902,6 +902,24 @@ const MedicalRecord = () => {
     );
   }, [formattedNoRawat, medicalData?.focused_radiology?.ranap, scopedInpatientVisits]);
   const activeVitalSeries = vitalChartSeries.filter((series) => visibleVitalSeries[series.key]);
+  const currentUsername = String(user?.username || '').trim();
+  const matchesCurrentUser = (...values: Array<string | null | undefined>) =>
+    Boolean(
+      currentUsername &&
+      values.some((value) => {
+        const normalized = String(value || '').trim();
+        return normalized && normalized === currentUsername;
+      })
+    );
+  const canDeleteExamination = (exam: any) => matchesCurrentUser(exam?.nip, exam?.kd_dokter);
+  const canDeleteProcedure = (procedure: any) => matchesCurrentUser(procedure?.kd_dokter, procedure?.nip);
+  const canDeletePrescription = (med: any) => matchesCurrentUser(med?.kd_dokter);
+  const canDeleteLabRequest = (lab: any) => matchesCurrentUser(lab?.dokter_perujuk);
+  const canDeleteRadiologyRequest = (rad: any) => matchesCurrentUser(rad?.dokter_perujuk);
+  const canEditExamination = canDeleteExamination;
+  const canEditPrescription = canDeletePrescription;
+  const canEditLabRequest = canDeleteLabRequest;
+  const canEditRadiologyRequest = canDeleteRadiologyRequest;
   const renderExaminationCards = (history: Array<{ key: string; visit: any; exam: any; rawatType: 'Ralan' | 'Ranap' }>) => {
     if (history.length === 0) {
       return (
@@ -911,7 +929,10 @@ const MedicalRecord = () => {
       );
     }
 
-    return history.map(({ key, visit, exam, rawatType }) => (
+    return history.map(({ key, visit, exam, rawatType }) => {
+      const allowedToDelete = canDeleteExamination(exam);
+
+      return (
       <div key={key} className="border rounded-lg p-4">
         <div className="flex justify-between items-start mb-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
@@ -941,15 +962,17 @@ const MedicalRecord = () => {
               size="sm"
               variant="outline"
               onClick={() => handleEditExamination(exam, visit)}
+              disabled={!canEditExamination(exam)}
             >
-              Edit
+              {canEditExamination(exam) ? 'Edit' : 'Bukan Data Anda'}
             </Button>
             <Button
               size="sm"
               variant="destructive"
               onClick={() => handleDeleteExamination(exam, visit)}
+              disabled={!allowedToDelete}
             >
-              Delete
+              {allowedToDelete ? 'Hapus' : 'Bukan Data Anda'}
             </Button>
           </div>
         </div>
@@ -967,17 +990,35 @@ const MedicalRecord = () => {
           </div>
           <div className="space-y-2">
             <h4 className="font-medium">SOAPIE</h4>
-            <p className="text-sm"><strong>S (Subjektif):</strong> {exam.s || exam.keluhan || '-'}</p>
-            <p className="text-sm"><strong>O (Objektif):</strong> {exam.o || exam.pemeriksaan || '-'}</p>
-            <p className="text-sm"><strong>A (Assessment):</strong> {exam.a || exam.penilaian || '-'}</p>
-            <p className="text-sm"><strong>P (Planning):</strong> {exam.p || exam.rtl || '-'}</p>
-            <p className="text-sm"><strong>I (Implementation):</strong> {exam.i || exam.instruksi || '-'}</p>
-            <p className="text-sm"><strong>E (Evaluation):</strong> {exam.e || exam.evaluasi || '-'}</p>
+            <div className="text-sm">
+              <strong>S (Subjektif):</strong>
+              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.s || exam.keluhan || '-')}</p>
+            </div>
+            <div className="text-sm">
+              <strong>O (Objektif):</strong>
+              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.o || exam.pemeriksaan || '-')}</p>
+            </div>
+            <div className="text-sm">
+              <strong>A (Assessment):</strong>
+              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.a || exam.penilaian || '-')}</p>
+            </div>
+            <div className="text-sm">
+              <strong>P (Planning):</strong>
+              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.p || exam.rtl || '-')}</p>
+            </div>
+            <div className="text-sm">
+              <strong>I (Implementation):</strong>
+              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.i || exam.instruksi || '-')}</p>
+            </div>
+            <div className="text-sm">
+              <strong>E (Evaluation):</strong>
+              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.e || exam.evaluasi || '-')}</p>
+            </div>
             <p className="text-sm"><strong>Petugas:</strong> {exam.pegawai || exam.nip || '-'}</p>
           </div>
         </div>
       </div>
-    ));
+    )});
   };
   const renderProcedureCards = (procedures: any[]) => {
     if (procedures.length === 0) {
@@ -998,19 +1039,16 @@ const MedicalRecord = () => {
     }, {} as Record<string, any[]>);
 
     return (Object.entries(groupedProcedures) as Array<[string, any[]]>).map(([tanggal, items]) => (
-      <div key={tanggal} className="border rounded-lg p-4 space-y-4">
-        <div className="flex flex-col gap-3 border-b pb-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-            <p className="font-semibold">{formatDateTimeToMinute(tanggal)}</p>
+      <div key={tanggal} className="border rounded-lg p-3 space-y-3">
+        <div className="flex flex-col gap-1 border-b pb-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span className="font-semibold text-foreground">{formatDateTimeToMinute(tanggal)}</span>
+            <span className="text-muted-foreground">{items[0]?.source || '-'}</span>
           </div>
-          <div className="text-left md:text-right">
-            <p className="font-medium">{items[0]?.source || '-'}</p>
-            <p className="font-medium">{items[0]?.no_rawat || '-'}</p>
-          </div>
+          <p className="text-sm text-muted-foreground">{items[0]?.no_rawat || '-'}</p>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           {items.map((proc, procIndex) => {
             const procedureKey = [
               proc.no_rawat,
@@ -1021,30 +1059,36 @@ const MedicalRecord = () => {
             ].join('|');
 
             return (
+              (() => {
+                const allowedToDelete = canDeleteProcedure(proc);
+
+                return (
               <div
                 key={`${proc.no_rawat}-${tanggal}-${proc.nm_perawatan}-${procIndex}`}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-md border bg-muted/20 p-3"
+                className="flex items-start justify-between gap-3 rounded-md border bg-muted/10 px-3 py-2"
               >
-                <div>
-                  <p className="text-sm text-muted-foreground">Nama Perawatan</p>
-                  <p className="font-medium">{proc.nm_perawatan || proc.nama || '-'}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium leading-6">{proc.nm_perawatan || proc.nama || '-'}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {proc.nama_pelaksana || proc.hasil || '-'}
+                  </p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Nama Pelaksana</p>
-                  <p className="font-medium">{proc.nama_pelaksana || proc.hasil || '-'}</p>
-                </div>
-                <div className="md:col-span-2 flex justify-end">
+                <div className="shrink-0">
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => handleDeleteProcedure(proc)}
-                    disabled={deletingProcedureKey === procedureKey}
+                    disabled={!allowedToDelete || deletingProcedureKey === procedureKey}
                   >
-                    <Trash2 className="h-4 w-4" />
-                    {deletingProcedureKey === procedureKey ? 'Menghapus...' : 'Hapus'}
+                    <Trash2 className="h-4 w-4 md:mr-2" />
+                    <span className="hidden md:inline">
+                      {deletingProcedureKey === procedureKey ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
+                    </span>
                   </Button>
                 </div>
               </div>
+                );
+              })()
             );
           })}
         </div>
@@ -1060,7 +1104,10 @@ const MedicalRecord = () => {
       );
     }
 
-    return items.map((med, index) => (
+    return items.map((med, index) => {
+      const allowedToDelete = canDeletePrescription(med);
+
+      return (
       <div key={`${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
@@ -1086,18 +1133,23 @@ const MedicalRecord = () => {
             <div className="flex flex-wrap gap-2">
               {isRequestTab ? (
                 <>
-                  <Button variant="outline" size="sm" onClick={() => handleEditResep(med)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleEditResep(med)}
+                    disabled={!canEditPrescription(med)}
+                  >
                     <Pencil className="h-4 w-4 mr-2" />
-                    Edit Resep
+                    {canEditPrescription(med) ? 'Edit Resep' : 'Bukan Data Anda'}
                   </Button>
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => handleDeleteResep(med)}
-                    disabled={deletingPrescriptionNo === med.no_resep}
+                    disabled={!allowedToDelete || deletingPrescriptionNo === med.no_resep}
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
-                    {deletingPrescriptionNo === med.no_resep ? 'Menghapus...' : 'Hapus'}
+                    {deletingPrescriptionNo === med.no_resep ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
                   </Button>
                 </>
               ) : null}
@@ -1125,14 +1177,17 @@ const MedicalRecord = () => {
           ))}
         </div>
       </div>
-    ));
+    )});
   };
   const renderLaboratoryRequestCards = (items: any[]) => {
     if (items.length === 0) {
       return <p className="text-sm italic text-muted-foreground">Belum ada data permintaan laboratorium.</p>;
     }
 
-    return items.map((lab, labIndex) => (
+    return items.map((lab, labIndex) => {
+      const allowedToDelete = canDeleteLabRequest(lab);
+
+      return (
       <div key={`${lab.no_rawat}-${lab.noorder}-${labIndex}`} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
@@ -1153,9 +1208,14 @@ const MedicalRecord = () => {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 mb-4">
-          <Button variant="outline" size="sm" onClick={() => handleEditLabRequest(lab)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleEditLabRequest(lab)}
+            disabled={!canEditLabRequest(lab)}
+          >
             <Pencil className="h-4 w-4 mr-2" />
-            Edit
+            {canEditLabRequest(lab) ? 'Edit' : 'Bukan Data Anda'}
           </Button>
           <Button variant="outline" size="sm" onClick={() => handleCopyLabRequest(lab)}>
             <Copy className="h-4 w-4 mr-2" />
@@ -1165,10 +1225,10 @@ const MedicalRecord = () => {
             variant="destructive"
             size="sm"
             onClick={() => handleDeleteLabRequest(lab)}
-            disabled={deletingLabRequestNo === lab.noorder}
+            disabled={!allowedToDelete || deletingLabRequestNo === lab.noorder}
           >
             <Trash2 className="h-4 w-4 mr-2" />
-            {deletingLabRequestNo === lab.noorder ? 'Menghapus...' : 'Hapus'}
+            {deletingLabRequestNo === lab.noorder ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
           </Button>
         </div>
         <div className="space-y-2">
@@ -1210,7 +1270,7 @@ const MedicalRecord = () => {
           ))}
         </div>
       </div>
-    ));
+    )});
   };
   const renderLaboratoryHistoryCards = (items: any[]) => {
     if (items.length === 0) {
@@ -1307,7 +1367,10 @@ const MedicalRecord = () => {
       return <p className="text-sm italic text-muted-foreground">Belum ada data permintaan radiologi.</p>;
     }
 
-    return items.map((rad, radIndex) => (
+    return items.map((rad, radIndex) => {
+      const allowedToDelete = canDeleteRadiologyRequest(rad);
+
+      return (
       <div key={`${rad.no_rawat}-${rad.noorder}-${radIndex}`} className="border rounded-lg p-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
@@ -1328,9 +1391,14 @@ const MedicalRecord = () => {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 mb-4">
-          <Button variant="outline" size="sm" onClick={() => handleEditRadiologyRequest(rad)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleEditRadiologyRequest(rad)}
+            disabled={!canEditRadiologyRequest(rad)}
+          >
             <Pencil className="h-4 w-4 mr-2" />
-            Edit
+            {canEditRadiologyRequest(rad) ? 'Edit' : 'Bukan Data Anda'}
           </Button>
           <Button variant="outline" size="sm" onClick={() => handleCopyRadiologyRequest(rad)}>
             <Copy className="h-4 w-4 mr-2" />
@@ -1340,10 +1408,10 @@ const MedicalRecord = () => {
             variant="destructive"
             size="sm"
             onClick={() => handleDeleteRadiologyRequest(rad)}
-            disabled={deletingRadiologyRequestNo === rad.noorder}
+            disabled={!allowedToDelete || deletingRadiologyRequestNo === rad.noorder}
           >
             <Trash2 className="h-4 w-4 mr-2" />
-            {deletingRadiologyRequestNo === rad.noorder ? 'Menghapus...' : 'Hapus'}
+            {deletingRadiologyRequestNo === rad.noorder ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
           </Button>
         </div>
         <div className="space-y-2">
@@ -1366,7 +1434,7 @@ const MedicalRecord = () => {
           )}
         </div>
       </div>
-    ));
+    )});
   };
   const renderRadiologyHistoryCards = (items: any[]) => {
     if (items.length === 0) {
@@ -1817,6 +1885,15 @@ const MedicalRecord = () => {
   };
 
   const handleEditResep = async (med: any) => {
+    if (!canEditPrescription(med)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya dokter pembuat resep yang dapat mengedit data ini.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!med?.no_resep) {
       toast({
         title: "Error",
@@ -1882,6 +1959,15 @@ const MedicalRecord = () => {
   };
 
   const handleDeleteResep = async (med: any) => {
+    if (!canDeletePrescription(med)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya dokter pembuat resep yang dapat menghapus data ini.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!med?.no_resep) {
       toast({
         title: "Error",
@@ -1905,7 +1991,8 @@ const MedicalRecord = () => {
         },
         body: JSON.stringify({
           action: 'delete_prescription',
-          no_resep: med.no_resep
+          no_resep: med.no_resep,
+          username: currentUsername
         })
       });
 
@@ -2352,6 +2439,15 @@ const MedicalRecord = () => {
   };
 
   const handleEditLabRequest = (lab: any) => {
+    if (!canEditLabRequest(lab)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya dokter perujuk yang dapat mengedit permintaan laboratorium ini.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!lab?.noorder) {
       toast({
         title: "Error",
@@ -2404,6 +2500,15 @@ const MedicalRecord = () => {
   };
 
   const handleDeleteLabRequest = async (lab: any) => {
+    if (!canDeleteLabRequest(lab)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya dokter perujuk yang dapat menghapus permintaan laboratorium ini.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!lab?.noorder) {
       toast({
         title: "Error",
@@ -2421,7 +2526,7 @@ const MedicalRecord = () => {
       setDeletingLabRequestNo(lab.noorder);
 
       const response = await fetch(
-        `${API_URLS.LABORATORY_DATA}?action=delete_lab_request&noorder=${encodeURIComponent(lab.noorder)}`,
+        `${API_URLS.LABORATORY_DATA}?action=delete_lab_request&noorder=${encodeURIComponent(lab.noorder)}&username=${encodeURIComponent(currentUsername)}`,
         { method: 'DELETE' }
       );
       const responseJson = await response.json().catch(() => null);
@@ -2491,6 +2596,15 @@ const MedicalRecord = () => {
   };
 
   const handleEditRadiologyRequest = (rad: any) => {
+    if (!canEditRadiologyRequest(rad)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya dokter perujuk yang dapat mengedit permintaan radiologi ini.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!rad?.noorder) {
       toast({
         title: "Error",
@@ -2534,6 +2648,15 @@ const MedicalRecord = () => {
   };
 
   const handleDeleteRadiologyRequest = async (rad: any) => {
+    if (!canDeleteRadiologyRequest(rad)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya dokter perujuk yang dapat menghapus permintaan radiologi ini.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!rad?.noorder) {
       toast({
         title: "Error",
@@ -2551,7 +2674,7 @@ const MedicalRecord = () => {
       setDeletingRadiologyRequestNo(rad.noorder);
 
       const response = await fetch(
-        `${API_URLS.RADIOLOGY_DATA}?action=delete_radiology_request&noorder=${encodeURIComponent(rad.noorder)}`,
+        `${API_URLS.RADIOLOGY_DATA}?action=delete_radiology_request&noorder=${encodeURIComponent(rad.noorder)}&username=${encodeURIComponent(currentUsername)}`,
         { method: 'DELETE' }
       );
       const responseJson = await response.json().catch(() => null);
@@ -2587,6 +2710,15 @@ const MedicalRecord = () => {
   };
 
   const handleEditExamination = (examination: any, visit: any) => {
+    if (!canEditExamination(examination)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya petugas yang membuat data pemeriksaan yang dapat mengeditnya.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setActiveTab('examinations');
     setIsExaminationFormOpen(true);
     setEditingExamination({
@@ -2653,6 +2785,15 @@ const MedicalRecord = () => {
   };
 
   const handleDeleteExamination = async (examination: any, visit: any) => {
+    if (!canDeleteExamination(examination)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya petugas yang membuat data pemeriksaan yang dapat menghapusnya.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!confirm('Apakah Anda yakin ingin menghapus data pemeriksaan ini?')) {
       return;
     }
@@ -2665,7 +2806,8 @@ const MedicalRecord = () => {
           no_rawat: visit.no_rawat,
           status_rawat: mapStatusLanjutToStatusRawat(visit.status_lanjut),
           tgl_perawatan: examination.tgl_perawatan,
-          jam_rawat: examination.jam_rawat
+          jam_rawat: examination.jam_rawat,
+          username: currentUsername
         })
       });
       
@@ -2695,6 +2837,15 @@ const MedicalRecord = () => {
   };
 
   const handleDeleteProcedure = async (procedure: any) => {
+    if (!canDeleteProcedure(procedure)) {
+      toast({
+        title: "Akses Ditolak",
+        description: "Hanya user yang terkait dengan tindakan ini yang dapat menghapusnya.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!confirm('Apakah Anda yakin ingin menghapus data tindakan ini?')) {
       return;
     }
@@ -2707,7 +2858,8 @@ const MedicalRecord = () => {
       jam_rawat: procedure.jam_rawat,
       record_type: procedure.record_type,
       kd_dokter: procedure.kd_dokter,
-      nip: procedure.nip
+      nip: procedure.nip,
+      username: currentUsername
     };
     const procedureKey = [
       requestPayload.no_rawat,
@@ -2864,6 +3016,7 @@ const MedicalRecord = () => {
                     ...requestBody,
                     original_date: editingExamination?.tgl_perawatan,
                     original_time: editingExamination?.jam_rawat,
+                    username: currentUsername,
                   }
                 : requestBody
             )
@@ -2988,6 +3141,7 @@ const MedicalRecord = () => {
             dokter_perujuk: user.username,
             status_rawat: labStatusRawat,
             noorder: editingLabRequestNo,
+            username: currentUsername,
             examinations: validLabRequests,
             details: validLabRequestDetails
           })
@@ -3046,6 +3200,7 @@ const MedicalRecord = () => {
             dokter_perujuk: user.username,
             status_rawat: radiologyStatusRawat,
             noorder: editingRadiologyRequestNo,
+            username: currentUsername,
             examinations: validRadiologyRequests
           })
         });
@@ -3112,6 +3267,7 @@ const MedicalRecord = () => {
             body: JSON.stringify({
               action: 'update_prescription',
               no_resep: editingPrescriptionNo,
+              username: currentUsername,
               prescription_date: prescription.tanggal,
               prescription_status: prescription.status,
               medicines: prescription.medicines,

@@ -166,11 +166,27 @@ class LaboratoryDataService {
     }
   }
 
-  async updateLabRequest(noorder, examinations, details, status_rawat) {
+  async updateLabRequest(noorder, examinations, details, status_rawat, username = '') {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
+      const normalizedUsername = String(username || '').trim();
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat);
+
+      if (normalizedUsername) {
+        const [rows] = await connection.execute(
+          'SELECT dokter_perujuk FROM permintaan_lab WHERE noorder = ? LIMIT 1',
+          [noorder]
+        );
+
+        if (!rows.length) {
+          throw new Error('Permintaan laboratorium tidak ditemukan atau sudah dihapus');
+        }
+
+        if (String(rows[0].dokter_perujuk || '').trim() !== normalizedUsername) {
+          throw new Error('Anda tidak berhak mengedit permintaan laboratorium ini');
+        }
+      }
 
       if (normalizedStatusRawat) {
         await connection.execute(
@@ -215,9 +231,26 @@ class LaboratoryDataService {
     }
   }
 
-  async deleteLabRequest(noorder) {
+  async deleteLabRequest(noorder, username = '') {
     const connection = await this.getConnection();
     try {
+      const normalizedUsername = String(username || '').trim();
+
+      if (normalizedUsername) {
+        const [rows] = await connection.execute(
+          'SELECT dokter_perujuk FROM permintaan_lab WHERE noorder = ? LIMIT 1',
+          [noorder]
+        );
+
+        if (!rows.length) {
+          throw new Error('Permintaan laboratorium tidak ditemukan atau sudah dihapus');
+        }
+
+        if (String(rows[0].dokter_perujuk || '').trim() !== normalizedUsername) {
+          throw new Error('Anda tidak berhak menghapus permintaan laboratorium ini');
+        }
+      }
+
       // Delete laboratory request (cascade will handle related records)
       const deleteQuery = `DELETE FROM permintaan_lab WHERE noorder = ?`;
       

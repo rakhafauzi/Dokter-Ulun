@@ -628,8 +628,8 @@ app.post('/api/delete-procedure', async (req, res) => {
 // Delete examination endpoint
 app.post('/api/delete-examination', async (req, res) => {
   try {
-    const { no_rawat, status_rawat, tgl_perawatan, jam_rawat } = req.body;
-    const data = await DeleteExaminationService.deleteExamination(no_rawat, status_rawat, tgl_perawatan, jam_rawat);
+    const { no_rawat, status_rawat, tgl_perawatan, jam_rawat, username } = req.body;
+    const data = await DeleteExaminationService.deleteExamination(no_rawat, status_rawat, tgl_perawatan, jam_rawat, username);
     res.json(data);
   } catch (error) {
     console.error('Delete examination error:', error);
@@ -811,7 +811,7 @@ app.get('/api/laboratory-data', async (req, res) => {
 app.post('/api/laboratory-data', async (req, res) => {
   try {
     const { action } = req.query;
-    const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat } = req.body;
+    const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat, username } = req.body;
     
     let result;
     
@@ -827,7 +827,7 @@ app.post('/api/laboratory-data', async (req, res) => {
         if (!noorder) {
           return res.status(400).json({ error: 'noorder is required' });
         }
-        result = await LaboratoryDataService.updateLabRequest(noorder, examinations, details, status_rawat);
+        result = await LaboratoryDataService.updateLabRequest(noorder, examinations, details, status_rawat, username);
         break;
         
       default:
@@ -846,14 +846,14 @@ app.post('/api/laboratory-data', async (req, res) => {
 
 app.delete('/api/laboratory-data', async (req, res) => {
   try {
-    const { action, noorder } = req.query;
+    const { action, noorder, username } = req.query;
     
     if (action === 'delete_lab_request') {
       if (!noorder) {
         return res.status(400).json({ error: 'noorder is required' });
       }
       
-      const result = await LaboratoryDataService.deleteLabRequest(noorder);
+      const result = await LaboratoryDataService.deleteLabRequest(noorder, username);
       res.json(result);
     } else {
       res.status(400).json({ error: 'Invalid action' });
@@ -989,7 +989,7 @@ app.get('/api/radiology-data', async (req, res) => {
 app.post('/api/radiology-data', async (req, res) => {
   try {
     const { action } = req.query;
-    const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat } = req.body;
+    const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat, username } = req.body;
 
     let result;
 
@@ -1005,7 +1005,7 @@ app.post('/api/radiology-data', async (req, res) => {
         if (!noorder) {
           return res.status(400).json({ error: 'noorder is required' });
         }
-        result = await RadiologyDataService.updateRadiologyRequest(noorder, examinations, status_rawat);
+        result = await RadiologyDataService.updateRadiologyRequest(noorder, examinations, status_rawat, username);
         break;
 
       default:
@@ -1024,14 +1024,14 @@ app.post('/api/radiology-data', async (req, res) => {
 
 app.delete('/api/radiology-data', async (req, res) => {
   try {
-    const { action, noorder } = req.query;
+    const { action, noorder, username } = req.query;
 
     if (action === 'delete_radiology_request') {
       if (!noorder) {
         return res.status(400).json({ error: 'noorder is required' });
       }
 
-      const result = await RadiologyDataService.deleteRadiologyRequest(noorder);
+      const result = await RadiologyDataService.deleteRadiologyRequest(noorder, username);
       res.json(result);
     } else {
       res.status(400).json({ error: 'Invalid action' });
@@ -1047,7 +1047,7 @@ app.delete('/api/radiology-data', async (req, res) => {
 
 app.post('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, kd_dokter, no_resep, medicines, compounds, prescription_date, prescription_status } = req.body;
+    const { action, no_rawat, kd_dokter, no_resep, medicines, compounds, prescription_date, prescription_status, username } = req.body;
     
     let result;
     
@@ -1074,7 +1074,8 @@ app.post('/api/prescription-data', async (req, res) => {
           medicines,
           compounds,
           prescription_date,
-          prescription_status
+          prescription_status,
+          username
         );
         break;
         
@@ -1085,7 +1086,7 @@ app.post('/api/prescription-data', async (req, res) => {
             error: 'no_resep is required for delete_prescription'
           });
         }
-        result = await PrescriptionDataService.deletePrescription(no_resep);
+        result = await PrescriptionDataService.deletePrescription(no_resep, username);
         break;
         
       default:
@@ -1113,6 +1114,8 @@ app.post('/api/resume-pasien-data', async (req, res) => {
       itemsPerPage = "50", 
       search = "",
       statusPulang = "all",
+      username = "",
+      resumeStatus = "all",
       startDate,
       endDate
     } = req.body;
@@ -1122,6 +1125,8 @@ app.post('/api/resume-pasien-data', async (req, res) => {
       itemsPerPage,
       search,
       statusPulang,
+      username,
+      resumeStatus,
       startDate,
       endDate
     });
