@@ -412,6 +412,13 @@ const formatRouteNoRawat = (rawatParam?: string) => {
   return `${year}/${month}/${day}/${sequence}`;
 };
 
+const getRadiologyPacsKey = (rad: any) => {
+  const noRawat = String(rad?.no_rawat || '').trim();
+  const examDate = String(rad?.tgl_periksa || String(rad?.tanggal || '').split(' ')[0] || '').trim();
+  const examName = String(rad?.pemeriksaan || '').trim().toLowerCase();
+  return [noRawat, examDate, examName].join('::');
+};
+
 const mergeVisitsByNoRawat = (existingVisits: any[] = [], incomingVisits: any[] = []) => {
   const existingNoRawat = new Set(existingVisits.map((visit) => visit.no_rawat));
   return [
@@ -645,6 +652,8 @@ const MedicalRecord = () => {
   });
   const [isPacsPlaying, setIsPacsPlaying] = useState(false);
   const [pacsPlaybackSpeed, setPacsPlaybackSpeed] = useState(180);
+  const [radiologyPacsByKey, setRadiologyPacsByKey] = useState<Record<string, any>>({});
+  const [loadingRadiologyPacsKeys, setLoadingRadiologyPacsKeys] = useState<Record<string, boolean>>({});
   const activePacsImage = pacsPreviewModal.images[pacsPreviewModal.currentIndex] || null;
   const isCtPacsPreview = String(pacsPreviewModal.modality || '').toUpperCase() === 'CT';
   const [visibleVitalSeries, setVisibleVitalSeries] = useState<Record<VitalChartSeriesKey, boolean>>(() => ({
@@ -2007,6 +2016,8 @@ const MedicalRecord = () => {
     if (no_rkm_medis) {
       setExpandedVisitKeys({});
       setLoadingVisitDetailsKeys({});
+      setRadiologyPacsByKey({});
+      setLoadingRadiologyPacsKeys({});
       setExaminationHistoryData({ outpatient: [], inpatient: [] });
       setExaminationPagination({
         outpatient: DEFAULT_PAGINATION_META,
@@ -3637,7 +3648,7 @@ const MedicalRecord = () => {
     }
   };
 
-  const fetchFullRadiologyPacsImages = useCallback(async (rad: any) => {
+  const fetchRadiologyPacsPayload = useCallback(async (rad: any) => {
     const noRawat = String(rad?.no_rawat || '').trim();
     const examDate = String(rad?.tgl_periksa || String(rad?.tanggal || '').split(' ')[0] || '').trim();
 
@@ -3662,10 +3673,40 @@ const MedicalRecord = () => {
       throw new Error(responseJson?.error || 'Gagal memuat PACS radiologi');
     }
 
-    return Array.isArray(responseJson.pacs_images) ? responseJson.pacs_images.filter(Boolean) : [];
+    return {
+      pacs_modality: responseJson.pacs_modality || '',
+      pacs_total_images: Number(responseJson.pacs_total_images) || 0,
+      pacs_series: Array.isArray(responseJson.pacs_series) ? responseJson.pacs_series.filter(Boolean) : [],
+      pacs_images: Array.isArray(responseJson.pacs_images) ? responseJson.pacs_images.filter(Boolean) : []
+    };
   }, []);
 
-  const openPacsPreviewModal = async (rad: any, images: any[], currentIndex = 0, modality = '') => {
+  const getRadiologyWithLazyPacs = useCallback((rad: any) => {
+    const lazyPacs = radiologyPacsByKey[getRadiologyPacsKey(rad)];
+    return lazyPacs ? { ...rad, ...lazyPacs } : rad;
+  }, [radiologyPacsByKey]);
+
+  const ensureRadiologyPacsLoaded = useCallback(async (rad: any) => {
+    const pacsKey = getRadiologyPacsKey(rad);
+    if (!pacsKey || pacsKey === '::::') {
+      throw new Error('Data radiologi belum lengkap untuk memuat PACS');
+    }
+
+    if (radiologyPacsByKey[pacsKey]) {
+      return radiologyPacsByKey[pacsKey];
+    }
+
+    setLoadingRadiologyPacsKeys((previous) => ({ ...previous, [pacsKey]: true }));
+    try {
+      const pacsPayload = await fetchRadiologyPacsPayload(rad);
+      setRadiologyPacsByKey((previous) => ({ ...previous, [pacsKey]: pacsPayload }));
+      return pacsPayload;
+    } finally {
+      setLoadingRadiologyPacsKeys((previous) => ({ ...previous, [pacsKey]: false }));
+    }
+  }, [fetchRadiologyPacsPayload, radiologyPacsByKey]);
+
+  const openPacsPreviewModal = useCallback(async (rad: any, images: any[], currentIndex = 0, modality = '') => {
     const normalizedModality = String(modality || '').toUpperCase();
     const totalImages = Math.max(Number(rad?.pacs_total_images) || 0, images.length);
     const shouldFetchFullCt = normalizedModality === 'CT' && totalImages > images.length;
@@ -3686,7 +3727,8 @@ const MedicalRecord = () => {
     }
 
     try {
-      const fullImages = await fetchFullRadiologyPacsImages(rad);
+      const fullPayload = await ensureRadiologyPacsLoaded(rad);
+      const fullImages = Array.isArray(fullPayload?.pacs_images) ? fullPayload.pacs_images : [];
 
       if (pacsPreviewRequestRef.current !== requestId) {
         return;
@@ -3715,7 +3757,7 @@ const MedicalRecord = () => {
         variant: 'destructive'
       });
     }
-  };
+  }, [ensureRadiologyPacsLoaded, toast]);
 
   const goToPacsImage = (nextIndex: number) => {
     if (!pacsPreviewModal.images.length) {
@@ -3754,7 +3796,8 @@ const MedicalRecord = () => {
   };
 
   const getRadiologyModalityLabel = (rad: any) => {
-    return String(rad?.pacs_modality || rad?.pacs_series?.[0]?.modality || '').trim().toUpperCase();
+    const enrichedRad = getRadiologyWithLazyPacs(rad);
+    return String(enrichedRad?.pacs_modality || enrichedRad?.pacs_series?.[0]?.modality || '').trim().toUpperCase();
   };
 
   const renderRadiologyModalityBadge = (rad: any) => {
@@ -3805,9 +3848,48 @@ const MedicalRecord = () => {
   };
 
   const renderRadiologyPacsImages = (rad: any) => {
-    const { modality, displayImages, modalImages, totalImages } = getRadiologyPacsThumbnailItems(rad);
+    const pacsKey = getRadiologyPacsKey(rad);
+    const hasLoadedPacs = Object.prototype.hasOwnProperty.call(radiologyPacsByKey, pacsKey);
+    const isLoadingPacs = loadingRadiologyPacsKeys[pacsKey] === true;
+    const enrichedRad = getRadiologyWithLazyPacs(rad);
+    const { modality, displayImages, modalImages, totalImages } = getRadiologyPacsThumbnailItems(enrichedRad);
     if (modalImages.length === 0) {
-      return null;
+      return (
+        <div className="mt-4 border-t pt-4">
+          <div className="flex flex-col gap-3 rounded-lg border border-dashed bg-muted/20 p-4">
+            <div>
+              <p className="text-sm font-medium flex items-center gap-2">
+                <ImageIcon className="h-4 w-4" />
+                Foto Radiologi PACS
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {hasLoadedPacs
+                  ? 'Tidak ada gambar PACS yang cocok untuk pemeriksaan ini.'
+                  : 'Hasil radiologi sudah tampil dari database. Foto PACS dimuat saat diperlukan.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isLoadingPacs}
+                onClick={() => {
+                  void ensureRadiologyPacsLoaded(rad).catch((error) => {
+                    toast({
+                      title: 'Error',
+                      description: error instanceof Error ? error.message : 'Gagal memuat PACS radiologi',
+                      variant: 'destructive'
+                    });
+                  });
+                }}
+              >
+                {isLoadingPacs ? 'Memuat PACS...' : 'Muat Foto PACS'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
     }
     const uniqueDescriptions = Array.from(
       new Set(
@@ -3858,7 +3940,7 @@ const MedicalRecord = () => {
                 type="button"
                 key={`${image.instance_id}-${index}`}
                 className="group relative overflow-hidden rounded-lg border bg-muted/20"
-                onClick={() => openPacsPreviewModal(rad, modalImages, index, modality)}
+                onClick={() => openPacsPreviewModal(enrichedRad, modalImages, index, modality)}
               >
                 <img
                   src={previewUrl}

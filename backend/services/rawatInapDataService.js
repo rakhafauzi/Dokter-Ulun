@@ -218,7 +218,9 @@ class RawatInapDataService {
     username = "",
     tab = "rawat-inap",
     startDate,
-    endDate
+    endDate,
+    includeTabCounts = true,
+    countsOnly = false
   }) {
     try {
       console.log('=== Rawat Inap Data Request ===');
@@ -241,6 +243,8 @@ class RawatInapDataService {
         endDate
       });
       const normalizedTab = String(tab || 'rawat-inap').trim();
+      const shouldIncludeTabCounts = includeTabCounts === true || includeTabCounts === 'true';
+      const shouldReturnCountsOnly = countsOnly === true || countsOnly === 'true';
       const tabFilter = this.getTabFilter(normalizedTab, normalizedUsername);
       const whereConditions = [...baseWhereConditions, tabFilter.condition];
       const params = [...baseParams, ...tabFilter.params];
@@ -364,29 +368,33 @@ class RawatInapDataService {
             ${limit === 10000 ? '' : `LIMIT ${limit} OFFSET ${offset}`}
           `;
 
-      const countQuery = this.getGroupedCountQuery(fromClause, whereClause, keepMovementRows);
+      let total = 0;
+      let data = [];
+      let tabCounts = null;
 
-      console.log('Executing main query:', query);
-      // Use original params without limit/offset since they are injected
-      const queryParams = params;
-      console.log('Query parameters:', queryParams);
+      if (!shouldReturnCountsOnly) {
+        const countQuery = this.getGroupedCountQuery(fromClause, whereClause, keepMovementRows);
 
-      // Execute count query first
-      const [countResult] = await db.execute(countQuery, params);
-      const total = countResult[0]?.total || 0;
-      const tabCounts = await this.getTabCounts(baseWhereConditions, baseParams, normalizedUsername, statusPulang);
-      
-      console.log('Total count result:', total);
-      console.log('Tab counts:', tabCounts);
+        console.log('Executing main query:', query);
+        const queryParams = params;
+        console.log('Query parameters:', queryParams);
 
-      // Execute main data query
-      const [dataResult] = await db.execute(query, queryParams);
-      const data = dataResult || [];
+        const [countResult] = await db.execute(countQuery, params);
+        total = countResult[0]?.total || 0;
 
-      console.log('Data result rows count:', data.length);
-      console.log('Sample data row:', data[0]);
+        const [dataResult] = await db.execute(query, queryParams);
+        data = dataResult || [];
 
-      console.log(`Found ${data.length} records out of ${total} total`);
+        console.log('Total count result:', total);
+        console.log('Data result rows count:', data.length);
+        console.log('Sample data row:', data[0]);
+        console.log(`Found ${data.length} records out of ${total} total`);
+      }
+
+      if (shouldIncludeTabCounts || shouldReturnCountsOnly) {
+        tabCounts = await this.getTabCounts(baseWhereConditions, baseParams, normalizedUsername, statusPulang);
+        console.log('Tab counts:', tabCounts);
+      }
 
       // Format date fields
       const formattedData = data.map(row => ({
@@ -401,7 +409,7 @@ class RawatInapDataService {
         success: true,
         data: formattedData,
         total,
-        tabCounts,
+        ...(tabCounts ? { tabCounts } : {}),
         limit,
         offset,
         page: parseInt(page),

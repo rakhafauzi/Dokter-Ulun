@@ -1037,6 +1037,18 @@ const RawatInapTabs = () => {
     rawat_gabung: 0,
     resume_pasien: 0
   };
+  type RawatInapRequestBody = {
+    page: string;
+    itemsPerPage: string;
+    search: string;
+    statusPulang: string;
+    username: string;
+    tab: RawatInapListTab;
+    startDate: string;
+    endDate: string;
+    includeTabCounts?: boolean;
+    countsOnly?: boolean;
+  };
   const [rawatInapData, setRawatInapData] = useState<any[]>([]);
   const [resumeData, setResumeData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1053,7 +1065,10 @@ const RawatInapTabs = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [tabCounts, setTabCounts] = useState(emptyTabCounts);
 
-  const buildRawatInapRequestBody = (tabValue: RawatInapListTab, overrides: Partial<Record<string, string>> = {}) => ({
+  const buildRawatInapRequestBody = (
+    tabValue: RawatInapListTab,
+    overrides: Partial<RawatInapRequestBody> = {}
+  ): RawatInapRequestBody => ({
     page: currentPage.toString(),
     itemsPerPage: itemsPerPage.toString(),
     search: searchQuery,
@@ -1103,7 +1118,8 @@ const RawatInapTabs = () => {
         body: JSON.stringify(
           buildRawatInapRequestBody('rawat-inap', {
             page: '1',
-            itemsPerPage: '1'
+            itemsPerPage: '1',
+            countsOnly: true
           })
         )
       });
@@ -1161,6 +1177,7 @@ const RawatInapTabs = () => {
     setLoading(true);
     try {
       const requestBody = buildRawatInapRequestBody(tabValue);
+      requestBody.includeTabCounts = false;
 
       console.log('Fetching Rawat Inap data:', requestBody);
 
@@ -1188,8 +1205,13 @@ const RawatInapTabs = () => {
       console.log('Rawat Inap data response:', data);
       setRawatInapData(data?.data || []);
       setTotal(data?.total || 0);
-      applyTabCounts(data?.tabCounts);
-      await fetchResumeTabCount();
+      if (data?.tabCounts) {
+        applyTabCounts(data?.tabCounts);
+      }
+      void Promise.allSettled([
+        fetchRawatInapTabCounts(),
+        fetchResumeTabCount()
+      ]);
 
     } catch (error) {
       console.error('Error fetching Rawat Inap data:', error);
@@ -1233,7 +1255,7 @@ const RawatInapTabs = () => {
       setResumeData(data?.data || []);
       setTotal(data?.total || 0);
       applyResumeCount(data?.total || 0);
-      await fetchRawatInapTabCounts();
+      void fetchRawatInapTabCounts();
 
     } catch (error) {
       console.error('Error fetching Resume Pasien data:', error);

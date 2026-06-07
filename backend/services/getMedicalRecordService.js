@@ -616,7 +616,8 @@ class GetMedicalRecordService {
   }
 
   // Helper function to fetch radiology results
-  static async fetchRadiology(noRawat, status = null) {
+  static async fetchRadiology(noRawat, status = null, options = {}) {
+    const includePacs = options.includePacs === true;
     const radQuery = `
       SELECT pr.*, jp.nm_perawatan, hpr.hasil
       FROM periksa_radiologi pr 
@@ -628,7 +629,7 @@ class GetMedicalRecordService {
     `;
     const [[rows], pacsSeries] = await Promise.all([
       db.execute(radQuery, [noRawat, status, status]),
-      this.fetchRadiologyPacsSeries(noRawat)
+      includePacs ? this.fetchRadiologyPacsSeries(noRawat) : Promise.resolve([])
     ]);
 
     return rows.map(row => {
@@ -648,7 +649,7 @@ class GetMedicalRecordService {
         pemeriksaan: row.nm_perawatan || '',
         hasil: row.hasil || '',
         kesan: row.hasil || '',
-        ...pacsPayload
+        ...(includePacs ? pacsPayload : {})
       };
     });
   }
