@@ -1226,6 +1226,7 @@ app.delete('/api/radiology-data', async (req, res) => {
 app.get('/api/digital-files/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
+    const debugMode = String(req.query.debug || '') === '1';
 
     if (!no_rawat) {
       return res.status(400).json({
@@ -1235,9 +1236,45 @@ app.get('/api/digital-files/:no_rawat', async (req, res) => {
     }
 
     const result = await DigitalFilesService.getFiles(no_rawat);
+    if (debugMode) {
+      return res.json({
+        ...result,
+        _debug: {
+          pid: process.pid,
+          cwd: process.cwd(),
+          envPath: path.resolve(__dirname, '.env'),
+          rawDigitalFilesBaseUrl: String(process.env.DIGITAL_FILES_BASE_URL || '').trim() || null,
+          resolvedDigitalFilesBaseUrl: DigitalFilesService.getUploadsBaseUrl() || null,
+        }
+      });
+    }
+
     res.json(result);
   } catch (error) {
     console.error('Error in digital-files GET endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/debug/digital-files-env', async (_req, res) => {
+  try {
+    const rawDigitalFilesBaseUrl = String(process.env.DIGITAL_FILES_BASE_URL || '').trim();
+    const resolvedDigitalFilesBaseUrl = DigitalFilesService.getUploadsBaseUrl();
+
+    res.json({
+      success: true,
+      cwd: process.cwd(),
+      envPath: path.resolve(__dirname, '.env'),
+      hasDigitalFilesBaseUrl: Boolean(rawDigitalFilesBaseUrl),
+      digitalFilesBaseUrl: rawDigitalFilesBaseUrl || null,
+      resolvedDigitalFilesBaseUrl: resolvedDigitalFilesBaseUrl || null,
+      pid: process.pid,
+      nodeEnv: process.env.NODE_ENV || 'development',
+    });
+  } catch (error) {
     res.status(500).json({
       success: false,
       error: error.message

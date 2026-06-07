@@ -1,8 +1,51 @@
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { executeQuery } from '../config/database.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+// #region debug-point shared:reporter
+const reportDigitalFilesDebug = (hypothesisId, location, msg, data = {}, runId = 'pre-fix') => {
+  let debugServerUrl = 'http://127.0.0.1:7777/event';
+  let debugSessionId = 'digital-files-env';
+  try {
+    const envContent = fs.readFileSync(path.resolve(process.cwd(), '.dbg/digital-files-env.env'), 'utf8');
+    debugServerUrl = envContent.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || debugServerUrl;
+    debugSessionId = envContent.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || debugSessionId;
+  } catch {}
+  fetch(debugServerUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: debugSessionId, runId, hypothesisId, location, msg, data, ts: Date.now() })
+  }).catch(() => {});
+};
+// #endregion
+
 class DigitalFilesService {
+  static normalizeConfiguredUrl(value) {
+    return String(value || '')
+      .trim()
+      .replace(/^['"`]+|['"`]+$/g, '')
+      .replace(/\/+$/, '');
+  }
+
   static getUploadsBaseUrl() {
-    return String(process.env.DIGITAL_FILES_BASE_URL || '').trim().replace(/\/+$/, '');
+    const rawValue = String(process.env.DIGITAL_FILES_BASE_URL || '').trim();
+    const normalizedValue = this.normalizeConfiguredUrl(rawValue);
+    // #region debug-point C:env-read
+    reportDigitalFilesDebug('C', 'digitalFilesService:getUploadsBaseUrl', '[DEBUG] Reading DIGITAL_FILES_BASE_URL from runtime env', {
+      cwd: process.cwd(),
+      serviceEnvPath: path.resolve(__dirname, '../.env'),
+      hasValue: Boolean(rawValue),
+      rawValue: rawValue || null,
+      normalizedValue: normalizedValue || null
+    });
+    // #endregion
+    return normalizedValue;
   }
 
   static buildFileUrl(lokasiFile) {
@@ -83,6 +126,13 @@ class DigitalFilesService {
     });
 
     return {
+      // #region debug-point D:response-payload
+      ...(reportDigitalFilesDebug('D', 'digitalFilesService:getFiles', '[DEBUG] Returning digital files payload', {
+        noRawat,
+        filesCount: data.length,
+        uploadsBaseUrl: this.getUploadsBaseUrl() || null
+      }), {}),
+      // #endregion
       success: true,
       data,
       uploads_base_url: this.getUploadsBaseUrl(),
