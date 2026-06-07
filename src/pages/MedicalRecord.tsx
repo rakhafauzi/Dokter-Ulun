@@ -654,6 +654,7 @@ const MedicalRecord = () => {
   const [pacsPlaybackSpeed, setPacsPlaybackSpeed] = useState(180);
   const [radiologyPacsByKey, setRadiologyPacsByKey] = useState<Record<string, any>>({});
   const [loadingRadiologyPacsKeys, setLoadingRadiologyPacsKeys] = useState<Record<string, boolean>>({});
+  const [radiologyPacsErrorKeys, setRadiologyPacsErrorKeys] = useState<Record<string, string>>({});
   const activePacsImage = pacsPreviewModal.images[pacsPreviewModal.currentIndex] || null;
   const isCtPacsPreview = String(pacsPreviewModal.modality || '').toUpperCase() === 'CT';
   const [visibleVitalSeries, setVisibleVitalSeries] = useState<Record<VitalChartSeriesKey, boolean>>(() => ({
@@ -2018,6 +2019,7 @@ const MedicalRecord = () => {
       setLoadingVisitDetailsKeys({});
       setRadiologyPacsByKey({});
       setLoadingRadiologyPacsKeys({});
+      setRadiologyPacsErrorKeys({});
       setExaminationHistoryData({ outpatient: [], inpatient: [] });
       setExaminationPagination({
         outpatient: DEFAULT_PAGINATION_META,
@@ -3696,15 +3698,28 @@ const MedicalRecord = () => {
       return radiologyPacsByKey[pacsKey];
     }
 
+    if (radiologyPacsErrorKeys[pacsKey]) {
+      throw new Error(radiologyPacsErrorKeys[pacsKey]);
+    }
+
     setLoadingRadiologyPacsKeys((previous) => ({ ...previous, [pacsKey]: true }));
     try {
       const pacsPayload = await fetchRadiologyPacsPayload(rad);
+      setRadiologyPacsErrorKeys((previous) => {
+        const next = { ...previous };
+        delete next[pacsKey];
+        return next;
+      });
       setRadiologyPacsByKey((previous) => ({ ...previous, [pacsKey]: pacsPayload }));
       return pacsPayload;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Gagal memuat PACS radiologi';
+      setRadiologyPacsErrorKeys((previous) => ({ ...previous, [pacsKey]: message }));
+      throw error;
     } finally {
       setLoadingRadiologyPacsKeys((previous) => ({ ...previous, [pacsKey]: false }));
     }
-  }, [fetchRadiologyPacsPayload, radiologyPacsByKey]);
+  }, [fetchRadiologyPacsPayload, radiologyPacsByKey, radiologyPacsErrorKeys]);
 
   const openPacsPreviewModal = useCallback(async (rad: any, images: any[], currentIndex = 0, modality = '') => {
     const normalizedModality = String(modality || '').toUpperCase();
@@ -3758,6 +3773,68 @@ const MedicalRecord = () => {
       });
     }
   }, [ensureRadiologyPacsLoaded, toast]);
+
+  useEffect(() => {
+    const displayedRadiologyItems = activeTab === 'radiology'
+      ? [...outpatientRadiologyHistory, ...inpatientRadiologyHistory]
+      : activeTab === 'visits'
+        ? [
+            ...sortedOutpatientVisits.filter((visit) => expandedVisitKeys[visit.no_rawat]),
+            ...sortedInpatientVisits.filter((visit) => expandedVisitKeys[visit.no_rawat])
+          ].flatMap((visit) => ((visit.radiology || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat })))
+        : [];
+
+    const pendingItems = Array.from(new Map(
+      displayedRadiologyItems
+        .map((rad) => [getRadiologyPacsKey(rad), rad] as const)
+        .filter(([pacsKey]) => (
+          Boolean(pacsKey) &&
+          pacsKey !== '::::' &&
+          !radiologyPacsByKey[pacsKey] &&
+          !loadingRadiologyPacsKeys[pacsKey] &&
+          !radiologyPacsErrorKeys[pacsKey]
+        ))
+    ).values());
+
+    if (pendingItems.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const preloadThumbnails = async () => {
+      for (const rad of pendingItems) {
+        if (cancelled) {
+          return;
+        }
+
+        try {
+          await ensureRadiologyPacsLoaded(rad);
+        } catch (error) {
+          if (!cancelled) {
+            console.error('Error preloading radiology PACS:', error);
+          }
+        }
+      }
+    };
+
+    void preloadThumbnails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    ensureRadiologyPacsLoaded,
+    expandedVisitKeys,
+    inpatientRadiologyHistory,
+    loadingRadiologyPacsKeys,
+    outpatientRadiologyHistory,
+    radiologyPacsByKey,
+    radiologyPacsErrorKeys,
+    sortedInpatientVisits,
+    sortedOutpatientVisits
+  ]);
 
   const goToPacsImage = (nextIndex: number) => {
     if (!pacsPreviewModal.images.length) {
@@ -3851,6 +3928,7 @@ const MedicalRecord = () => {
     const pacsKey = getRadiologyPacsKey(rad);
     const hasLoadedPacs = Object.prototype.hasOwnProperty.call(radiologyPacsByKey, pacsKey);
     const isLoadingPacs = loadingRadiologyPacsKeys[pacsKey] === true;
+    const pacsError = radiologyPacsErrorKeys[pacsKey];
     const enrichedRad = getRadiologyWithLazyPacs(rad);
     const { modality, displayImages, modalImages, totalImages } = getRadiologyPacsThumbnailItems(enrichedRad);
     if (modalImages.length === 0) {
@@ -3863,29 +3941,14 @@ const MedicalRecord = () => {
                 Foto Radiologi PACS
               </p>
               <p className="text-xs text-muted-foreground">
-                {hasLoadedPacs
+                {isLoadingPacs
+                  ? 'Sedang memuat thumbnail PACS...'
+                  : pacsError
+                    ? pacsError
+                    : hasLoadedPacs
                   ? 'Tidak ada gambar PACS yang cocok untuk pemeriksaan ini.'
                   : 'Hasil radiologi sudah tampil dari database. Foto PACS dimuat saat diperlukan.'}
               </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isLoadingPacs}
-                onClick={() => {
-                  void ensureRadiologyPacsLoaded(rad).catch((error) => {
-                    toast({
-                      title: 'Error',
-                      description: error instanceof Error ? error.message : 'Gagal memuat PACS radiologi',
-                      variant: 'destructive'
-                    });
-                  });
-                }}
-              >
-                {isLoadingPacs ? 'Memuat PACS...' : 'Muat Foto PACS'}
-              </Button>
             </div>
           </div>
         </div>
