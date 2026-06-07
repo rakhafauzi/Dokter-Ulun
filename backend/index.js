@@ -492,6 +492,14 @@ app.post('/api/get-medical-record', async (req, res) => {
       limit,
       outpatientPage,
       inpatientPage,
+      includeOutpatient,
+      includeInpatient,
+      includeVisitDetails,
+      includeFocusedExaminations,
+      includeFocusedProcedures,
+      includeFocusedMedications,
+      includeFocusedLaboratory,
+      includeFocusedRadiology,
       focus_no_rawat
     } = req.body;
 
@@ -499,6 +507,14 @@ app.post('/api/get-medical-record', async (req, res) => {
       limit,
       outpatientPage,
       inpatientPage,
+      includeOutpatient,
+      includeInpatient,
+      includeVisitDetails,
+      includeFocusedExaminations,
+      includeFocusedProcedures,
+      includeFocusedMedications,
+      includeFocusedLaboratory,
+      includeFocusedRadiology,
       focusNoRawat: focus_no_rawat
     });
 
@@ -511,6 +527,49 @@ app.post('/api/get-medical-record', async (req, res) => {
   }
 });
 
+app.post('/api/get-medical-record-visit-details', async (req, res) => {
+  try {
+    const { no_rawat } = req.body;
+    const data = await GetMedicalRecordService.getVisitDetails(no_rawat);
+    res.json({ data });
+  } catch (error) {
+    console.error('Error in get-medical-record-visit-details endpoint:', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/get-medical-record-examinations', async (req, res) => {
+  try {
+    const {
+      no_rm,
+      limit,
+      outpatientPage,
+      inpatientPage,
+      includeOutpatient,
+      includeInpatient,
+      focus_no_rawat
+    } = req.body;
+
+    const result = await GetMedicalRecordService.getExaminationHistory(no_rm, {
+      limit,
+      outpatientPage,
+      inpatientPage,
+      includeOutpatient,
+      includeInpatient,
+      focusNoRawat: focus_no_rawat
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error in get-medical-record-examinations endpoint:', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/pacs/rendered/:instanceId', async (req, res) => {
   try {
     const { instanceId } = req.params;
@@ -518,13 +577,59 @@ app.get('/api/pacs/rendered/:instanceId', async (req, res) => {
     const imageResult = await GetMedicalRecordService.getOrthancRenderedImage(instanceId, width);
 
     res.setHeader('Content-Type', imageResult.contentType);
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
     res.send(imageResult.buffer);
   } catch (error) {
     console.error('Error proxying PACS rendered image:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Gagal memuat gambar PACS'
+    });
+  }
+});
+
+app.get('/api/pacs/preview/:instanceId', async (req, res) => {
+  try {
+    const { instanceId } = req.params;
+    const { width } = req.query;
+    const imageResult = await GetMedicalRecordService.getOrthancPreviewImage(instanceId, width);
+
+    res.setHeader('Content-Type', imageResult.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    res.send(imageResult.buffer);
+  } catch (error) {
+    console.error('Error proxying PACS preview image:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memuat preview PACS'
+    });
+  }
+});
+
+app.get('/api/pacs/radiology-images', async (req, res) => {
+  try {
+    const noRawat = String(req.query.no_rawat || '').trim();
+    const examDate = String(req.query.exam_date || '').trim();
+    const examName = String(req.query.exam_name || '').trim();
+
+    if (!noRawat || !examDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'Parameter no_rawat dan exam_date wajib diisi'
+      });
+    }
+
+    const pacsResult = await GetMedicalRecordService.getRadiologyPacsImages(noRawat, examDate, examName);
+
+    res.json({
+      success: true,
+      ...pacsResult
+    });
+  } catch (error) {
+    console.error('Error fetching PACS radiology images:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memuat gambar PACS radiologi'
     });
   }
 });

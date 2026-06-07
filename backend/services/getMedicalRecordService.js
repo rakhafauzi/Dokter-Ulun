@@ -213,6 +213,51 @@ class GetMedicalRecordService {
     return matchedSeries.length ? matchedSeries : datedSeries;
   }
 
+  static serializeRadiologyPacsImage(image, series = {}) {
+    return {
+      ...image,
+      series_date: series.series_date || '',
+      description: series.description || '',
+      modality: series.modality || ''
+    };
+  }
+
+  static buildRadiologyPacsPayload(matchedSeries, options = {}) {
+    const { limitCtToThumbnail = false } = options;
+    const pacsModality = matchedSeries.find((series) => series?.modality)?.modality || '';
+    const allImages = matchedSeries.flatMap((series) =>
+      (series.images || []).map((image) => this.serializeRadiologyPacsImage(image, series))
+    );
+    const totalImages = allImages.length;
+    const shouldLimitCtImages = limitCtToThumbnail && pacsModality === 'CT' && totalImages > 0;
+
+    return {
+      pacs_modality: pacsModality,
+      pacs_total_images: totalImages,
+      pacs_series: matchedSeries.map((series) => {
+        const seriesImages = (series.images || []).map((image) => this.serializeRadiologyPacsImage(image, series));
+
+        return {
+          series_id: series.series_id || '',
+          series_date: series.series_date || '',
+          description: series.description || '',
+          modality: series.modality || '',
+          image_count: seriesImages.length,
+          thumbnail_instance_id: seriesImages.length > 0 ? seriesImages[0].instance_id : '',
+          images: shouldLimitCtImages ? seriesImages.slice(0, 1) : seriesImages
+        };
+      }),
+      pacs_images: shouldLimitCtImages ? allImages.slice(0, 1) : allImages
+    };
+  }
+
+  static async getRadiologyPacsImages(noRawat, examDate, examName) {
+    const pacsSeries = await this.fetchRadiologyPacsSeries(noRawat);
+    const matchedSeries = this.matchRadiologyPacsSeries(pacsSeries, examDate, examName);
+
+    return this.buildRadiologyPacsPayload(matchedSeries);
+  }
+
   static async getOrthancRenderedImage(instanceId, width = 500) {
     const normalizedWidth = Math.min(Math.max(parseInt(width, 10) || 500, 100), 2000);
     const response = await this.requestOrthanc(`/instances/${encodeURIComponent(instanceId)}/rendered/?width=${normalizedWidth}`);
@@ -223,6 +268,22 @@ class GetMedicalRecordService {
       contentType,
       buffer: Buffer.from(arrayBuffer)
     };
+  }
+
+  static async getOrthancPreviewImage(instanceId, width = 500) {
+    try {
+      const response = await this.requestOrthanc(`/instances/${encodeURIComponent(instanceId)}/preview`);
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      const arrayBuffer = await response.arrayBuffer();
+
+      return {
+        contentType,
+        buffer: Buffer.from(arrayBuffer)
+      };
+    } catch (error) {
+      console.warn(`Orthanc preview unavailable for instance ${instanceId}, fallback to rendered:`, error.message);
+      return this.getOrthancRenderedImage(instanceId, width);
+    }
   }
 
   // Helper function to fetch examinations
@@ -576,36 +637,18 @@ class GetMedicalRecordService {
         row.tgl_periksa,
         row.nm_perawatan
       );
-      const pacsModality = matchedSeries.find((series) => series?.modality)?.modality || '';
+      const pacsPayload = this.buildRadiologyPacsPayload(matchedSeries, {
+        limitCtToThumbnail: true
+      });
 
       return {
+        no_rawat: row.no_rawat || '',
         tanggal: this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam,
+        tgl_periksa: this.formatDateOnly(row.tgl_periksa),
         pemeriksaan: row.nm_perawatan || '',
         hasil: row.hasil || '',
         kesan: row.hasil || '',
-        pacs_modality: pacsModality,
-        pacs_series: matchedSeries.map((series) => ({
-          series_id: series.series_id || '',
-          series_date: series.series_date || '',
-          description: series.description || '',
-          modality: series.modality || '',
-          image_count: Array.isArray(series.images) ? series.images.length : 0,
-          thumbnail_instance_id: Array.isArray(series.images) && series.images.length > 0 ? series.images[0].instance_id : '',
-          images: (series.images || []).map((image) => ({
-            ...image,
-            series_date: series.series_date || '',
-            description: series.description || '',
-            modality: series.modality || ''
-          }))
-        })),
-        pacs_images: matchedSeries.flatMap((series) =>
-          (series.images || []).map((image) => ({
-            ...image,
-            series_date: series.series_date || '',
-            description: series.description || '',
-            modality: series.modality || ''
-          }))
-        )
+        ...pacsPayload
       };
     });
   }
@@ -704,6 +747,14 @@ class GetMedicalRecordService {
       limit: Math.min(this.parsePositiveInteger(options.limit, this.DEFAULT_LIMIT), 20),
       outpatientPage: this.parsePositiveInteger(options.outpatientPage, 1),
       inpatientPage: this.parsePositiveInteger(options.inpatientPage, 1),
+      includeOutpatient: options.includeOutpatient !== false,
+      includeInpatient: options.includeInpatient !== false,
+      includeVisitDetails: options.includeVisitDetails !== false,
+      includeFocusedExaminations: options.includeFocusedExaminations === true,
+      includeFocusedProcedures: options.includeFocusedProcedures === true,
+      includeFocusedMedications: options.includeFocusedMedications === true,
+      includeFocusedLaboratory: options.includeFocusedLaboratory === true,
+      includeFocusedRadiology: options.includeFocusedRadiology === true,
       focusNoRawat: typeof options.focusNoRawat === 'string' && options.focusNoRawat.trim()
         ? options.focusNoRawat.trim()
         : null
@@ -754,6 +805,51 @@ class GetMedicalRecordService {
     };
   }
 
+  static async fetchInpatientDetailsByNoRawats(noRawats = []) {
+    if (!Array.isArray(noRawats) || noRawats.length === 0) {
+      return [];
+    }
+
+    const inpatientQuery = `
+      SELECT ki.*, b.nm_bangsal
+      FROM kamar_inap ki
+      LEFT JOIN kamar k ON ki.kd_kamar = k.kd_kamar
+      LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
+      WHERE ki.no_rawat IN (${noRawats.map(() => '?').join(',')})
+      ORDER BY ki.tgl_masuk DESC
+    `;
+    const [inpatientRows] = await db.execute(inpatientQuery, noRawats);
+    return inpatientRows;
+  }
+
+  static buildOutpatientVisitSummary(visit) {
+    return {
+      no_rawat: visit.no_rawat,
+      tanggal: this.formatDateOnly(visit.tgl_registrasi) + ' ' + visit.jam_reg,
+      poliklinik: visit.nm_poli || '',
+      dokter: visit.nm_dokter || '',
+      status: visit.stts || '',
+      status_lanjut: visit.status_lanjut || 'Ralan',
+      details_loaded: false
+    };
+  }
+
+  static buildInpatientVisitSummary(visit, inpatientDetail) {
+    return {
+      no_rawat: visit.no_rawat,
+      tanggal_masuk: inpatientDetail ? this.formatDateOnly(inpatientDetail.tgl_masuk) + ' ' + inpatientDetail.jam_masuk : '',
+      tanggal_keluar: inpatientDetail?.tgl_keluar ? this.formatDateOnly(inpatientDetail.tgl_keluar) + ' ' + inpatientDetail.jam_keluar : '',
+      ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
+      kamar: inpatientDetail?.kd_kamar || '',
+      dokter: visit.nm_dokter || '',
+      status: visit.stts || '',
+      status_lanjut: visit.status_lanjut || 'Ranap',
+      cara_keluar: inpatientDetail?.stts_pulang || '',
+      diagnosa_akhir: inpatientDetail?.diagnosa_akhir || '',
+      details_loaded: false
+    };
+  }
+
   static async buildOutpatientVisit(visit) {
     const [
       examinations,
@@ -789,7 +885,8 @@ class GetMedicalRecordService {
       laboratoryRequest,
       laboratory,
       radiology,
-      radiologyRequest
+      radiologyRequest,
+      details_loaded: true
     };
   }
 
@@ -842,7 +939,117 @@ class GetMedicalRecordService {
       laboratory,
       radiology,
       radiologyRequest,
-      operationReports
+      operationReports,
+      details_loaded: true
+    };
+  }
+
+  static async getVisitDetails(noRawat) {
+    const [visitRows] = await db.execute(
+      `
+        SELECT r.*, p.nm_poli, d.nm_dokter
+        FROM reg_periksa r
+        LEFT JOIN poliklinik p ON r.kd_poli = p.kd_poli
+        LEFT JOIN dokter d ON r.kd_dokter = d.kd_dokter
+        WHERE r.no_rawat = ?
+        LIMIT 1
+      `,
+      [noRawat]
+    );
+
+    const visit = visitRows[0];
+    if (!visit) {
+      throw new Error('Visit not found');
+    }
+
+    if (String(visit.status_lanjut || '').trim() === 'Ranap') {
+      const inpatientDetails = await this.fetchInpatientDetailsByNoRawats([noRawat]);
+      const inpatientDetail = inpatientDetails.find((detail) => detail.no_rawat === noRawat);
+      return this.buildInpatientVisit(visit, inpatientDetail);
+    }
+
+    return this.buildOutpatientVisit(visit);
+  }
+
+  static async fetchExaminationsPage(no_rm, statusLanjut, page, limit, focusNoRawat) {
+    const table = statusLanjut === 'Ranap' ? 'pemeriksaan_ranap' : 'pemeriksaan_ralan';
+    const type = statusLanjut === 'Ranap' ? 'ranap' : 'ralan';
+    const offset = (page - 1) * limit;
+    const focusFilter = focusNoRawat ? ' AND r.no_rawat = ? ' : '';
+    const params = focusNoRawat ? [no_rm, statusLanjut, focusNoRawat] : [no_rm, statusLanjut];
+
+    const [[countRow]] = await db.execute(
+      `
+        SELECT COUNT(*) AS total
+        FROM ${table} p1
+        INNER JOIN reg_periksa r ON r.no_rawat = p1.no_rawat
+        WHERE r.no_rkm_medis = ? AND r.status_lanjut = ? ${focusFilter}
+      `,
+      params
+    );
+
+    const [rows] = await db.execute(
+      `
+        SELECT
+          p1.*,
+          p2.nama,
+          r.no_rawat,
+          r.status_lanjut
+        FROM ${table} p1
+        INNER JOIN reg_periksa r ON r.no_rawat = p1.no_rawat
+        LEFT JOIN pegawai p2 ON p2.nik = p1.nip
+        WHERE r.no_rkm_medis = ? AND r.status_lanjut = ? ${focusFilter}
+        ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
+        LIMIT ? OFFSET ?
+      `,
+      [...params, limit, offset]
+    );
+
+    return {
+      rows: rows.map((exam, examIndex) => {
+        const examDate = String(exam.tgl_perawatan || exam.tanggal || '').trim();
+        const examTime = String(exam.jam_rawat || '00:00').trim() || '00:00';
+        const parsedDate = examDate
+          ? new Date(`${examDate}T${examTime.length === 5 ? `${examTime}:00` : examTime}`).getTime()
+          : 0;
+
+        return {
+          key: `${type}-${exam.no_rawat}-${examDate}-${examTime}-${examIndex}`,
+          visit: { no_rawat: exam.no_rawat, status_lanjut: statusLanjut },
+          exam,
+          rawatType: statusLanjut,
+          timestamp: Number.isNaN(parsedDate) ? 0 : parsedDate
+        };
+      }),
+      pagination: {
+        page,
+        limit,
+        total: countRow?.total || 0,
+        hasMore: offset + rows.length < (countRow?.total || 0)
+      }
+    };
+  }
+
+  static async getExaminationHistory(no_rm, options = {}) {
+    const { limit, outpatientPage, inpatientPage, includeOutpatient, includeInpatient, focusNoRawat } = this.normalizeOptions(options);
+    const [outpatientResult, inpatientResult] = await Promise.all([
+      includeOutpatient
+        ? this.fetchExaminationsPage(no_rm, 'Ralan', outpatientPage, limit, focusNoRawat)
+        : Promise.resolve(null),
+      includeInpatient
+        ? this.fetchExaminationsPage(no_rm, 'Ranap', inpatientPage, limit, focusNoRawat)
+        : Promise.resolve(null)
+    ]);
+
+    return {
+      data: {
+        outpatient: outpatientResult?.rows || [],
+        inpatient: inpatientResult?.rows || []
+      },
+      pagination: {
+        ...(outpatientResult?.pagination ? { outpatient: outpatientResult.pagination } : {}),
+        ...(inpatientResult?.pagination ? { inpatient: inpatientResult.pagination } : {})
+      }
     };
   }
 
@@ -858,6 +1065,14 @@ class GetMedicalRecordService {
         limit,
         outpatientPage,
         inpatientPage,
+        includeOutpatient,
+        includeInpatient,
+        includeVisitDetails,
+        includeFocusedExaminations,
+        includeFocusedProcedures,
+        includeFocusedMedications,
+        includeFocusedLaboratory,
+        includeFocusedRadiology,
         focusNoRawat
       } = this.normalizeOptions(options);
 
@@ -900,26 +1115,30 @@ class GetMedicalRecordService {
           `,
           [no_rm]
         ),
-        this.fetchVisitsPage(no_rm, 'Ralan', outpatientPage, limit, focusNoRawat),
-        this.fetchVisitsPage(no_rm, 'Ranap', inpatientPage, limit, focusNoRawat),
-        focusNoRawat ? this.fetchExaminations(focusNoRawat, 'ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchExaminations(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat ? this.fetchProcedures(focusNoRawat, 'ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchProcedures(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat ? this.fetchMedicationsRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchMedicationsRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat ? this.fetchMedicationsRequest(focusNoRawat, 'pulang') : Promise.resolve([]),
-        focusNoRawat ? this.fetchMedicationsRequest(focusNoRawat, 'ibs') : Promise.resolve([]),
-        focusNoRawat ? this.fetchMedications(focusNoRawat, 'ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchMedications(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat ? this.fetchLaboratoryRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchLaboratoryRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat ? this.fetchLaboratory(focusNoRawat, 'Ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchLaboratory(focusNoRawat, 'Ranap') : Promise.resolve([]),
-        focusNoRawat ? this.fetchRadiologyRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchRadiologyRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat ? this.fetchRadiology(focusNoRawat, 'Ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchRadiology(focusNoRawat, 'Ranap') : Promise.resolve([]),
+        includeOutpatient
+          ? this.fetchVisitsPage(no_rm, 'Ralan', outpatientPage, limit, focusNoRawat)
+          : Promise.resolve(null),
+        includeInpatient
+          ? this.fetchVisitsPage(no_rm, 'Ranap', inpatientPage, limit, focusNoRawat)
+          : Promise.resolve(null),
+        focusNoRawat && includeFocusedExaminations ? this.fetchExaminations(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedExaminations ? this.fetchExaminations(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedProcedures ? this.fetchProcedures(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedProcedures ? this.fetchProcedures(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedicationsRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedicationsRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedicationsRequest(focusNoRawat, 'pulang') : Promise.resolve([]),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedicationsRequest(focusNoRawat, 'ibs') : Promise.resolve([]),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedications(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedications(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratoryRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratoryRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratory(focusNoRawat, 'Ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratory(focusNoRawat, 'Ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedRadiology ? this.fetchRadiologyRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedRadiology ? this.fetchRadiologyRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedRadiology ? this.fetchRadiology(focusNoRawat, 'Ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedRadiology ? this.fetchRadiology(focusNoRawat, 'Ranap') : Promise.resolve([]),
         focusNoRawat ? this.fetchOperationReports(focusNoRawat) : Promise.resolve([])
       ]);
 
@@ -931,8 +1150,8 @@ class GetMedicalRecordService {
       }
 
       const patient = patientList[0];
-      const outpatientVisits = outpatientPageResult.rows;
-      const inpatientVisitRefs = inpatientPageResult.rows;
+      const outpatientVisits = outpatientPageResult?.rows || [];
+      const inpatientVisitRefs = inpatientPageResult?.rows || [];
 
       let inpatientDetails = [];
       if (inpatientVisitRefs.length > 0) {
@@ -954,12 +1173,20 @@ class GetMedicalRecordService {
       );
 
       const [finalOutpatientVisits, finalInpatientVisits] = await Promise.all([
-        Promise.all(outpatientVisits.map((visit) => this.buildOutpatientVisit(visit))),
-        Promise.all(
-          inpatientVisitRefs.map((visit) =>
-            this.buildInpatientVisit(visit, inpatientDetailsMap.get(visit.no_rawat))
-          )
-        )
+        includeVisitDetails
+          ? Promise.all(outpatientVisits.map((visit) => this.buildOutpatientVisit(visit)))
+          : Promise.resolve(outpatientVisits.map((visit) => this.buildOutpatientVisitSummary(visit))),
+        includeVisitDetails
+          ? Promise.all(
+              inpatientVisitRefs.map((visit) =>
+                this.buildInpatientVisit(visit, inpatientDetailsMap.get(visit.no_rawat))
+              )
+            )
+          : Promise.resolve(
+              inpatientVisitRefs.map((visit) =>
+                this.buildInpatientVisitSummary(visit, inpatientDetailsMap.get(visit.no_rawat))
+              )
+            )
       ]);
 
       const medicalRecordData = {
@@ -976,48 +1203,58 @@ class GetMedicalRecordService {
         },
         outpatient_visits: finalOutpatientVisits,
         inpatient_visits: finalInpatientVisits,
-        focused_examinations: {
-          ralan: focusedRalanExaminations,
-          ranap: focusedRanapExaminations
-        },
-        focused_procedures: {
-          ralan: focusedRalanProcedures,
-          ranap: focusedRanapProcedures
-        },
-        focused_medications_request: {
-          ralan: focusedRalanMedicationRequests,
-          ranap: focusedRanapMedicationRequests,
-          pulang: focusedPulangMedicationRequests,
-          ibs: focusedIbsMedicationRequests
-        },
-        focused_medications: {
-          ralan: focusedRalanMedications,
-          ranap: focusedRanapMedications
-        },
-        focused_laboratory_request: {
-          ralan: focusedRalanLaboratoryRequests,
-          ranap: focusedRanapLaboratoryRequests
-        },
-        focused_laboratory: {
-          ralan: focusedRalanLaboratory,
-          ranap: focusedRanapLaboratory
-        },
-        focused_radiology_request: {
-          ralan: focusedRalanRadiologyRequests,
-          ranap: focusedRanapRadiologyRequests
-        },
-        focused_radiology: {
-          ralan: focusedRalanRadiology,
-          ranap: focusedRanapRadiology
-        },
+        ...(includeFocusedExaminations ? {
+          focused_examinations: {
+            ralan: focusedRalanExaminations,
+            ranap: focusedRanapExaminations
+          }
+        } : {}),
+        ...(includeFocusedProcedures ? {
+          focused_procedures: {
+            ralan: focusedRalanProcedures,
+            ranap: focusedRanapProcedures
+          }
+        } : {}),
+        ...(includeFocusedMedications ? {
+          focused_medications_request: {
+            ralan: focusedRalanMedicationRequests,
+            ranap: focusedRanapMedicationRequests,
+            pulang: focusedPulangMedicationRequests,
+            ibs: focusedIbsMedicationRequests
+          },
+          focused_medications: {
+            ralan: focusedRalanMedications,
+            ranap: focusedRanapMedications
+          }
+        } : {}),
+        ...(includeFocusedLaboratory ? {
+          focused_laboratory_request: {
+            ralan: focusedRalanLaboratoryRequests,
+            ranap: focusedRanapLaboratoryRequests
+          },
+          focused_laboratory: {
+            ralan: focusedRalanLaboratory,
+            ranap: focusedRanapLaboratory
+          }
+        } : {}),
+        ...(includeFocusedRadiology ? {
+          focused_radiology_request: {
+            ralan: focusedRalanRadiologyRequests,
+            ranap: focusedRanapRadiologyRequests
+          },
+          focused_radiology: {
+            ralan: focusedRalanRadiology,
+            ranap: focusedRanapRadiology
+          }
+        } : {}),
         focused_operation_reports: focusedOperationReports
       };
 
       return {
         data: medicalRecordData,
         pagination: {
-          outpatient: outpatientPageResult.pagination,
-          inpatient: inpatientPageResult.pagination
+          ...(outpatientPageResult?.pagination ? { outpatient: outpatientPageResult.pagination } : {}),
+          ...(inpatientPageResult?.pagination ? { inpatient: inpatientPageResult.pagination } : {})
         }
       };
 

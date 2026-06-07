@@ -186,7 +186,50 @@ interface MedicalRecordPagination {
   inpatient: PaginationMeta;
 }
 
+interface ExaminationHistoryItem {
+  key: string;
+  visit: any;
+  exam: any;
+  rawatType: 'Ralan' | 'Ranap';
+  timestamp?: number;
+}
+
 const PAGE_SIZE = 5;
+type VisitHistoryTabValue = 'outpatient' | 'inpatient';
+type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
+type MedicalRecordFetchOptions = {
+  reset?: boolean;
+  outpatientPage?: number;
+  inpatientPage?: number;
+  includeOutpatient?: boolean;
+  includeInpatient?: boolean;
+  includeVisitDetails?: boolean;
+  includeFocusedExaminations?: boolean;
+  includeFocusedProcedures?: boolean;
+  includeFocusedMedications?: boolean;
+  includeFocusedLaboratory?: boolean;
+  includeFocusedRadiology?: boolean;
+};
+
+const getFocusedFetchOptionsForTab = (tab: string): Pick<
+  MedicalRecordFetchOptions,
+  'includeFocusedExaminations' | 'includeFocusedProcedures' | 'includeFocusedMedications' | 'includeFocusedLaboratory' | 'includeFocusedRadiology'
+> | null => {
+  switch (tab) {
+    case 'examinations':
+      return { includeFocusedExaminations: true };
+    case 'procedures':
+      return { includeFocusedProcedures: true };
+    case 'medications':
+      return { includeFocusedMedications: true };
+    case 'laboratory':
+      return { includeFocusedLaboratory: true };
+    case 'radiology':
+      return { includeFocusedRadiology: true };
+    default:
+      return null;
+  }
+};
 
 const DEFAULT_PAGINATION_META: PaginationMeta = {
   page: 1,
@@ -376,6 +419,55 @@ const mergeVisitsByNoRawat = (existingVisits: any[] = [], incomingVisits: any[] 
   ];
 };
 
+const replaceVisitByNoRawat = (visits: any[] = [], updatedVisit: any) => (
+  visits.map((visit) => (
+    visit.no_rawat === updatedVisit?.no_rawat
+      ? { ...visit, ...updatedVisit }
+      : visit
+  ))
+);
+
+const mergeExaminationHistory = (
+  existingItems: ExaminationHistoryItem[] = [],
+  incomingItems: ExaminationHistoryItem[] = []
+) => {
+  const existingKeys = new Set(existingItems.map((item) => item.key));
+  return [
+    ...existingItems,
+    ...incomingItems.filter((item) => !existingKeys.has(item.key))
+  ];
+};
+
+const buildVitalChartFromExamHistory = (items: ExaminationHistoryItem[] = []) => (
+  items
+    .map(({ visit, exam }) => {
+      const bloodPressure = parseBloodPressure(exam.tekanan_darah || exam.tensi);
+      const examDate = exam.tgl_perawatan || exam.tanggal || '';
+      const examTime = exam.jam_rawat || '00:00';
+      const examDateTime = examDate
+        ? new Date(`${examDate}T${examTime.length === 5 ? `${examTime}:00` : examTime}`).getTime()
+        : 0;
+
+      return {
+        id: `${visit.no_rawat}-${examDate}-${examTime}`,
+        label: examDate
+          ? `${examDate.slice(8, 10)}/${examDate.slice(5, 7)} ${examTime.slice(0, 5)}`
+          : '-',
+        fullDate: examDate,
+        fullTime: examTime,
+        systolic: bloodPressure.systolic,
+        diastolic: bloodPressure.diastolic,
+        nadi: parseVitalNumber(exam.nadi),
+        respirasi: parseVitalNumber(exam.respirasi),
+        suhu: parseVitalNumber(exam.suhu_tubuh || exam.suhu),
+        gcs: parseGcsValue(exam.gcs),
+        spo2: parseVitalNumber(exam.spo2),
+        timestamp: Number.isNaN(examDateTime) ? 0 : examDateTime,
+      };
+    })
+    .sort((a, b) => a.timestamp - b.timestamp)
+);
+
 const getVisitSortTimestamp = (visit: any, type: 'outpatient' | 'inpatient') => {
   const sourceValue = type === 'outpatient'
     ? visit?.tanggal
@@ -539,12 +631,14 @@ const MedicalRecord = () => {
     images: any[];
     currentIndex: number;
     modality: string;
+    loading: boolean;
   }>({
     open: false,
     title: '',
     images: [],
     currentIndex: 0,
-    modality: ''
+    modality: '',
+    loading: false
   });
   const [isPacsPlaying, setIsPacsPlaying] = useState(false);
   const [pacsPlaybackSpeed, setPacsPlaybackSpeed] = useState(180);
@@ -560,12 +654,35 @@ const MedicalRecord = () => {
     spo2: true,
   }));
   const [activeTab, setActiveTab] = useState('visits');
+  const [visitHistoryTab, setVisitHistoryTab] = useState<VisitHistoryTabValue>('outpatient');
+  const [examinationHistoryTab, setExaminationHistoryTab] = useState<ExaminationHistoryTabValue>('outpatient');
   const [pagination, setPagination] = useState<MedicalRecordPagination>({
     outpatient: DEFAULT_PAGINATION_META,
     inpatient: DEFAULT_PAGINATION_META
   });
+  const [examinationPagination, setExaminationPagination] = useState<MedicalRecordPagination>({
+    outpatient: DEFAULT_PAGINATION_META,
+    inpatient: DEFAULT_PAGINATION_META
+  });
+  const [examinationHistoryData, setExaminationHistoryData] = useState<{
+    outpatient: ExaminationHistoryItem[];
+    inpatient: ExaminationHistoryItem[];
+  }>({
+    outpatient: [],
+    inpatient: []
+  });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const hasMoreRecords = pagination.outpatient.hasMore || pagination.inpatient.hasMore;
+  const loadMoreExaminationRef = useRef<HTMLDivElement | null>(null);
+  const pacsPreviewRequestRef = useRef(0);
+  const prefetchedPacsPreviewUrlsRef = useRef<Set<string>>(new Set());
+  const [expandedVisitKeys, setExpandedVisitKeys] = useState<Record<string, boolean>>({});
+  const [loadingVisitDetailsKeys, setLoadingVisitDetailsKeys] = useState<Record<string, boolean>>({});
+  const hasMoreCurrentVisitTab = visitHistoryTab === 'outpatient'
+    ? pagination.outpatient.hasMore
+    : pagination.inpatient.hasMore;
+  const hasMoreCurrentExaminationTab = examinationHistoryTab === 'outpatient'
+    ? examinationPagination.outpatient.hasMore
+    : examinationPagination.inpatient.hasMore;
   const allOutpatientVisits = medicalData?.outpatient_visits || [];
   const allInpatientVisits = medicalData?.inpatient_visits || [];
   const sortedOutpatientVisits = React.useMemo(
@@ -583,6 +700,34 @@ const MedicalRecord = () => {
     ? sortedInpatientVisits.filter((visit) => visit.no_rawat === formattedNoRawat)
     : sortedInpatientVisits;
   const vitalChartData = React.useMemo(() => {
+    if (formattedNoRawat) {
+      const focusedExamHistory = [
+        ...(medicalData?.focused_examinations?.ralan || []).map((exam: any, examIndex: number) => ({
+          key: `focused-chart-ralan-${formattedNoRawat}-${examIndex}`,
+          visit: { no_rawat: formattedNoRawat, status_lanjut: 'Ralan' },
+          exam,
+          rawatType: 'Ralan' as const
+        })),
+        ...(medicalData?.focused_examinations?.ranap || []).map((exam: any, examIndex: number) => ({
+          key: `focused-chart-ranap-${formattedNoRawat}-${examIndex}`,
+          visit: { no_rawat: formattedNoRawat, status_lanjut: 'Ranap' },
+          exam,
+          rawatType: 'Ranap' as const
+        }))
+      ];
+
+      if (focusedExamHistory.length > 0) {
+        return buildVitalChartFromExamHistory(focusedExamHistory);
+      }
+    }
+
+    if (!formattedNoRawat && (examinationHistoryData.outpatient.length || examinationHistoryData.inpatient.length)) {
+      return buildVitalChartFromExamHistory([
+        ...examinationHistoryData.outpatient,
+        ...examinationHistoryData.inpatient
+      ]);
+    }
+
     return [...scopedOutpatientVisits, ...scopedInpatientVisits]
       .flatMap((visit) => (visit.examinations || []).map((exam: any) => {
         const bloodPressure = parseBloodPressure(exam.tekanan_darah || exam.tensi);
@@ -610,7 +755,15 @@ const MedicalRecord = () => {
         };
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
-  }, [scopedInpatientVisits, scopedOutpatientVisits]);
+  }, [
+    examinationHistoryData.inpatient,
+    examinationHistoryData.outpatient,
+    formattedNoRawat,
+    medicalData?.focused_examinations?.ralan,
+    medicalData?.focused_examinations?.ranap,
+    scopedInpatientVisits,
+    scopedOutpatientVisits
+  ]);
   const outpatientExaminationHistory = React.useMemo(() => {
     if (formattedNoRawat) {
       const focusedExaminations = medicalData?.focused_examinations?.ralan || [];
@@ -633,8 +786,8 @@ const MedicalRecord = () => {
         .sort((a, b) => b.timestamp - a.timestamp);
     }
 
-    return buildExaminationHistory(scopedOutpatientVisits, 'Ralan');
-  }, [formattedNoRawat, medicalData?.focused_examinations?.ralan, scopedOutpatientVisits]);
+    return examinationHistoryData.outpatient;
+  }, [examinationHistoryData.outpatient, formattedNoRawat, medicalData?.focused_examinations?.ralan]);
   const inpatientExaminationHistory = React.useMemo(() => {
     if (formattedNoRawat) {
       const focusedExaminations = medicalData?.focused_examinations?.ranap || [];
@@ -657,8 +810,8 @@ const MedicalRecord = () => {
         .sort((a, b) => b.timestamp - a.timestamp);
     }
 
-    return buildExaminationHistory(scopedInpatientVisits, 'Ranap');
-  }, [formattedNoRawat, medicalData?.focused_examinations?.ranap, scopedInpatientVisits]);
+    return examinationHistoryData.inpatient;
+  }, [examinationHistoryData.inpatient, formattedNoRawat, medicalData?.focused_examinations?.ranap]);
   const outpatientProcedures = React.useMemo(() => {
     if (formattedNoRawat) {
       return buildFocusedItems(
@@ -919,6 +1072,17 @@ const MedicalRecord = () => {
     );
   }, [formattedNoRawat, medicalData?.focused_radiology?.ranap, scopedInpatientVisits]);
   const activeVitalSeries = vitalChartSeries.filter((series) => visibleVitalSeries[series.key]);
+  const isFocusedExaminationsLoaded = !formattedNoRawat || medicalData?.focused_examinations !== undefined;
+  const isFocusedProceduresLoaded = !formattedNoRawat || medicalData?.focused_procedures !== undefined;
+  const isFocusedMedicationsLoaded = !formattedNoRawat || (
+    medicalData?.focused_medications_request !== undefined && medicalData?.focused_medications !== undefined
+  );
+  const isFocusedLaboratoryLoaded = !formattedNoRawat || (
+    medicalData?.focused_laboratory_request !== undefined && medicalData?.focused_laboratory !== undefined
+  );
+  const isFocusedRadiologyLoaded = !formattedNoRawat || (
+    medicalData?.focused_radiology_request !== undefined && medicalData?.focused_radiology !== undefined
+  );
   const currentUsername = String(user?.username || '').trim();
   const matchesCurrentUser = (...values: Array<string | null | undefined>) =>
     Boolean(
@@ -1468,7 +1632,8 @@ const MedicalRecord = () => {
           e.dataTransfer.effectAllowed = 'move';
         }}
       >
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <p className="text-sm text-muted-foreground">Tanggal</p>
             <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
@@ -1488,15 +1653,21 @@ const MedicalRecord = () => {
               {renderRadiologyModalityBadge(rad)}
             </div>
           </div>
+          </div>
           <div>
             <p className="text-sm text-muted-foreground">Hasil</p>
-            <p className="font-medium">{rad.hasil || '-'}</p>
+            <p className="font-medium whitespace-pre-wrap break-words">{rad.hasil || '-'}</p>
           </div>
         </div>
         {renderRadiologyPacsImages(rad)}
       </div>
     ));
   };
+  const renderDeferredTabState = (label: string) => (
+    <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+      {loadingMore ? `Memuat data ${label}...` : `Data ${label} akan dimuat saat tab ini dibuka.`}
+    </div>
+  );
   
   useEffect(() => {
     const searchQuery = searchParams.get('search');
@@ -1508,12 +1679,16 @@ const MedicalRecord = () => {
   const fetchMedicalRecord = useCallback(async ({
     reset = false,
     outpatientPage = 1,
-    inpatientPage = 1
-  }: {
-    reset?: boolean;
-    outpatientPage?: number;
-    inpatientPage?: number;
-  } = {}) => {
+    inpatientPage = 1,
+    includeOutpatient = true,
+    includeInpatient = true,
+    includeVisitDetails = true,
+    includeFocusedExaminations = false,
+    includeFocusedProcedures = false,
+    includeFocusedMedications = false,
+    includeFocusedLaboratory = false,
+    includeFocusedRadiology = false
+  }: MedicalRecordFetchOptions = {}) => {
     try {
       if (!no_rkm_medis) {
         return;
@@ -1537,6 +1712,14 @@ const MedicalRecord = () => {
           limit: PAGE_SIZE,
           outpatientPage,
           inpatientPage,
+          includeOutpatient,
+          includeInpatient,
+          includeVisitDetails,
+          includeFocusedExaminations,
+          includeFocusedProcedures,
+          includeFocusedMedications,
+          includeFocusedLaboratory,
+          includeFocusedRadiology,
           focus_no_rawat: formattedNoRawat || undefined
         })
       });
@@ -1595,7 +1778,10 @@ const MedicalRecord = () => {
         });
 
         if (responsePagination) {
-          setPagination(responsePagination);
+          setPagination((previous) => ({
+            outpatient: responsePagination.outpatient || previous.outpatient,
+            inpatient: responsePagination.inpatient || previous.inpatient
+          }));
         }
         
         const focusedVisitStatus =
@@ -1623,11 +1809,248 @@ const MedicalRecord = () => {
     }
   }, [formattedNoRawat, no_rkm_medis]);
 
+  const fetchVisitDetails = useCallback(async (noRawat: string) => {
+    if (!noRawat) {
+      return;
+    }
+
+    setLoadingVisitDetailsKeys((previous) => ({ ...previous, [noRawat]: true }));
+    try {
+      const response = await fetch(API_URLS.GET_MEDICAL_RECORD_VISIT_DETAILS, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ no_rawat: noRawat })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const responseJson = await response.json();
+      const visitData = responseJson?.data;
+      if (!visitData) {
+        return;
+      }
+
+      setMedicalData((previousData) => {
+        if (!previousData) {
+          return previousData;
+        }
+
+        return {
+          ...previousData,
+          outpatient_visits: replaceVisitByNoRawat(previousData.outpatient_visits, visitData),
+          inpatient_visits: replaceVisitByNoRawat(previousData.inpatient_visits, visitData)
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching visit details:', error);
+    } finally {
+      setLoadingVisitDetailsKeys((previous) => ({ ...previous, [noRawat]: false }));
+    }
+  }, []);
+
+  const fetchExaminationHistory = useCallback(async ({
+    reset = false,
+    outpatientPage = 1,
+    inpatientPage = 1,
+    includeOutpatient = true,
+    includeInpatient = true
+  }: {
+    reset?: boolean;
+    outpatientPage?: number;
+    inpatientPage?: number;
+    includeOutpatient?: boolean;
+    includeInpatient?: boolean;
+  } = {}) => {
+    if (!no_rkm_medis) {
+      return;
+    }
+
+    setLoadingMore(true);
+    try {
+      const response = await fetch(API_URLS.GET_MEDICAL_RECORD_EXAMINATIONS, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rm: no_rkm_medis,
+          limit: PAGE_SIZE,
+          outpatientPage,
+          inpatientPage,
+          includeOutpatient,
+          includeInpatient,
+          focus_no_rawat: formattedNoRawat || undefined
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const responseJson = await response.json();
+      const responseData = responseJson?.data;
+      const responsePagination = responseJson?.pagination;
+
+      if (responseData) {
+        setExaminationHistoryData((previous) => ({
+          outpatient: reset
+            ? (responseData.outpatient || [])
+            : mergeExaminationHistory(previous.outpatient, responseData.outpatient || []),
+          inpatient: reset
+            ? (responseData.inpatient || [])
+            : mergeExaminationHistory(previous.inpatient, responseData.inpatient || [])
+        }));
+      }
+
+      if (responsePagination) {
+        setExaminationPagination((previous) => ({
+          outpatient: responsePagination.outpatient || previous.outpatient,
+          inpatient: responsePagination.inpatient || previous.inpatient
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching examination history:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [formattedNoRawat, no_rkm_medis]);
+
+  const handleToggleVisitExpansion = useCallback(async (visit: any) => {
+    const noRawat = String(visit?.no_rawat || '').trim();
+    if (!noRawat) {
+      return;
+    }
+
+    const nextExpanded = !expandedVisitKeys[noRawat];
+    setExpandedVisitKeys((previous) => ({ ...previous, [noRawat]: nextExpanded }));
+
+    if (nextExpanded && !visit?.details_loaded && !loadingVisitDetailsKeys[noRawat]) {
+      await fetchVisitDetails(noRawat);
+    }
+  }, [expandedVisitKeys, fetchVisitDetails, loadingVisitDetailsKeys]);
+
   useEffect(() => {
     if (no_rkm_medis) {
-      fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+      setExpandedVisitKeys({});
+      setLoadingVisitDetailsKeys({});
+      setExaminationHistoryData({ outpatient: [], inpatient: [] });
+      setExaminationPagination({
+        outpatient: DEFAULT_PAGINATION_META,
+        inpatient: DEFAULT_PAGINATION_META
+      });
+      fetchMedicalRecord({
+        reset: true,
+        outpatientPage: 1,
+        inpatientPage: 1,
+        includeVisitDetails: false
+      });
     }
   }, [fetchMedicalRecord, no_rkm_medis]);
+
+  useEffect(() => {
+    if (!formattedNoRawat || loading || loadingMore) {
+      return;
+    }
+
+    if (activeTab === 'examinations' && !formattedNoRawat) {
+      return;
+    }
+
+    const focusedFetchOptions = getFocusedFetchOptionsForTab(activeTab);
+    if (!focusedFetchOptions) {
+      return;
+    }
+
+    const isLoaded = (
+      (activeTab === 'examinations' && isFocusedExaminationsLoaded) ||
+      (activeTab === 'procedures' && isFocusedProceduresLoaded) ||
+      (activeTab === 'medications' && isFocusedMedicationsLoaded) ||
+      (activeTab === 'laboratory' && isFocusedLaboratoryLoaded) ||
+      (activeTab === 'radiology' && isFocusedRadiologyLoaded)
+    );
+
+    if (isLoaded) {
+      return;
+    }
+
+    fetchMedicalRecord({
+      reset: false,
+      outpatientPage: pagination.outpatient.page,
+      inpatientPage: pagination.inpatient.page,
+      includeOutpatient: false,
+      includeInpatient: false,
+      ...focusedFetchOptions
+    });
+  }, [
+    activeTab,
+    fetchMedicalRecord,
+    formattedNoRawat,
+    isFocusedExaminationsLoaded,
+    isFocusedLaboratoryLoaded,
+    isFocusedMedicationsLoaded,
+    isFocusedProceduresLoaded,
+    isFocusedRadiologyLoaded,
+    loading,
+    loadingMore,
+    pagination.inpatient.page,
+    pagination.outpatient.page
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'examinations' || formattedNoRawat || loading || loadingMore) {
+      return;
+    }
+
+    if (examinationHistoryData.outpatient.length || examinationHistoryData.inpatient.length) {
+      return;
+    }
+
+    fetchExaminationHistory({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+  }, [
+    activeTab,
+    examinationHistoryData.inpatient.length,
+    examinationHistoryData.outpatient.length,
+    fetchExaminationHistory,
+    formattedNoRawat,
+    loading,
+    loadingMore
+  ]);
+
+  useEffect(() => {
+    if (formattedNoRawat || loading || loadingMore) {
+      return;
+    }
+
+    if (!['procedures', 'medications', 'laboratory', 'radiology'].includes(activeTab)) {
+      return;
+    }
+
+    const currentVisits = [...allOutpatientVisits, ...allInpatientVisits];
+    if (!currentVisits.length || currentVisits.some((visit) => visit?.details_loaded)) {
+      return;
+    }
+
+    fetchMedicalRecord({
+      reset: true,
+      outpatientPage: pagination.outpatient.page,
+      inpatientPage: pagination.inpatient.page,
+      includeVisitDetails: true
+    });
+  }, [
+    activeTab,
+    allInpatientVisits,
+    allOutpatientVisits,
+    fetchMedicalRecord,
+    formattedNoRawat,
+    loading,
+    loadingMore,
+    pagination.inpatient.page,
+    pagination.outpatient.page
+  ]);
 
   useEffect(() => {
     const defaultPrescriptionStatus = statusRawat === 'Ranap' ? 'Ranap' : 'Ralan';
@@ -1677,22 +2100,75 @@ const MedicalRecord = () => {
     return () => window.clearInterval(playbackTimer);
   }, [isCtPacsPreview, isPacsPlaying, pacsPlaybackSpeed, pacsPreviewModal.images.length, pacsPreviewModal.open]);
 
+  useEffect(() => {
+    if (!pacsPreviewModal.open || !isCtPacsPreview || pacsPreviewModal.images.length === 0) {
+      return;
+    }
+
+    const totalImages = pacsPreviewModal.images.length;
+    const candidateIndexes = [0, 1, -1, 2, -2]
+      .map((offset) => ((pacsPreviewModal.currentIndex + offset) % totalImages + totalImages) % totalImages)
+      .filter((value, index, array) => array.indexOf(value) === index);
+
+    candidateIndexes.forEach((index) => {
+      const instanceId = String(pacsPreviewModal.images[index]?.instance_id || '').trim();
+
+      if (!instanceId) {
+        return;
+      }
+
+      const previewUrl = `${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/preview/${encodeURIComponent(instanceId)}`;
+      if (prefetchedPacsPreviewUrlsRef.current.has(previewUrl)) {
+        return;
+      }
+
+      prefetchedPacsPreviewUrlsRef.current.add(previewUrl);
+      const image = new window.Image();
+      image.decoding = 'async';
+      image.loading = 'eager';
+      image.src = previewUrl;
+    });
+  }, [isCtPacsPreview, pacsPreviewModal.currentIndex, pacsPreviewModal.images, pacsPreviewModal.open]);
+
   const loadMoreMedicalRecord = useCallback(() => {
-    if (loading || loadingMore || !hasMoreRecords) {
+    if (loading || loadingMore || activeTab !== 'visits' || formattedNoRawat) {
+      return;
+    }
+
+    if (visitHistoryTab === 'outpatient') {
+      if (!pagination.outpatient.hasMore) {
+        return;
+      }
+
+      fetchMedicalRecord({
+        reset: false,
+        outpatientPage: pagination.outpatient.page + 1,
+        inpatientPage: pagination.inpatient.page,
+        includeOutpatient: true,
+        includeInpatient: false,
+        includeVisitDetails: false
+      });
+      return;
+    }
+
+    if (!pagination.inpatient.hasMore) {
       return;
     }
 
     fetchMedicalRecord({
       reset: false,
-      outpatientPage: pagination.outpatient.hasMore ? pagination.outpatient.page + 1 : pagination.outpatient.page,
-      inpatientPage: pagination.inpatient.hasMore ? pagination.inpatient.page + 1 : pagination.inpatient.page
+      outpatientPage: pagination.outpatient.page,
+      inpatientPage: pagination.inpatient.page + 1,
+      includeOutpatient: false,
+      includeInpatient: true,
+      includeVisitDetails: false
     });
-  }, [fetchMedicalRecord, hasMoreRecords, loading, loadingMore, pagination]);
+  }, [activeTab, fetchMedicalRecord, formattedNoRawat, loading, loadingMore, pagination, visitHistoryTab]);
 
   useEffect(() => {
     const currentTarget = loadMoreRef.current;
 
-    if (!currentTarget || !no_rkm_medis) {
+    if (!currentTarget || !no_rkm_medis || activeTab !== 'visits' || formattedNoRawat || !hasMoreCurrentVisitTab) {
       return;
     }
 
@@ -1712,7 +2188,65 @@ const MedicalRecord = () => {
     return () => {
       observer.disconnect();
     };
-  }, [loadMoreMedicalRecord, no_rkm_medis]);
+  }, [activeTab, formattedNoRawat, hasMoreCurrentVisitTab, loadMoreMedicalRecord, no_rkm_medis]);
+
+  const loadMoreExaminationHistory = useCallback(() => {
+    if (loading || loadingMore || activeTab !== 'examinations' || formattedNoRawat) {
+      return;
+    }
+
+    if (examinationHistoryTab === 'outpatient') {
+      if (!examinationPagination.outpatient.hasMore) {
+        return;
+      }
+
+      fetchExaminationHistory({
+        reset: false,
+        outpatientPage: examinationPagination.outpatient.page + 1,
+        inpatientPage: examinationPagination.inpatient.page,
+        includeOutpatient: true,
+        includeInpatient: false
+      });
+      return;
+    }
+
+    if (!examinationPagination.inpatient.hasMore) {
+      return;
+    }
+
+    fetchExaminationHistory({
+      reset: false,
+      outpatientPage: examinationPagination.outpatient.page,
+      inpatientPage: examinationPagination.inpatient.page + 1,
+      includeOutpatient: false,
+      includeInpatient: true
+    });
+  }, [activeTab, examinationHistoryTab, examinationPagination, fetchExaminationHistory, formattedNoRawat, loading, loadingMore]);
+
+  useEffect(() => {
+    const currentTarget = loadMoreExaminationRef.current;
+
+    if (!currentTarget || !no_rkm_medis || activeTab !== 'examinations' || formattedNoRawat || !hasMoreCurrentExaminationTab) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMoreExaminationHistory();
+        }
+      },
+      {
+        rootMargin: '200px 0px'
+      }
+    );
+
+    observer.observe(currentTarget);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeTab, formattedNoRawat, hasMoreCurrentExaminationTab, loadMoreExaminationHistory, no_rkm_medis]);
 
   const searchPatients = async (query: string) => {
     setIsLoading(true);
@@ -3011,15 +3545,84 @@ const MedicalRecord = () => {
     }
   };
 
-  const openPacsPreviewModal = (rad: any, images: any[], currentIndex = 0, modality = '') => {
+  const fetchFullRadiologyPacsImages = useCallback(async (rad: any) => {
+    const noRawat = String(rad?.no_rawat || '').trim();
+    const examDate = String(rad?.tgl_periksa || String(rad?.tanggal || '').split(' ')[0] || '').trim();
+
+    if (!noRawat || !examDate) {
+      throw new Error('Data radiologi belum lengkap untuk memuat PACS');
+    }
+
+    const params = new URLSearchParams({
+      no_rawat: noRawat,
+      exam_date: examDate
+    });
+    const examName = String(rad?.pemeriksaan || '').trim();
+
+    if (examName) {
+      params.set('exam_name', examName);
+    }
+
+    const response = await fetch(`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/radiology-images?${params.toString()}`);
+    const responseJson = await response.json().catch(() => null);
+
+    if (!response.ok || !responseJson?.success) {
+      throw new Error(responseJson?.error || 'Gagal memuat PACS radiologi');
+    }
+
+    return Array.isArray(responseJson.pacs_images) ? responseJson.pacs_images.filter(Boolean) : [];
+  }, []);
+
+  const openPacsPreviewModal = async (rad: any, images: any[], currentIndex = 0, modality = '') => {
+    const normalizedModality = String(modality || '').toUpperCase();
+    const totalImages = Math.max(Number(rad?.pacs_total_images) || 0, images.length);
+    const shouldFetchFullCt = normalizedModality === 'CT' && totalImages > images.length;
+    const requestId = ++pacsPreviewRequestRef.current;
+
     setPacsPreviewModal({
       open: true,
       title: rad?.pemeriksaan || 'Foto Radiologi PACS',
       images,
       currentIndex,
-      modality
+      modality: normalizedModality,
+      loading: shouldFetchFullCt
     });
-    setIsPacsPlaying(String(modality || '').toUpperCase() === 'CT');
+    setIsPacsPlaying(normalizedModality === 'CT' && !shouldFetchFullCt && images.length > 1);
+
+    if (!shouldFetchFullCt) {
+      return;
+    }
+
+    try {
+      const fullImages = await fetchFullRadiologyPacsImages(rad);
+
+      if (pacsPreviewRequestRef.current !== requestId) {
+        return;
+      }
+
+      setPacsPreviewModal((previous) => ({
+        ...previous,
+        images: fullImages.length > 0 ? fullImages : previous.images,
+        currentIndex: Math.min(currentIndex, Math.max((fullImages.length || previous.images.length) - 1, 0)),
+        loading: false
+      }));
+      setIsPacsPlaying(fullImages.length > 1);
+    } catch (error) {
+      if (pacsPreviewRequestRef.current !== requestId) {
+        return;
+      }
+
+      setPacsPreviewModal((previous) => ({
+        ...previous,
+        loading: false
+      }));
+      setIsPacsPlaying(false);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal memuat PACS radiologi',
+        variant: 'destructive'
+      });
+    }
   };
 
   const goToPacsImage = (nextIndex: number) => {
@@ -3039,19 +3642,22 @@ const MedicalRecord = () => {
     const pacsImages = Array.isArray(rad?.pacs_images) ? rad.pacs_images.filter(Boolean) : [];
     const pacsSeries = Array.isArray(rad?.pacs_series) ? rad.pacs_series.filter(Boolean) : [];
     const modality = String(rad?.pacs_modality || pacsSeries[0]?.modality || pacsImages[0]?.modality || '').toUpperCase();
+    const totalImages = Math.max(Number(rad?.pacs_total_images) || 0, pacsImages.length);
 
     if (modality === 'CT' && pacsImages.length > 0) {
       return {
         modality,
         displayImages: [pacsImages[0]],
-        modalImages: pacsImages
+        modalImages: pacsImages,
+        totalImages
       };
     }
 
     return {
       modality,
       displayImages: pacsImages.slice(0, 6),
-      modalImages: pacsImages
+      modalImages: pacsImages,
+      totalImages
     };
   };
 
@@ -3085,8 +3691,29 @@ const MedicalRecord = () => {
     goToPacsImage(pacsPreviewModal.currentIndex + (direction * step));
   };
 
+  const getPacsImageUrl = (
+    instanceId: string,
+    options?: {
+      modality?: string;
+      width?: number;
+      preferPreview?: boolean;
+    }
+  ) => {
+    const normalizedModality = String(options?.modality || '').toUpperCase();
+    const preferPreview = options?.preferPreview || normalizedModality === 'CT';
+    const basePath = preferPreview ? '/api/pacs/preview' : '/api/pacs/rendered';
+    const encodedInstanceId = encodeURIComponent(instanceId);
+
+    if (preferPreview) {
+      return `${API_CONFIG.BASE_URL_WITHOUT_API}${basePath}/${encodedInstanceId}`;
+    }
+
+    const width = options?.width || 500;
+    return `${API_CONFIG.BASE_URL_WITHOUT_API}${basePath}/${encodedInstanceId}?width=${width}`;
+  };
+
   const renderRadiologyPacsImages = (rad: any) => {
-    const { modality, displayImages, modalImages } = getRadiologyPacsThumbnailItems(rad);
+    const { modality, displayImages, modalImages, totalImages } = getRadiologyPacsThumbnailItems(rad);
     if (modalImages.length === 0) {
       return null;
     }
@@ -3114,11 +3741,11 @@ const MedicalRecord = () => {
           </div>
           {modality === 'CT' ? (
             <p className="text-xs text-muted-foreground">
-              CT scan: {modalImages.length} slice, klik untuk play
+              CT scan: {totalImages} slice, klik thumbnail untuk memuat lengkap
             </p>
-          ) : modalImages.length > displayImages.length ? (
+          ) : totalImages > displayImages.length ? (
             <p className="text-xs text-muted-foreground">
-              Menampilkan {displayImages.length} dari {modalImages.length} gambar
+              Menampilkan {displayImages.length} dari {totalImages} gambar
             </p>
           ) : null}
         </div>
@@ -3128,7 +3755,11 @@ const MedicalRecord = () => {
           modality === 'CT' ? "grid grid-cols-1 max-w-sm" : "grid grid-cols-2 md:grid-cols-3"
         )}>
           {displayImages.map((image: any, index: number) => {
-            const previewUrl = `${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/rendered/${encodeURIComponent(image.instance_id)}?width=600`;
+            const previewUrl = getPacsImageUrl(image.instance_id, {
+              modality,
+              width: 600,
+              preferPreview: modality === 'CT'
+            });
 
             return (
               <button
@@ -3143,9 +3774,9 @@ const MedicalRecord = () => {
                   loading="lazy"
                   className="h-32 w-full object-cover transition-transform duration-200 group-hover:scale-105"
                 />
-                {modality === 'CT' ? (
+                {modality === 'CT' && totalImages > 1 ? (
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/60 px-3 py-2 text-xs text-white">
-                    <span>{modalImages.length} slice</span>
+                    <span>{totalImages} slice</span>
                     <span className="flex items-center gap-1">
                       <Play className="h-3.5 w-3.5" />
                       Play
@@ -3715,7 +4346,7 @@ const MedicalRecord = () => {
               <CardTitle>Riwayat Kunjungan</CardTitle>
             </CardHeader>
             <CardContent className="p-3 md:p-4">
-              <Tabs defaultValue="outpatient" className="mt-2">
+              <Tabs value={visitHistoryTab} onValueChange={(value) => setVisitHistoryTab(value as VisitHistoryTabValue)} className="mt-2">
                 <TabsList className="mb-4">
                   <TabsTrigger value="outpatient">
                     <User className="mr-2 h-4 w-4" />
@@ -3755,18 +4386,34 @@ const MedicalRecord = () => {
                               <p className="font-medium">{visit.dokter}</p>
                             </div>
                           </div>
-                          <Button
-                            onClick={() => handleAiScribe(visit)}
-                            variant="outline"
-                            size="sm"
-                            className="ml-4 flex items-center gap-2"
-                          >
-                            <Brain className="h-4 w-4" />
-                            AI Scribe
-                          </Button>
+                          <div className="ml-4 flex flex-col gap-2 md:flex-row">
+                            <Button
+                              onClick={() => handleAiScribe(visit)}
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-2"
+                              disabled={!visit.details_loaded}
+                            >
+                              <Brain className="h-4 w-4" />
+                              AI Scribe
+                            </Button>
+                            <Button
+                              onClick={() => handleToggleVisitExpansion(visit)}
+                              variant={expandedVisitKeys[visit.no_rawat] ? 'secondary' : 'default'}
+                              size="sm"
+                            >
+                              {expandedVisitKeys[visit.no_rawat] ? 'Tutup Detail' : 'Buka Detail'}
+                            </Button>
+                          </div>
                         </div>
                       </div>
 
+                      {expandedVisitKeys[visit.no_rawat] ? (
+                      loadingVisitDetailsKeys[visit.no_rawat] ? (
+                        <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
+                          Memuat detail kunjungan...
+                        </div>
+                      ) : visit.details_loaded ? (
                       <div className="space-y-6">
                         {/* Pemeriksaan */}
                         <div className="border rounded-lg p-2">
@@ -4026,7 +4673,8 @@ const MedicalRecord = () => {
                           <div className="grid grid-cols-1 gap-4">
                             {(visit.radiology || []).map((rad, radIndex) => (
                               <div key={radIndex} className="border rounded-lg p-4 hover:bg-muted/50">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div>
                                     <p className="text-sm text-muted-foreground">Tanggal</p>
                                      <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
@@ -4038,9 +4686,10 @@ const MedicalRecord = () => {
                                       {renderRadiologyModalityBadge(rad)}
                                     </div>
                                   </div>
+                                  </div>
                                   <div>
                                     <p className="text-sm text-muted-foreground">Hasil</p>
-                                    <p className="font-medium">{rad.hasil}</p>
+                                    <p className="font-medium whitespace-pre-wrap break-words">{rad.hasil || '-'}</p>
                                   </div>
                                 </div>
                                 {renderRadiologyPacsImages(rad)}
@@ -4049,6 +4698,12 @@ const MedicalRecord = () => {
                           </div>
                         </div>
                       </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
+                          Klik sekali lagi jika detail belum tampil.
+                        </div>
+                      )
+                      ) : null}
                     </div>
                     ))
                   )}
@@ -4077,18 +4732,34 @@ const MedicalRecord = () => {
                               <p className="font-medium">{visit.dokter}</p>
                             </div>
                           </div>
-                          <Button
-                            onClick={() => handleAiScribe(visit)}
-                            variant="outline"
-                            size="sm"
-                            className="ml-4 flex items-center gap-2"
-                          >
-                            <Brain className="h-4 w-4" />
-                            AI Scribe
-                          </Button>
+                          <div className="ml-4 flex flex-col gap-2 md:flex-row">
+                            <Button
+                              onClick={() => handleAiScribe(visit)}
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-2"
+                              disabled={!visit.details_loaded}
+                            >
+                              <Brain className="h-4 w-4" />
+                              AI Scribe
+                            </Button>
+                            <Button
+                              onClick={() => handleToggleVisitExpansion(visit)}
+                              variant={expandedVisitKeys[visit.no_rawat] ? 'secondary' : 'default'}
+                              size="sm"
+                            >
+                              {expandedVisitKeys[visit.no_rawat] ? 'Tutup Detail' : 'Buka Detail'}
+                            </Button>
+                          </div>
                         </div>
                       </div>
 
+                      {expandedVisitKeys[visit.no_rawat] ? (
+                      loadingVisitDetailsKeys[visit.no_rawat] ? (
+                        <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
+                          Memuat detail kunjungan...
+                        </div>
+                      ) : visit.details_loaded ? (
                       <div className="space-y-6">
                         {/* Pemeriksaan */}
                         <div className="border rounded-lg p-2">
@@ -4374,7 +5045,8 @@ const MedicalRecord = () => {
                           <div className="grid grid-cols-1 gap-4">
                             {(visit.radiology || []).map((rad, radIndex) => (
                               <div key={radIndex} className="border rounded-lg p-4 hover:bg-muted/50">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div>
                                     <p className="text-sm text-muted-foreground">Tanggal</p>
                                      <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
@@ -4386,9 +5058,10 @@ const MedicalRecord = () => {
                                       {renderRadiologyModalityBadge(rad)}
                                     </div>
                                   </div>
+                                  </div>
                                   <div>
                                     <p className="text-sm text-muted-foreground">Hasil</p>
-                                    <p className="font-medium">{rad.hasil}</p>
+                                    <p className="font-medium whitespace-pre-wrap break-words">{rad.hasil || '-'}</p>
                                   </div>
                                 </div>
                                 {renderRadiologyPacsImages(rad)}
@@ -4397,6 +5070,12 @@ const MedicalRecord = () => {
                           </div>
                         </div>
                       </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
+                          Klik sekali lagi jika detail belum tampil.
+                        </div>
+                      )
+                      ) : null}
                     </div>
                   ))}
                 </TabsContent>
@@ -4821,7 +5500,11 @@ const MedicalRecord = () => {
               {/* Data Existing */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Data Pemeriksaan</h3>
-                <Tabs defaultValue="outpatient" className="mt-2">
+                <Tabs
+                  value={examinationHistoryTab}
+                  onValueChange={(value) => setExaminationHistoryTab(value as ExaminationHistoryTabValue)}
+                  className="mt-2"
+                >
                   <TabsList className="mb-4">
                     <TabsTrigger value="outpatient">
                       <User className="mr-2 h-4 w-4" />
@@ -4834,15 +5517,19 @@ const MedicalRecord = () => {
                   </TabsList>
 
                   <TabsContent value="outpatient">
-                    <div className="space-y-4">
-                      {renderExaminationCards(outpatientExaminationHistory)}
-                    </div>
+                    {isFocusedExaminationsLoaded ? (
+                      <div className="space-y-4">
+                        {renderExaminationCards(outpatientExaminationHistory)}
+                      </div>
+                    ) : renderDeferredTabState('pemeriksaan')}
                   </TabsContent>
 
                   <TabsContent value="inpatient">
-                    <div className="space-y-4">
-                      {renderExaminationCards(inpatientExaminationHistory)}
-                    </div>
+                    {isFocusedExaminationsLoaded ? (
+                      <div className="space-y-4">
+                        {renderExaminationCards(inpatientExaminationHistory)}
+                      </div>
+                    ) : renderDeferredTabState('pemeriksaan')}
                   </TabsContent>
                 </Tabs>
               </div>
@@ -5037,10 +5724,14 @@ const MedicalRecord = () => {
                     </TabsTrigger>
                   </TabsList>
                   <TabsContent value="outpatient">
-                    <div className="space-y-4">{renderProcedureCards(outpatientProcedures)}</div>
+                    {isFocusedProceduresLoaded ? (
+                      <div className="space-y-4">{renderProcedureCards(outpatientProcedures)}</div>
+                    ) : renderDeferredTabState('tindakan')}
                   </TabsContent>
                   <TabsContent value="inpatient">
-                    <div className="space-y-4">{renderProcedureCards(inpatientProcedures)}</div>
+                    {isFocusedProceduresLoaded ? (
+                      <div className="space-y-4">{renderProcedureCards(inpatientProcedures)}</div>
+                    ) : renderDeferredTabState('tindakan')}
                   </TabsContent>
                 </Tabs>
               </div>
@@ -5573,10 +6264,14 @@ const MedicalRecord = () => {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="outpatient">
-                        <div className="space-y-4">{renderMedicationCards(outpatientMedicationRequests, true)}</div>
+                        {isFocusedMedicationsLoaded ? (
+                          <div className="space-y-4">{renderMedicationCards(outpatientMedicationRequests, true)}</div>
+                        ) : renderDeferredTabState('resep')}
                       </TabsContent>
                       <TabsContent value="inpatient">
-                        <div className="space-y-4">{renderMedicationCards(inpatientMedicationRequests, true)}</div>
+                        {isFocusedMedicationsLoaded ? (
+                          <div className="space-y-4">{renderMedicationCards(inpatientMedicationRequests, true)}</div>
+                        ) : renderDeferredTabState('resep')}
                       </TabsContent>
                     </Tabs>
                   </div>
@@ -5598,10 +6293,14 @@ const MedicalRecord = () => {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="outpatient">
-                        <div className="space-y-4">{renderMedicationCards(outpatientMedicationHistory, false)}</div>
+                        {isFocusedMedicationsLoaded ? (
+                          <div className="space-y-4">{renderMedicationCards(outpatientMedicationHistory, false)}</div>
+                        ) : renderDeferredTabState('riwayat pemberian obat')}
                       </TabsContent>
                       <TabsContent value="inpatient">
-                        <div className="space-y-4">{renderMedicationCards(inpatientMedicationHistory, false)}</div>
+                        {isFocusedMedicationsLoaded ? (
+                          <div className="space-y-4">{renderMedicationCards(inpatientMedicationHistory, false)}</div>
+                        ) : renderDeferredTabState('riwayat pemberian obat')}
                       </TabsContent>
                     </Tabs>
                   </div>
@@ -5995,10 +6694,14 @@ const MedicalRecord = () => {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="outpatient">
-                        <div className="space-y-4">{renderLaboratoryRequestCards(outpatientLaboratoryRequests)}</div>
+                        {isFocusedLaboratoryLoaded ? (
+                          <div className="space-y-4">{renderLaboratoryRequestCards(outpatientLaboratoryRequests)}</div>
+                        ) : renderDeferredTabState('permintaan laboratorium')}
                       </TabsContent>
                       <TabsContent value="inpatient">
-                        <div className="space-y-4">{renderLaboratoryRequestCards(inpatientLaboratoryRequests)}</div>
+                        {isFocusedLaboratoryLoaded ? (
+                          <div className="space-y-4">{renderLaboratoryRequestCards(inpatientLaboratoryRequests)}</div>
+                        ) : renderDeferredTabState('permintaan laboratorium')}
                       </TabsContent>
                     </Tabs>
                   </div>
@@ -6020,14 +6723,18 @@ const MedicalRecord = () => {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="outpatient">
-                        <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                          <div className="space-y-4">{renderLaboratoryHistoryCards(outpatientLaboratoryHistory)}</div>
-                        </ScrollArea>
+                        {isFocusedLaboratoryLoaded ? (
+                          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                            <div className="space-y-4">{renderLaboratoryHistoryCards(outpatientLaboratoryHistory)}</div>
+                          </ScrollArea>
+                        ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
                       <TabsContent value="inpatient">
-                        <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                          <div className="space-y-4">{renderLaboratoryHistoryCards(inpatientLaboratoryHistory)}</div>
-                        </ScrollArea>
+                        {isFocusedLaboratoryLoaded ? (
+                          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                            <div className="space-y-4">{renderLaboratoryHistoryCards(inpatientLaboratoryHistory)}</div>
+                          </ScrollArea>
+                        ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
                     </Tabs>
                   </div>
@@ -6327,10 +7034,14 @@ const MedicalRecord = () => {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="outpatient">
-                        <div className="space-y-4">{renderRadiologyRequestCards(outpatientRadiologyRequests)}</div>
+                        {isFocusedRadiologyLoaded ? (
+                          <div className="space-y-4">{renderRadiologyRequestCards(outpatientRadiologyRequests)}</div>
+                        ) : renderDeferredTabState('permintaan radiologi')}
                       </TabsContent>
                       <TabsContent value="inpatient">
-                        <div className="space-y-4">{renderRadiologyRequestCards(inpatientRadiologyRequests)}</div>
+                        {isFocusedRadiologyLoaded ? (
+                          <div className="space-y-4">{renderRadiologyRequestCards(inpatientRadiologyRequests)}</div>
+                        ) : renderDeferredTabState('permintaan radiologi')}
                       </TabsContent>
                     </Tabs>
                   </div>
@@ -6351,14 +7062,18 @@ const MedicalRecord = () => {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="outpatient">
-                        <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                          <div className="space-y-4">{renderRadiologyHistoryCards(outpatientRadiologyHistory)}</div>
-                        </ScrollArea>
+                        {isFocusedRadiologyLoaded ? (
+                          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                            <div className="space-y-4">{renderRadiologyHistoryCards(outpatientRadiologyHistory)}</div>
+                          </ScrollArea>
+                        ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                       <TabsContent value="inpatient">
-                        <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                          <div className="space-y-4">{renderRadiologyHistoryCards(inpatientRadiologyHistory)}</div>
-                        </ScrollArea>
+                        {isFocusedRadiologyLoaded ? (
+                          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                            <div className="space-y-4">{renderRadiologyHistoryCards(inpatientRadiologyHistory)}</div>
+                          </ScrollArea>
+                        ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                     </Tabs>
                   </div>
@@ -6369,29 +7084,48 @@ const MedicalRecord = () => {
         </TabsContent>
       </Tabs>
 
-      <div
-        ref={loadMoreRef}
-        className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground"
-      >
-        {loadingMore ? (
-          <div className="flex items-center justify-center gap-3">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-primary"></div>
-            <span>Memuat riwayat berikutnya...</span>
-          </div>
-        ) : hasMoreRecords ? (
-          <span>Gulir ke bawah untuk memuat riwayat rekam medik berikutnya.</span>
-        ) : medicalData ? (
-          <span>Semua riwayat yang tersedia sudah dimuat.</span>
-        ) : (
-          <span>Belum ada data riwayat untuk ditampilkan.</span>
-        )}
-      </div>
+      {activeTab === 'visits' && !formattedNoRawat ? (
+        <div
+          ref={loadMoreRef}
+          className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground"
+        >
+          {loadingMore ? (
+            <div className="flex items-center justify-center gap-3">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-primary"></div>
+              <span>Memuat riwayat {visitHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} berikutnya...</span>
+            </div>
+          ) : hasMoreCurrentVisitTab ? (
+            <span>Gulir ke bawah untuk memuat riwayat {visitHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} berikutnya.</span>
+          ) : medicalData ? (
+            <span>Semua riwayat {visitHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} yang tersedia sudah dimuat.</span>
+          ) : (
+            <span>Belum ada data riwayat untuk ditampilkan.</span>
+          )}
+        </div>
+      ) : activeTab === 'examinations' && !formattedNoRawat ? (
+        <div
+          ref={loadMoreExaminationRef}
+          className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground"
+        >
+          {loadingMore ? (
+            <div className="flex items-center justify-center gap-3">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-primary"></div>
+              <span>Memuat data pemeriksaan {examinationHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} berikutnya...</span>
+            </div>
+          ) : hasMoreCurrentExaminationTab ? (
+            <span>Gulir ke bawah untuk memuat data pemeriksaan {examinationHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} berikutnya.</span>
+          ) : (
+            <span>Semua data pemeriksaan {examinationHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} yang tersedia sudah dimuat.</span>
+          )}
+        </div>
+      ) : null}
 
       <Dialog
         open={pacsPreviewModal.open}
         onOpenChange={(open) => {
-          setPacsPreviewModal((previous) => ({ ...previous, open }));
+          setPacsPreviewModal((previous) => ({ ...previous, open, loading: open ? previous.loading : false }));
           if (!open) {
+            pacsPreviewRequestRef.current += 1;
             setIsPacsPlaying(false);
           }
         }}
@@ -6417,11 +7151,21 @@ const MedicalRecord = () => {
                 <div className="relative rounded-lg border bg-black/5 p-4">
                   <div onWheel={handleCtWheelNavigation}>
                     <img
-                      src={`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/rendered/${encodeURIComponent(activePacsImage.instance_id)}?width=1800`}
+                      src={getPacsImageUrl(activePacsImage.instance_id, {
+                        modality: pacsPreviewModal.modality,
+                        width: 1800,
+                        preferPreview: isCtPacsPreview
+                      })}
                       alt={`Preview PACS ${pacsPreviewModal.currentIndex + 1}`}
                       className="mx-auto max-h-[60vh] w-auto rounded-md object-contain"
                     />
                   </div>
+
+                  {pacsPreviewModal.loading ? (
+                    <div className="absolute inset-x-4 top-4 rounded-md bg-background/95 px-3 py-2 text-sm text-muted-foreground shadow-sm">
+                      Memuat seluruh slice CT dari server PACS...
+                    </div>
+                  ) : null}
 
                   {pacsPreviewModal.images.length > 1 ? (
                     <>
@@ -6453,7 +7197,9 @@ const MedicalRecord = () => {
                       <div>
                         <p className="font-medium">CT Stack Player</p>
                         <p className="text-sm text-muted-foreground">
-                          Klik play untuk menelusuri slice secara otomatis. Scroll mouse untuk pindah slice, `Shift + scroll` untuk lompat lebih cepat.
+                          {pacsPreviewModal.loading
+                            ? 'Sedang memuat seluruh slice CT dari server PACS.'
+                            : 'Klik play untuk menelusuri slice secara otomatis. Scroll mouse untuk pindah slice, `Shift + scroll` untuk lompat lebih cepat.'}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -6461,6 +7207,7 @@ const MedicalRecord = () => {
                           type="button"
                           variant="outline"
                           size="sm"
+                          disabled={pacsPreviewModal.loading || pacsPreviewModal.images.length <= 1}
                           onClick={() => setIsPacsPlaying((previous) => !previous)}
                         >
                           {isPacsPlaying ? (
@@ -6533,7 +7280,10 @@ const MedicalRecord = () => {
                           )}
                         >
                           <img
-                            src={`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/rendered/${encodeURIComponent(image.instance_id)}?width=300`}
+                            src={getPacsImageUrl(image.instance_id, {
+                              modality: pacsPreviewModal.modality,
+                              width: 300
+                            })}
                             alt={`Thumbnail PACS ${index + 1}`}
                             className="h-20 w-28 object-cover"
                           />

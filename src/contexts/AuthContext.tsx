@@ -80,6 +80,11 @@ const loginApi = async (username: string, password: string): Promise<{token: str
   }
 };
 
+const clearPersistedAuth = () => {
+  localStorage.removeItem('auth-token');
+  localStorage.removeItem('auth-user');
+};
+
 export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -98,8 +103,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         } catch (error) {
           console.error('Failed to parse stored user', error);
           // Clear invalid storage data
-          localStorage.removeItem('auth-token');
-          localStorage.removeItem('auth-user');
+          clearPersistedAuth();
         }
       }
       
@@ -111,6 +115,10 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   
   // Initial login function - returns whether 2FA is required
   const login = async (username: string, password: string): Promise<{success: boolean, requiresOTP?: boolean, phoneNumber?: string}> => {
+    // Clear session lama lebih dulu agar request setelah login tidak memakai user sebelumnya.
+    setToken(null);
+    setUser(null);
+    clearPersistedAuth();
     setLoading(true);
     try {
       const response = await loginApi(username, password);
@@ -191,6 +199,9 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
 
   // Complete login after OTP verification
   const completeLogin = async (username: string, password: string): Promise<boolean> => {
+    setToken(null);
+    setUser(null);
+    clearPersistedAuth();
     setLoading(true);
     try {
       const response = await loginApi(username, password);
@@ -224,8 +235,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     setUser(null);
     
     // Clear localStorage
-    localStorage.removeItem('auth-token');
-    localStorage.removeItem('auth-user');
+    clearPersistedAuth();
   };
   
   return (

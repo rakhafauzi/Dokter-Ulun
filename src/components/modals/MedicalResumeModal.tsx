@@ -449,8 +449,9 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
   const fetchResumeSources = async (noRm: string) => {
     const normalizedNoRm = String(noRm || '').trim();
     if (!noRawat || !normalizedNoRm) {
-      setSourceData(createEmptySourceData());
-      return;
+      const emptyData = createEmptySourceData();
+      setSourceData(emptyData);
+      return emptyData;
     }
 
     setSourceLoading(true);
@@ -465,6 +466,14 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           limit: 5,
           outpatientPage: 1,
           inpatientPage: 1,
+          includeOutpatient: false,
+          includeInpatient: false,
+          includeVisitDetails: false,
+          includeFocusedExaminations: true,
+          includeFocusedProcedures: true,
+          includeFocusedMedications: true,
+          includeFocusedLaboratory: true,
+          includeFocusedRadiology: true,
           focus_no_rawat: noRawat
         }),
       });
@@ -476,15 +485,27 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
       const medicalResult = await medicalResponse.json();
       const medicalData = Array.isArray(medicalResult) ? medicalResult[0] : medicalResult?.data;
 
-      setSourceData({
+      const nextSourceData = {
         examinations: medicalData?.focused_examinations?.ranap || [],
         outpatientExaminations: medicalData?.focused_examinations?.ralan || [],
-        laboratoryResults: medicalData?.focused_laboratory?.ranap || [],
-        radiologyResults: medicalData?.focused_radiology?.ranap || [],
+        laboratoryResults: [
+          ...(medicalData?.focused_laboratory?.ranap || []),
+          ...(medicalData?.focused_laboratory?.ralan || [])
+        ],
+        radiologyResults: [
+          ...(medicalData?.focused_radiology?.ranap || []),
+          ...(medicalData?.focused_radiology?.ralan || [])
+        ],
         operationData: medicalData?.focused_operation_reports || [],
-        inpatientMedications: medicalData?.focused_medications?.ranap || [],
+        inpatientMedications: [
+          ...(medicalData?.focused_medications?.ranap || []),
+          ...(medicalData?.focused_medications?.ralan || [])
+        ],
         dischargeMedicationRequests: medicalData?.focused_medications_request?.pulang || [],
-      });
+      };
+
+      setSourceData(nextSourceData);
+      return nextSourceData;
     } catch (error) {
       console.error('Error fetching resume source data:', error);
       toast({
@@ -492,7 +513,9 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
         description: error instanceof Error ? error.message : "Gagal memuat sumber data picker resume",
         variant: "destructive",
       });
-      setSourceData(createEmptySourceData());
+      const emptyData = createEmptySourceData();
+      setSourceData(emptyData);
+      return emptyData;
     } finally {
       setSourceLoading(false);
     }
@@ -778,7 +801,10 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
     ].filter(Boolean).join('\n');
   };
 
-  const buildPickerConfig = (target: ResumePickerTarget): ResumePickerConfig => {
+  const buildPickerConfigFromSource = (
+    target: ResumePickerTarget,
+    currentSourceData: ResumeSourceData
+  ): ResumePickerConfig => {
     switch (target) {
       case 'keluhan_utama':
         return {
@@ -787,7 +813,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           description: 'Tampilkan semua data subjektif dari tabel pemeriksaan ranap sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
           emptyMessage: 'Belum ada data keluhan utama dari pemeriksaan ranap.',
           multiple: true,
-          items: sourceData.examinations
+          items: currentSourceData.examinations
             .filter((item) => String(item.s || '').trim())
             .map((item, index) => ({
               id: `keluhan-${index}-${item.tanggal}`,
@@ -804,7 +830,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           description: 'Tampilkan semua data objektif dan tanda vital dari tabel pemeriksaan ranap sesuai nomor rawat.',
           emptyMessage: 'Belum ada data pemeriksaan fisik dari pemeriksaan ranap.',
           multiple: true,
-          items: sourceData.examinations
+          items: currentSourceData.examinations
             .filter((item) => String(item.o || buildVitalsText(item) || '').trim())
             .map((item, index) => ({
               id: `objektif-${index}-${item.tanggal}`,
@@ -821,7 +847,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           description: 'Tampilkan semua entri SOAPIE dari tabel pemeriksaan ranap sesuai nomor rawat, lalu pilih data yang diperlukan.',
           emptyMessage: 'Belum ada data jalannya penyakit dari pemeriksaan ranap.',
           multiple: true,
-          items: sourceData.examinations
+          items: currentSourceData.examinations
             .map((item, index) => ({
               id: `soap-${index}-${item.tanggal}`,
               title: item.tanggal || `Pemeriksaan ${index + 1}`,
@@ -848,14 +874,14 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           emptyMessage: 'Belum ada data pemeriksaan lab atau radiologi untuk nomor rawat ini.',
           multiple: true,
           items: [
-            ...sourceData.laboratoryResults.map((item, index) => ({
+            ...currentSourceData.laboratoryResults.map((item, index) => ({
               id: `penunjang-lab-${index}-${item.tanggal}`,
               title: item.tanggal || `Laboratorium ${index + 1}`,
               subtitle: 'Pemeriksaan Laboratorium',
               description: buildLaboratoryResultText(item),
               value: buildLaboratoryResultText(item)
             })),
-            ...sourceData.radiologyResults.map((item, index) => ({
+            ...currentSourceData.radiologyResults.map((item, index) => ({
               id: `penunjang-rad-${index}-${item.tanggal}`,
               title: item.tanggal || `Radiologi ${index + 1}`,
               subtitle: 'Pemeriksaan Radiologi',
@@ -871,7 +897,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           description: 'Tampilkan semua hasil pemeriksaan laboratorium sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
           emptyMessage: 'Belum ada hasil pemeriksaan laboratorium untuk nomor rawat ini.',
           multiple: true,
-          items: sourceData.laboratoryResults
+          items: currentSourceData.laboratoryResults
             .map((item, index) => ({
               id: `hasil-lab-${index}-${item.tanggal}`,
               title: item.tanggal || `Hasil Laboratorium ${index + 1}`,
@@ -889,7 +915,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           emptyMessage: 'Belum ada data tindakan atau operasi untuk nomor rawat ini.',
           multiple: true,
           items: [
-            ...sourceData.outpatientExaminations
+            ...currentSourceData.outpatientExaminations
               .map((item, index) => ({
                 id: `tindakan-ralan-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
                 title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ralan ${index + 1}`,
@@ -898,7 +924,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                 value: buildExaminationProcedureText(item, 'Pemeriksaan Ralan')
               }))
               .filter((item) => item.value.trim()),
-            ...sourceData.examinations
+            ...currentSourceData.examinations
               .map((item, index) => ({
                 id: `tindakan-ranap-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
                 title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ranap ${index + 1}`,
@@ -907,7 +933,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                 value: buildExaminationProcedureText(item, 'Pemeriksaan Ranap')
               }))
               .filter((item) => item.value.trim()),
-            ...sourceData.operationData
+            ...currentSourceData.operationData
               .map((item, index) => ({
                 id: `operasi-${item.id || index}`,
                 title: item.nm_op || item.tanggal_op || `Operasi ${index + 1}`,
@@ -926,7 +952,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           emptyMessage: 'Belum ada data obat pulang atau pemberian obat selama perawatan untuk nomor rawat ini.',
           multiple: true,
           items: [
-            ...sourceData.dischargeMedicationRequests
+            ...currentSourceData.dischargeMedicationRequests
               .map((item, index) => ({
                 id: `obat-pulang-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
                 title: item.tanggal || `Obat Pulang ${index + 1}`,
@@ -935,7 +961,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                 value: buildMedicationListText(item, 'Obat Pulang')
               }))
               .filter((item) => item.value.trim()),
-            ...sourceData.inpatientMedications
+            ...currentSourceData.inpatientMedications
               .map((item, index) => ({
                 id: `obat-ranap-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
                 title: item.tanggal || `Pemberian Obat ${index + 1}`,
@@ -958,6 +984,10 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
     }
   };
 
+  const buildPickerConfig = (target: ResumePickerTarget): ResumePickerConfig => (
+    buildPickerConfigFromSource(target, sourceData)
+  );
+
   const pickerConfig = pickerTarget ? buildPickerConfig(pickerTarget) : null;
   const filteredPickerItems = (pickerConfig?.items || []).filter((item) => {
     const keyword = pickerSearch.trim().toLowerCase();
@@ -970,7 +1000,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
       .some((text) => String(text).toLowerCase().includes(keyword));
   });
 
-  const openPicker = (target: ResumePickerTarget) => {
+  const openPicker = async (target: ResumePickerTarget) => {
     if (sourceLoading) {
       toast({
         title: "Memuat Data",
@@ -979,7 +1009,14 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
       return;
     }
 
-    const config = buildPickerConfig(target);
+    let config = buildPickerConfig(target);
+    if (config.items.length === 0 && formData.no_rkm_medis) {
+      const refreshedSourceData = await fetchResumeSources(formData.no_rkm_medis);
+      const currentSourceData = sourceData;
+      const mergedSourceData = refreshedSourceData || currentSourceData;
+      config = buildPickerConfigFromSource(target, mergedSourceData);
+    }
+
     if (config.items.length === 0) {
       toast({
         title: "Data Belum Tersedia",
