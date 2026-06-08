@@ -127,6 +127,11 @@ const Statistik = () => {
   };
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00', '#ff00ff'];
+  const rankedDoctorData = doctorData.map((doctor: any, index) => ({
+    ...doctor,
+    rank: index + 1,
+    total_kinerja: (Number(doctor.rawat_jalan) || 0) + (Number(doctor.rawat_inap) || 0) + (Number(doctor.resep) || 0)
+  }));
 
   if (loading) {
     return (
@@ -343,7 +348,7 @@ const Statistik = () => {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={doctorData}>
+                <BarChart data={rankedDoctorData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="nm_dokter" />
                   <YAxis />
@@ -359,7 +364,9 @@ const Statistik = () => {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-muted">
+                        <th className="p-3 text-left font-medium">Ranking</th>
                         <th className="p-3 text-left font-medium">Nama Dokter</th>
+                        <th className="p-3 text-left font-medium">Total Kinerja</th>
                         <th className="p-3 text-left font-medium">Rawat Jalan</th>
                         <th className="p-3 text-left font-medium">Rawat Inap</th>
                         <th className="p-3 text-left font-medium">Resep</th>
@@ -367,9 +374,11 @@ const Statistik = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {doctorData.map((doctor: any, index) => (
+                      {rankedDoctorData.map((doctor: any, index) => (
                         <tr key={index} className="border-b">
+                          <td className="p-3 font-medium">{doctor.rank}</td>
                           <td className="p-3">{doctor.nm_dokter}</td>
+                          <td className="p-3">{doctor.total_kinerja}</td>
                           <td className="p-3">{doctor.rawat_jalan}</td>
                           <td className="p-3">{doctor.rawat_inap}</td>
                           <td className="p-3">{doctor.resep}</td>

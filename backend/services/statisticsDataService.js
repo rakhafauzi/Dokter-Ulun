@@ -54,7 +54,7 @@ class StatisticsDataService {
     const [visits, diagnosis, doctors, summary] = await Promise.all([
       this.getVisitStatistics(periodType, startDate, endDate),
       this.getDiagnosisStatistics(startDate, endDate, limit),
-      this.getDoctorStatistics(startDate, endDate, limit),
+      this.getDoctorStatistics(startDate, endDate, null),
       this.getSummaryStatistics(startDate, endDate)
     ]);
 
@@ -157,7 +157,6 @@ class StatisticsDataService {
    */
   static async getDoctorStatistics(startDate, endDate, limit = 10) {
     console.log('Fetching doctor statistics');
-    
     const sql = `
       SELECT 
         d.nm_dokter,
@@ -209,18 +208,28 @@ class StatisticsDataService {
           AND kd_dokter IS NOT NULL
         GROUP BY kd_dokter
       ) payment ON payment.kd_dokter = d.kd_dokter
-      ORDER BY d.nm_dokter ASC
-      LIMIT ?
+      WHERE COALESCE(NULLIF(TRIM(d.nm_dokter), ''), '-') <> '-'
+      ORDER BY
+        (COALESCE(ralan.rawat_jalan, 0) + COALESCE(ranap.rawat_inap, 0) + COALESCE(resep.resep, 0)) DESC,
+        COALESCE(payment.payment_rate, 0) DESC,
+        d.nm_dokter ASC
     `;
 
-    const [doctorResult] = await pool.execute(sql, [
+    const params = [
       startDate, endDate,
       startDate, endDate,
       startDate, endDate,
       startDate, endDate,
-      startDate, endDate,
-      Number(limit) || 10
-    ]);
+      startDate, endDate
+    ];
+
+    let finalSql = sql;
+    if (Number(limit) > 0) {
+      finalSql += ` LIMIT ?`;
+      params.push(Number(limit));
+    }
+
+    const [doctorResult] = await pool.execute(finalSql, params);
     
     return doctorResult || [];
   }
