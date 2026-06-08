@@ -279,6 +279,8 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
 
   const currentDoctorName = sourceInfo?.asal_nm_dokter || user?.name || user?.username || '-';
   const currentPoliName = sourceInfo?.asal_nm_poli || user?.kd_poli || '-';
+  const currentDoctorCode = user?.kd_dokter || user?.username || '';
+  const isPerujukUser = Boolean(sourceInfo?.asal_kd_dokter) && sourceInfo?.asal_kd_dokter === currentDoctorCode;
   const filteredDoctorOptions = useMemo(() => {
     if (!formData.kd_poli) {
       return doctorOptions;
@@ -534,13 +536,14 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
                               onClick={() => handleEdit(referral)}
                               disabled={saving || deletingKey === itemKey}
                             >
-                              <Edit className="h-4 w-4" />
+                              <Edit className="mr-2 h-4 w-4" />
+                              Jawab Konsul
                             </Button>
                             <Button
                               size="sm"
                               variant="destructive"
                               onClick={() => handleDelete(referral)}
-                              disabled={saving || deletingKey === itemKey}
+                              disabled={!isPerujukUser || saving || deletingKey === itemKey}
                             >
                               {deletingKey === itemKey ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
