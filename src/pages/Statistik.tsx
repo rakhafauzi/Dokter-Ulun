@@ -132,6 +132,7 @@ const Statistik = () => {
     rank: index + 1,
     total_kinerja: (Number(doctor.rawat_jalan) || 0) + (Number(doctor.rawat_inap) || 0) + (Number(doctor.resep) || 0)
   }));
+  const topDoctorChartData = rankedDoctorData.slice(0, 15);
 
   if (loading) {
     return (
@@ -347,23 +348,30 @@ const Statistik = () => {
               <CardTitle>Kinerja Dokter</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={rankedDoctorData}>
+              <div className="mb-4 text-sm text-muted-foreground">
+                Menampilkan grafik Top 15 dokter berdasarkan total kinerja. Tabel di bawah tetap memuat seluruh dokter yang valid.
+              </div>
+              <ResponsiveContainer width="100%" height={Math.max(420, topDoctorChartData.length * 36)}>
+                <BarChart data={topDoctorChartData} layout="vertical" margin={{ left: 24, right: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="nm_dokter" />
-                  <YAxis />
+                  <XAxis type="number" />
+                  <YAxis
+                    type="category"
+                    dataKey="nm_dokter"
+                    width={180}
+                    tick={{ fontSize: 12 }}
+                  />
                   <Tooltip />
-                  <Bar dataKey="rawat_jalan" name="Rawat Jalan" fill="#82ca9d" />
-                  <Bar dataKey="rawat_inap" name="Rawat Inap" fill="#8884d8" />
+                  <Bar dataKey="total_kinerja" name="Total Kinerja" fill="#2563eb" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
               
               <div className="mt-6">
                 <h3 className="text-lg font-medium mb-3">Detail Kinerja Dokter</h3>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-md border max-h-[520px]">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-muted">
+                      <tr className="bg-muted sticky top-0">
                         <th className="p-3 text-left font-medium">Ranking</th>
                         <th className="p-3 text-left font-medium">Nama Dokter</th>
                         <th className="p-3 text-left font-medium">Total Kinerja</th>

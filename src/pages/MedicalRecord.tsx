@@ -1301,6 +1301,56 @@ const MedicalRecord = () => {
       </div>
     ));
   };
+  const renderCompactVisitProcedures = (procedures: any[], noRawat?: string) => {
+    if (procedures.length === 0) {
+      return (
+        <p className="text-sm italic text-muted-foreground">
+          Belum ada data tindakan pada kunjungan ini.
+        </p>
+      );
+    }
+
+    const groupedProcedures = procedures.reduce((groups, proc) => {
+      const groupKey = proc.tanggal || '-';
+      if (!groups[groupKey]) {
+        groups[groupKey] = [];
+      }
+      groups[groupKey].push(proc);
+      return groups;
+    }, {} as Record<string, any[]>);
+
+    return (
+      <div className="space-y-2">
+        {(Object.entries(groupedProcedures) as Array<[string, any[]]>).map(([tanggal, items]) => (
+          <div key={`${noRawat || 'visit'}-${tanggal}`} className="rounded-md border bg-muted/10 px-3 py-2">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+              <div className="text-sm font-medium">{formatDateSafe(tanggal)}</div>
+              <div className="text-xs text-muted-foreground">
+                {items.length} tindakan
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {items.map((proc, procIndex) => (
+                <div
+                  key={`${noRawat || 'visit'}-${tanggal}-${proc.nm_perawatan || proc.nama || procIndex}`}
+                  className="flex items-start justify-between gap-3 rounded-sm px-1 py-1 text-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium leading-5">
+                      {proc.nm_perawatan || proc.nama || '-'}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {proc.nama_pelaksana || proc.hasil || '-'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
   const renderMedicationCards = (items: any[], isRequestTab: boolean) => {
     if (items.length === 0) {
       return (
@@ -4766,43 +4816,7 @@ const MedicalRecord = () => {
                             <Syringe className="h-5 w-5 mr-2" />
                             Tindakan
                           </h3>
-                          <div className="grid grid-cols-1 gap-4">
-                            {Object.entries(
-                              (visit.procedures || []).reduce((groups: Record<string, any[]>, proc: any) => {
-                                const groupKey = proc.tanggal || '-';
-                                if (!groups[groupKey]) {
-                                  groups[groupKey] = [];
-                                }
-                                groups[groupKey].push(proc);
-                                return groups;
-                              }, {})
-                            ).map(([tanggal, procedures]: [string, any[]]) => (
-                              <div key={tanggal} className="border rounded-lg p-4 hover:bg-muted/50">
-                                <div className="mb-4 border-b pb-2">
-                                  <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-                                  <p className="font-medium">{formatDateSafe(tanggal)}</p>
-                                </div>
-
-                                <div className="space-y-3">
-                                  {procedures.map((proc, procIndex) => (
-                                    <div
-                                      key={`${visit.no_rawat}-${tanggal}-${proc.nama}-${procIndex}`}
-                                      className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-md border bg-muted/20 p-3"
-                                    >
-                                      <div>
-                                        <p className="text-sm text-muted-foreground">Nama Tindakan</p>
-                                        <p className="font-medium">{proc.nm_perawatan || proc.nama || '-'}</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-sm text-muted-foreground">Nama Pelaksana</p>
-                                        <p className="font-medium">{proc.nama_pelaksana || proc.hasil || '-'}</p>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          {renderCompactVisitProcedures(visit.procedures || [], visit.no_rawat)}
                         </div>
 
                         {/* Resep Obat */}
@@ -5120,43 +5134,7 @@ const MedicalRecord = () => {
                             <Syringe className="h-5 w-5 mr-2" />
                             Tindakan
                           </h3>
-                          <div className="grid grid-cols-1 gap-4">
-                            {Object.entries(
-                              (visit.procedures || []).reduce((groups: Record<string, any[]>, proc: any) => {
-                                const groupKey = proc.tanggal || '-';
-                                if (!groups[groupKey]) {
-                                  groups[groupKey] = [];
-                                }
-                                groups[groupKey].push(proc);
-                                return groups;
-                              }, {})
-                            ).map(([tanggal, procedures]: [string, any[]]) => (
-                              <div key={tanggal} className="border rounded-lg p-4 hover:bg-muted/50">
-                                <div className="mb-4 border-b pb-2">
-                                  <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-                                  <p className="font-medium">{formatDateSafe(tanggal)}</p>
-                                </div>
-
-                                <div className="space-y-3">
-                                  {procedures.map((proc, procIndex) => (
-                                    <div
-                                      key={`${visit.no_rawat}-${tanggal}-${proc.nama}-${procIndex}`}
-                                      className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-md border bg-muted/20 p-3"
-                                    >
-                                      <div>
-                                        <p className="text-sm text-muted-foreground">Nama Tindakan</p>
-                                        <p className="font-medium">{proc.nm_perawatan || proc.nama || '-'}</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-sm text-muted-foreground">Nama Pelaksana</p>
-                                        <p className="font-medium">{proc.nama_pelaksana || proc.hasil || '-'}</p>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          {renderCompactVisitProcedures(visit.procedures || [], visit.no_rawat)}
                         </div>
 
                         {/* Resep Obat */}
