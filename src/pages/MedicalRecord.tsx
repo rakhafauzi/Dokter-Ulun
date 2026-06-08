@@ -4603,7 +4603,19 @@ const MedicalRecord = () => {
                   ) : (
                     sortedOutpatientVisits.map((visit: any, index) => (
                     <div key={index} className="mb-8 rounded-lg p-0 shadow-sm">
-                      <div className="bg-muted p-2 rounded-t-lg mb-4">
+                      <div
+                        className="bg-muted p-2 rounded-t-lg mb-4 cursor-pointer"
+                        onClick={() => handleToggleVisitExpansion(visit)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            handleToggleVisitExpansion(visit);
+                          }
+                        }}
+                        aria-expanded={Boolean(expandedVisitKeys[visit.no_rawat])}
+                      >
                         <div className="flex justify-between items-start">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                             <div>
@@ -4625,21 +4637,17 @@ const MedicalRecord = () => {
                           </div>
                           <div className="ml-4 flex flex-col gap-2 md:flex-row">
                             <Button
-                              onClick={() => handleAiScribe(visit)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleAiScribe(visit);
+                              }}
                               variant="outline"
                               size="sm"
                               className="flex items-center gap-2"
                               disabled={!visit.details_loaded}
                             >
                               <Brain className="h-4 w-4" />
-                              AI Scribe
-                            </Button>
-                            <Button
-                              onClick={() => handleToggleVisitExpansion(visit)}
-                              variant={expandedVisitKeys[visit.no_rawat] ? 'secondary' : 'default'}
-                              size="sm"
-                            >
-                              {expandedVisitKeys[visit.no_rawat] ? 'Tutup Detail' : 'Buka Detail'}
+                              {/* AI Scribe */}
                             </Button>
                           </div>
                         </div>
@@ -4949,7 +4957,19 @@ const MedicalRecord = () => {
                 <TabsContent value="inpatient">
                   {sortedInpatientVisits.map((visit: any, index) => (
                     <div key={index} className="mb-8 rounded-lg p-0 shadow-sm">
-                      <div className="bg-muted p-2 rounded-t-lg mb-4">
+                      <div
+                        className="bg-muted p-2 rounded-t-lg mb-4 cursor-pointer"
+                        onClick={() => handleToggleVisitExpansion(visit)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            handleToggleVisitExpansion(visit);
+                          }
+                        }}
+                        aria-expanded={Boolean(expandedVisitKeys[visit.no_rawat])}
+                      >
                         <div className="flex justify-between items-start">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                             <div>
@@ -4971,21 +4991,17 @@ const MedicalRecord = () => {
                           </div>
                           <div className="ml-4 flex flex-col gap-2 md:flex-row">
                             <Button
-                              onClick={() => handleAiScribe(visit)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleAiScribe(visit);
+                              }}
                               variant="outline"
                               size="sm"
                               className="flex items-center gap-2"
                               disabled={!visit.details_loaded}
                             >
                               <Brain className="h-4 w-4" />
-                              AI Scribe
-                            </Button>
-                            <Button
-                              onClick={() => handleToggleVisitExpansion(visit)}
-                              variant={expandedVisitKeys[visit.no_rawat] ? 'secondary' : 'default'}
-                              size="sm"
-                            >
-                              {expandedVisitKeys[visit.no_rawat] ? 'Tutup Detail' : 'Buka Detail'}
+                              {/* AI Scribe */}
                             </Button>
                           </div>
                         </div>

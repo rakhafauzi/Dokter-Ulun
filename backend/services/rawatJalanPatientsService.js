@@ -17,12 +17,13 @@ class RawatJalanPatientsService {
     status,
     statusBayar,
     username,
+    kd_dokter,
     tabFilter,
     page = 1,
     itemsPerPage = 10
   }) {
     try {
-      console.log('Received request body:', { kd_poli, startDate, endDate, status, statusBayar, username, tabFilter });
+      console.log('Received request body:', { kd_poli, startDate, endDate, status, statusBayar, username, kd_dokter, tabFilter });
       console.log('Current time (WIB):', new Date(new Date().getTime() + (7 * 60 * 60 * 1000)).toISOString());
       
       if (!kd_poli || !startDate || !endDate || !username) {
@@ -40,6 +41,17 @@ class RawatJalanPatientsService {
         original: { startDate, endDate }
       });
 
+      const poliCodes = String(kd_poli || '')
+        .split(',')
+        .map(code => code.trim())
+        .filter(Boolean);
+
+      if (poliCodes.length === 0) {
+        throw new Error('Minimal satu kd_poli wajib dikirim');
+      }
+
+      const poliPlaceholders = poliCodes.map(() => '?').join(',');
+
       // Build WHERE conditions
       let conditions = [];
       let params = [];
@@ -51,15 +63,19 @@ class RawatJalanPatientsService {
       params.push(formattedStartDate, formattedEndDate);
       console.log('Date range condition:', `tgl_registrasi BETWEEN '${formattedStartDate}' AND '${formattedEndDate}'`);
       
-      // Convert comma-separated kd_poli values to quoted format for MySQL IN clause
-      const quotedPoliCodes = kd_poli.split(',').map(code => `'${code.trim()}'`).join(',');
-      conditions.push(`rp.kd_poli IN (${quotedPoliCodes})`);
-      console.log('Poliklinik condition:', `kd_poli IN (${quotedPoliCodes})`);
-      
-      // Doctor filter (always required)
-      conditions.push('rp.kd_dokter = ?');
-      params.push(username);
-      console.log('Doctor filter applied:', username);
+      conditions.push(`rp.kd_poli IN (${poliPlaceholders})`);
+      params.push(...poliCodes);
+      console.log('Poliklinik condition:', 'rp.kd_poli IN capability user', poliCodes);
+
+      // Doctor filter is optional. Default shows all patients in allowed poli.
+      const normalizedDoctorFilter = String(kd_dokter || '').trim();
+      if (normalizedDoctorFilter && normalizedDoctorFilter !== 'all') {
+        conditions.push('rp.kd_dokter = ?');
+        params.push(normalizedDoctorFilter);
+        console.log('Doctor filter applied:', normalizedDoctorFilter);
+      } else {
+        console.log('Doctor filter: showing all doctors in allowed poli');
+      }
       
       // Status filtering - only add condition if not "all"
       if (status && status.trim() && status !== 'all') {
@@ -134,6 +150,24 @@ class RawatJalanPatientsService {
         WHERE ${conditions.join(' AND ')}
       `;
 
+      const doctorSql = `
+        SELECT DISTINCT
+          rp.kd_dokter,
+          COALESCE(d.nm_dokter, 'Dokter Tidak Diketahui') as nm_dokter
+        FROM reg_periksa rp
+        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        LEFT JOIN poliklinik pol ON rp.kd_poli = pol.kd_poli
+        WHERE rp.tgl_registrasi BETWEEN ? AND ?
+          AND rp.kd_poli IN (${poliPlaceholders})
+          ${status && status.trim() && status !== 'all' ? 'AND rp.stts = ?' : ''}
+          ${statusBayar && statusBayar.trim() && statusBayar !== 'all' ? 'AND rp.status_bayar = ?' : ''}
+          ${tabFilter === 'pagi' ? 'AND LOWER(pol.nm_poli) LIKE ?' : ''}
+          ${tabFilter === 'sore' ? 'AND LOWER(pol.nm_poli) LIKE ?' : ''}
+          ${tabFilter === 'rujukan_internal' ? 'AND EXISTS (SELECT 1 FROM rujukan_internal_poli rip WHERE rip.no_rawat = rp.no_rawat)' : ''}
+          ${tabFilter === 'pasien_lanjutan' ? 'AND rp.tgl_registrasi = ? AND rp.stts = ?' : ''}
+        ORDER BY nm_dokter ASC
+      `;
+
       // Query rawat jalan patients with LEFT JOINs to prevent data loss
       const limitClause = limit === 10000 ? '' : `LIMIT ${limit} OFFSET ${offset}`;
       const sql = `
@@ -169,6 +203,32 @@ class RawatJalanPatientsService {
       // Execute count query
       const [countResult] = await db.execute(countSql, params);
       const total = countResult[0]?.total || 0;
+
+      const doctorParams = [formattedStartDate, formattedEndDate, ...poliCodes];
+      if (status && status.trim() && status !== 'all') {
+        doctorParams.push(status);
+      }
+      if (statusBayar && statusBayar.trim() && statusBayar !== 'all') {
+        doctorParams.push(statusBayar);
+      }
+      if (tabFilter === 'pagi') {
+        doctorParams.push('%pagi%');
+      }
+      if (tabFilter === 'sore') {
+        doctorParams.push('%sore%');
+      }
+      if (tabFilter === 'pasien_lanjutan') {
+        const now = new Date();
+        const wibNow = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+        const yesterday = new Date(wibNow.getTime() - (24 * 60 * 60 * 1000));
+        const year = yesterday.getUTCFullYear();
+        const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(yesterday.getUTCDate()).padStart(2, '0');
+        const formattedYesterday = `${year}-${month}-${day}`;
+        doctorParams.push(formattedYesterday, 'Belum');
+      }
+
+      const [doctorResult] = await db.execute(doctorSql, doctorParams);
       
       console.log('Total count result:', total);
       
@@ -200,10 +260,9 @@ class RawatJalanPatientsService {
                  MIN(tgl_registrasi) as min_date, 
                  MAX(tgl_registrasi) as max_date
           FROM reg_periksa 
-          WHERE kd_dokter = ? 
-          AND kd_poli IN (${quotedPoliCodes})
+          WHERE kd_poli IN (${poliPlaceholders})
         `;
-        const [checkResult] = await db.execute(checkQuery, [username]);
+        const [checkResult] = await db.execute(checkQuery, poliCodes);
         console.log('Data check query result:', checkResult);
         
         // Check if dates exist in the range
@@ -211,9 +270,9 @@ class RawatJalanPatientsService {
           SELECT COUNT(*) as count_in_range
           FROM reg_periksa
           WHERE tgl_registrasi BETWEEN ? AND ?
-          AND kd_poli IN (${quotedPoliCodes})
+          AND kd_poli IN (${poliPlaceholders})
         `;
-        const [dateCheckResult] = await db.execute(dateCheckQuery, [formattedStartDate, formattedEndDate]);
+        const [dateCheckResult] = await db.execute(dateCheckQuery, [formattedStartDate, formattedEndDate, ...poliCodes]);
         console.log('Date range check result:', dateCheckResult);
       }
 
@@ -238,6 +297,10 @@ class RawatJalanPatientsService {
       const responseData = {
         success: true,
         data: patients,
+        doctors: (doctorResult || []).map(row => ({
+          kd_dokter: row.kd_dokter,
+          nm_dokter: row.nm_dokter
+        })),
         total,
         limit,
         offset,
@@ -249,7 +312,8 @@ class RawatJalanPatientsService {
       console.log('Sample patient data (first 3):', patients.slice(0, 3));
       console.log('Filter summary:', {
         dateRange: `${formattedStartDate} to ${formattedEndDate}`,
-        doctor: username,
+        requestedBy: username,
+        selectedDoctor: normalizedDoctorFilter || 'ALL',
         poliklinik: kd_poli,
         status: status === 'all' ? 'ALL' : status,
         statusBayar: statusBayar === 'all' ? 'ALL' : statusBayar,

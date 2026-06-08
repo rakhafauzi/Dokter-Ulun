@@ -65,6 +65,8 @@ const RawatJalanTabs = () => {
   
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [statusBayarFilter, setStatusBayarFilter] = useState<string>("all");
+  const [doctorFilter, setDoctorFilter] = useState<string>("all");
+  const [doctorOptions, setDoctorOptions] = useState<Array<{ kd_dokter: string; nm_dokter: string }>>([]);
   const [rawatJalanPatients, setRawatJalanPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -86,6 +88,7 @@ const RawatJalanTabs = () => {
         username: user.username,
         status: statusFilter,
         statusBayar: statusBayarFilter,
+        kd_dokter: doctorFilter !== 'all' ? doctorFilter : undefined,
         tabFilter: tabFilter || activeTab,
         page: currentPage.toString(),
         itemsPerPage: itemsPerPage.toString()
@@ -125,15 +128,18 @@ const RawatJalanTabs = () => {
       if (data?.success) {
         console.log('Received patient data:', data.data);
         setRawatJalanPatients(Array.isArray(data.data) ? data.data : []);
+        setDoctorOptions(Array.isArray(data.doctors) ? data.doctors : []);
         setTotal(data.total || 0);
       } else {
         console.error('Failed to fetch patients:', data);
         setRawatJalanPatients([]);
+        setDoctorOptions([]);
         setTotal(0);
       }
     } catch (error) {
       console.error('Error fetching rawat jalan patients:', error);
       setRawatJalanPatients([]);
+      setDoctorOptions([]);
       setTotal(0);
     } finally {
       setLoading(false);
@@ -161,9 +167,13 @@ const RawatJalanTabs = () => {
   };
 
   const handleClearFilters = () => {
-    setDate(undefined);
+    setDate({
+      from: new Date(),
+      to: new Date()
+    });
     setStatusFilter("all");
     setStatusBayarFilter("all");
+    setDoctorFilter("all");
     setSearchQuery("");
     setCurrentPage(1);
   };
@@ -348,6 +358,20 @@ const RawatJalanTabs = () => {
                       <SelectItem value="all">Semua Status Bayar</SelectItem>
                       <SelectItem value="Sudah Bayar">Sudah Bayar</SelectItem>
                       <SelectItem value="Belum Bayar">Belum Bayar</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={doctorFilter} onValueChange={setDoctorFilter}>
+                    <SelectTrigger className="w-full sm:w-56">
+                      <SelectValue placeholder="Dokter" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Dokter</SelectItem>
+                      {doctorOptions.map((doctor) => (
+                        <SelectItem key={doctor.kd_dokter} value={doctor.kd_dokter}>
+                          {doctor.nm_dokter}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
