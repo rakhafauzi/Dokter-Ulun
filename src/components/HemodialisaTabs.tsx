@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,24 @@ import { cn } from '@/lib/utils';
 import { formatDateWIB, formatDateTimeWIB } from '@/lib/date-utils';
 import { API_URLS } from '@/config/api';
 
+const parseDateParam = (value: string | null, fallback: Date) => {
+  if (!value) return fallback;
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return fallback;
+  }
+
+  const [, year, month, day] = match;
+  const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+};
+
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  const parsed = Number.parseInt(value || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 // Columns for hemodialisa data
 const hemodialisaColumns = [
   { accessor: 'no_reg', header: 'No. Reg' },
@@ -47,21 +66,25 @@ const hemodialisaColumns = [
 
 const HemodialisaTabs = () => {
   const { user } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialToday = new Date();
+  const initialFromDate = parseDateParam(searchParams.get('from'), initialToday);
+  const initialToDate = parseDateParam(searchParams.get('to'), initialFromDate);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   
   // Date range state - use current date without timezone conversion
   const [date, setDate] = useState<DateRange | undefined>({
-    from: new Date(),
-    to: new Date()
+    from: initialFromDate,
+    to: initialToDate
   });
   
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [statusBayarFilter, setStatusBayarFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || "all");
+  const [statusBayarFilter, setStatusBayarFilter] = useState<string>(searchParams.get('statusBayar') || "all");
   const [hemodialisaPatients, setHemodialisaPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [total, setTotal] = useState(0);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   
   const fetchHemodialisaPatients = async () => {
     if (!date?.from || !date?.to) {
@@ -136,14 +159,62 @@ const HemodialisaTabs = () => {
       fetchHemodialisaPatients();
     }
   }, [date?.from, date?.to, currentPage, itemsPerPage, statusFilter, statusBayarFilter]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+
+    params.set('page', String(currentPage));
+    params.set('itemsPerPage', String(itemsPerPage));
+    params.set('status', statusFilter);
+    params.set('statusBayar', statusBayarFilter);
+
+    if (date?.from) {
+      params.set('from', format(date.from, 'yyyy-MM-dd'));
+    } else {
+      params.delete('from');
+    }
+
+    if (date?.to) {
+      params.set('to', format(date.to, 'yyyy-MM-dd'));
+    } else {
+      params.delete('to');
+    }
+
+    if (searchQuery.trim()) {
+      params.set('search', searchQuery.trim());
+    } else {
+      params.delete('search');
+    }
+
+    if (params.toString() !== searchParams.toString()) {
+      setSearchParams(params, { replace: true });
+    }
+  }, [
+    currentPage,
+    itemsPerPage,
+    statusFilter,
+    statusBayarFilter,
+    searchQuery,
+    date?.from,
+    date?.to,
+    searchParams,
+    setSearchParams
+  ]);
   
   const handleFilterApply = () => {
-    setCurrentPage(1);
-    // No need to call fetchHemodialisaPatients here as useEffect will handle it
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+      return;
+    }
+
+    fetchHemodialisaPatients();
   };
 
   const handleClearFilters = () => {
-    setDate(undefined);
+    setDate({
+      from: new Date(),
+      to: new Date()
+    });
     setStatusFilter("all");
     setStatusBayarFilter("all");
     setSearchQuery("");

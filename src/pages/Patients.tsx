@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatNoRawat } from '@/App';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -59,6 +59,18 @@ import { cn } from '@/lib/utils';
 import RawatJalanTabs from '@/components/RawatJalanTabs';
 import HemodialisaTabs from '@/components/HemodialisaTabs';
 import { API_URLS } from '@/config/api';
+
+const parseDateParam = (value: string | null, fallback: Date) => {
+  if (!value) return fallback;
+
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+};
+
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  const parsed = Number.parseInt(value || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
 
 // Patients data
 const rawatJalanData = [
@@ -1031,6 +1043,13 @@ const RawatInapTabs = () => {
   const { user } = useAuth();
   type RawatInapListTab = 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung';
   type RawatInapTab = RawatInapListTab | 'resume-pasien';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawatInapTabOptions: RawatInapTab[] = ['rawat-inap', 'rawat-bersama', 'rawat-gabung', 'resume-pasien'];
+  const defaultRawatInapFrom = subMonths(new Date(), 6);
+  const defaultRawatInapTo = new Date();
+  const initialRawatInapTab = rawatInapTabOptions.includes(searchParams.get('tab') as RawatInapTab)
+    ? searchParams.get('tab') as RawatInapTab
+    : 'rawat-inap';
   const emptyTabCounts = {
     rawat_inap: 0,
     rawat_bersama: 0,
@@ -1052,17 +1071,17 @@ const RawatInapTabs = () => {
   const [rawatInapData, setRawatInapData] = useState<any[]>([]);
   const [resumeData, setResumeData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<RawatInapTab>('rawat-inap');
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusPulang, setStatusPulang] = useState("masih-dirawat");
-  const [resumeStatus, setResumeStatus] = useState("all");
+  const [activeTab, setActiveTab] = useState<RawatInapTab>(initialRawatInapTab);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || "");
+  const [statusPulang, setStatusPulang] = useState(searchParams.get('statusPulang') || "masih-dirawat");
+  const [resumeStatus, setResumeStatus] = useState(searchParams.get('resumeStatus') || "all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: subMonths(new Date(), 6),
-    to: new Date()
+    from: parseDateParam(searchParams.get('from'), defaultRawatInapFrom),
+    to: parseDateParam(searchParams.get('to'), defaultRawatInapTo)
   });
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [total, setTotal] = useState(0);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   const [tabCounts, setTabCounts] = useState(emptyTabCounts);
 
   const buildRawatInapRequestBody = (
@@ -1091,6 +1110,49 @@ const RawatInapTabs = () => {
     endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
     ...overrides
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+
+    params.set('tab', activeTab);
+    params.set('page', String(currentPage));
+    params.set('itemsPerPage', String(itemsPerPage));
+    params.set('statusPulang', statusPulang);
+    params.set('resumeStatus', resumeStatus);
+
+    if (dateRange?.from) {
+      params.set('from', format(dateRange.from, 'yyyy-MM-dd'));
+    } else {
+      params.delete('from');
+    }
+
+    if (dateRange?.to) {
+      params.set('to', format(dateRange.to, 'yyyy-MM-dd'));
+    } else {
+      params.delete('to');
+    }
+
+    if (searchQuery.trim()) {
+      params.set('search', searchQuery.trim());
+    } else {
+      params.delete('search');
+    }
+
+    if (params.toString() !== searchParams.toString()) {
+      setSearchParams(params, { replace: true });
+    }
+  }, [
+    activeTab,
+    currentPage,
+    itemsPerPage,
+    statusPulang,
+    resumeStatus,
+    searchQuery,
+    dateRange?.from,
+    dateRange?.to,
+    searchParams,
+    setSearchParams
+  ]);
 
   const applyTabCounts = (counts: any) => {
     setTabCounts({
@@ -1267,7 +1329,11 @@ const RawatInapTabs = () => {
   };
 
   const handleFilterApply = (tab: string) => {
-    setCurrentPage(1);
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+      return;
+    }
+
     if (tab === 'resume-pasien') {
       fetchResumeData();
     } else {
@@ -1280,15 +1346,10 @@ const RawatInapTabs = () => {
     setStatusPulang("masih-dirawat");
     setResumeStatus("all");
     setDateRange({
-      from: subMonths(new Date(), 6),
-      to: new Date()
+      from: defaultRawatInapFrom,
+      to: defaultRawatInapTo
     });
     setCurrentPage(1);
-    if (tab === 'resume-pasien') {
-      fetchResumeData();
-    } else {
-      fetchRawatInapData(tab as 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung');
-    }
   };
 
   useEffect(() => {
@@ -1602,18 +1663,25 @@ const RawatInapTabs = () => {
 
 const IGDTabs = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const igdTabOptions = ['triase', 'observasi', 'tindakan'] as const;
+  const initialIGDTab = igdTabOptions.includes(searchParams.get('tab') as typeof igdTabOptions[number])
+    ? searchParams.get('tab') as typeof igdTabOptions[number]
+    : 'triase';
+  const defaultIGDDate = new Date();
   const [igdData, setIgdData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [triaseLevel, setTriaseLevel] = useState("");
+  const [activeTab, setActiveTab] = useState<typeof igdTabOptions[number]>(initialIGDTab);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || "");
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || "all");
+  const [triaseLevel, setTriaseLevel] = useState(searchParams.get('triase') || "all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: new Date(),
-    to: new Date()
+    from: parseDateParam(searchParams.get('from'), defaultIGDDate),
+    to: parseDateParam(searchParams.get('to'), defaultIGDDate)
   });
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [total, setTotal] = useState(0);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
 
   const fetchIGDData = async (tab: string) => {
     setLoading(true);
@@ -1702,24 +1770,70 @@ const IGDTabs = () => {
   };
 
   useEffect(() => {
-    fetchIGDData('triase');
-  }, [currentPage, itemsPerPage, searchQuery, statusFilter, triaseLevel, dateRange]);
+    const params = new URLSearchParams(searchParams);
+
+    params.set('tab', activeTab);
+    params.set('page', String(currentPage));
+    params.set('itemsPerPage', String(itemsPerPage));
+    params.set('status', statusFilter);
+    params.set('triase', triaseLevel);
+
+    if (dateRange?.from) {
+      params.set('from', format(dateRange.from, 'yyyy-MM-dd'));
+    } else {
+      params.delete('from');
+    }
+
+    if (dateRange?.to) {
+      params.set('to', format(dateRange.to, 'yyyy-MM-dd'));
+    } else {
+      params.delete('to');
+    }
+
+    if (searchQuery.trim()) {
+      params.set('search', searchQuery.trim());
+    } else {
+      params.delete('search');
+    }
+
+    if (params.toString() !== searchParams.toString()) {
+      setSearchParams(params, { replace: true });
+    }
+  }, [
+    activeTab,
+    currentPage,
+    itemsPerPage,
+    searchQuery,
+    statusFilter,
+    triaseLevel,
+    dateRange?.from,
+    dateRange?.to,
+    searchParams,
+    setSearchParams
+  ]);
+
+  useEffect(() => {
+    fetchIGDData(activeTab);
+  }, [activeTab, currentPage, itemsPerPage, searchQuery, statusFilter, triaseLevel, dateRange?.from, dateRange?.to]);
 
   const handleFilterApply = (tab: string) => {
-    setCurrentPage(1);
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+      return;
+    }
+
     fetchIGDData(tab);
   };
 
-  const handleClearFilters = (tab: string) => {
+  const handleClearFilters = () => {
     setSearchQuery("");
-    setStatusFilter("");
-    setTriaseLevel("");
+    setStatusFilter("all");
+    setTriaseLevel("all");
     setDateRange({
-      from: new Date(),
-      to: new Date()
+      from: defaultIGDDate,
+      to: defaultIGDDate
     });
     setCurrentPage(1);
-    fetchIGDData(tab);
   };
 
   const igdColumns = [
@@ -1835,7 +1949,7 @@ const IGDTabs = () => {
 
         <Button 
           variant="outline"
-          onClick={() => handleClearFilters(tab)}
+          onClick={handleClearFilters}
           className="w-full sm:w-auto"
         >
           <X className="mr-2 h-4 w-4" />
@@ -1846,7 +1960,10 @@ const IGDTabs = () => {
   );
 
   return (
-    <Tabs defaultValue="triase" onValueChange={(value) => fetchIGDData(value)}>
+    <Tabs value={activeTab} onValueChange={(value) => {
+      setCurrentPage(1);
+      setActiveTab(value as typeof igdTabOptions[number]);
+    }}>
       <TabsList className="mb-4">
         <TabsTrigger value="triase">
           <List className="mr-2 h-4 w-4" />

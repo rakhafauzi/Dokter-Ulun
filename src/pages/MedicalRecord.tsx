@@ -9,7 +9,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
-  Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock,
+  Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, ArrowLeft,
   Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -4478,7 +4478,15 @@ const MedicalRecord = () => {
       <Card className="mb-6">
         <CardHeader className="border-b p-3 md:p-4">
           <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => window.history.back()}
+                aria-label="Kembali"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
               <UserCircle className="h-5 w-5 mr-2" />
               Data Pasien
             </div>
