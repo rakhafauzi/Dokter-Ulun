@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { formatNoRawat } from '@/App';
 import { User, CircleCheck, Clock } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -50,6 +50,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
 }) => {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+  const location = useLocation();
   
   // Helper function to decode no_rawat from encoded format
   const decodeNoRawat = (encodedNoRawat: string) => {
@@ -61,7 +62,11 @@ const PatientTable: React.FC<PatientTableProps> = ({
     if (patient.no_rkm_medis && patient.no_rawat) {
       const formattedNoRawat = formatNoRawat(patient.no_rawat);
       console.log(formattedNoRawat)
-      navigate(`/rekam-medik/${patient.no_rkm_medis}/${formattedNoRawat}`);
+      navigate(`/rekam-medik/${patient.no_rkm_medis}/${formattedNoRawat}`, {
+        state: {
+          from: `${location.pathname}${location.search}`
+        }
+      });
     }
   };
   

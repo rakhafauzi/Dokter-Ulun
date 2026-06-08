@@ -35,6 +35,18 @@ import { cn } from '@/lib/utils';
 import { formatDateWIB, formatDateTimeWIB } from '@/lib/date-utils';
 import { API_URLS } from '@/config/api';
 
+const parseDateParam = (value: string | null, fallback: Date) => {
+  if (!value) return fallback;
+
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+};
+
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  const parsed = Number.parseInt(value || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 // Updated columns with new structure
 const rawatJalanColumns = [
   { accessor: 'no_reg', header: 'No. Reg' },
@@ -53,25 +65,28 @@ const rawatJalanColumns = [
 
 const RawatJalanTabs = () => {
   const { user } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
+  const initialToday = new Date();
+  const initialFromDate = parseDateParam(searchParams.get('from'), initialToday);
+  const initialToDate = parseDateParam(searchParams.get('to'), initialFromDate);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'hari-ini');
   
   // Date range state - use current date without timezone conversion
   const [date, setDate] = useState<DateRange | undefined>({
-    from: new Date(),
-    to: new Date()
+    from: initialFromDate,
+    to: initialToDate
   });
   
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [statusBayarFilter, setStatusBayarFilter] = useState<string>("all");
-  const [doctorFilter, setDoctorFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || "all");
+  const [statusBayarFilter, setStatusBayarFilter] = useState<string>(searchParams.get('statusBayar') || "all");
+  const [doctorFilter, setDoctorFilter] = useState<string>(searchParams.get('doctor') || "");
   const [doctorOptions, setDoctorOptions] = useState<Array<{ kd_dokter: string; nm_dokter: string }>>([]);
   const [rawatJalanPatients, setRawatJalanPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [total, setTotal] = useState(0);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   const effectiveDoctorFilter = doctorFilter || user?.username || "all";
   const requestDoctorFilter = doctorFilter === "all"
     ? "all"
@@ -157,17 +172,66 @@ const RawatJalanTabs = () => {
   }, [user?.kd_poli, date?.from, date?.to, activeTab, currentPage, itemsPerPage]);
 
   useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab && tab !== activeTab) {
-      setActiveTab(tab);
+    const params = new URLSearchParams(searchParams);
+
+    params.set('tab', activeTab);
+    params.set('page', String(currentPage));
+    params.set('itemsPerPage', String(itemsPerPage));
+    params.set('status', statusFilter);
+    params.set('statusBayar', statusBayarFilter);
+
+    if (date?.from) {
+      params.set('from', format(date.from, 'yyyy-MM-dd'));
+    } else {
+      params.delete('from');
     }
-  }, [searchParams]);
+
+    if (date?.to) {
+      params.set('to', format(date.to, 'yyyy-MM-dd'));
+    } else {
+      params.delete('to');
+    }
+
+    if (searchQuery.trim()) {
+      params.set('search', searchQuery.trim());
+    } else {
+      params.delete('search');
+    }
+
+    if (doctorFilter) {
+      params.set('doctor', doctorFilter);
+    } else {
+      params.delete('doctor');
+    }
+
+    if (params.toString() !== searchParams.toString()) {
+      setSearchParams(params, { replace: true });
+    }
+  }, [
+    activeTab,
+    currentPage,
+    itemsPerPage,
+    statusFilter,
+    statusBayarFilter,
+    doctorFilter,
+    searchQuery,
+    date?.from,
+    date?.to,
+    searchParams,
+    setSearchParams
+  ]);
   
   const handleFilterApply = () => {
-    setCurrentPage(1);
-    if (date?.from && date?.to) {
-      fetchRawatJalanPatients();
+    if (!date?.from || !date?.to) {
+      return;
     }
+
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+      return;
+    }
+
+    fetchRawatJalanPatients();
   };
 
   const handleClearFilters = () => {
@@ -184,11 +248,7 @@ const RawatJalanTabs = () => {
 
   const handleTabChange = (newTab: string) => {
     setActiveTab(newTab);
-    setSearchParams({ tab: newTab });
     setCurrentPage(1);
-    if (date?.from && date?.to) {
-      fetchRawatJalanPatients(newTab);
-    }
   };
   
   const filteredRawatJalanData = (Array.isArray(rawatJalanPatients) ? rawatJalanPatients : []).filter(patient => {
