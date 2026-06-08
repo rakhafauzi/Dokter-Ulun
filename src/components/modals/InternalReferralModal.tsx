@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Edit, Trash2, ArrowRight, Loader2 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from '@/lib/utils';
+import { Plus, Edit, Trash2, ArrowRight, Loader2, Check, ChevronsUpDown } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,6 +20,7 @@ interface PoliOption {
 interface DoctorOption {
   kd_dokter: string;
   nm_dokter: string;
+  poli_codes?: string[];
 }
 
 interface ReferralSourceInfo {
@@ -67,6 +71,8 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<InternalReferral | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [poliOpen, setPoliOpen] = useState(false);
+  const [doctorOpen, setDoctorOpen] = useState(false);
 
   const createDefaultForm = useMemo(() => {
     return (): InternalReferralForm => ({
@@ -124,7 +130,16 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
         }))
       );
       setPoliOptions(Array.isArray(result.options?.poliklinik) ? result.options.poliklinik : []);
-      setDoctorOptions(Array.isArray(result.options?.doctors) ? result.options.doctors : []);
+      setDoctorOptions(
+        (Array.isArray(result.options?.doctors) ? result.options.doctors : []).map((doctor: any) => ({
+          kd_dokter: doctor.kd_dokter,
+          nm_dokter: doctor.nm_dokter,
+          poli_codes: String(doctor.poli_codes || '')
+            .split(',')
+            .map((code) => code.trim())
+            .filter(Boolean),
+        }))
+      );
       setSourceInfo(result.meta?.source || null);
     } catch (error) {
       console.error('Error fetching internal referrals:', error);
@@ -264,6 +279,26 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
 
   const currentDoctorName = sourceInfo?.asal_nm_dokter || user?.name || user?.username || '-';
   const currentPoliName = sourceInfo?.asal_nm_poli || user?.kd_poli || '-';
+  const filteredDoctorOptions = useMemo(() => {
+    if (!formData.kd_poli) {
+      return doctorOptions;
+    }
+
+    return doctorOptions.filter((doctor) => (doctor.poli_codes || []).includes(formData.kd_poli));
+  }, [doctorOptions, formData.kd_poli]);
+  const selectedPoliLabel = poliOptions.find((item) => item.kd_poli === formData.kd_poli)?.nm_poli;
+  const selectedDoctorLabel = doctorOptions.find((item) => item.kd_dokter === formData.kd_dokter)?.nm_dokter;
+
+  useEffect(() => {
+    if (!formData.kd_poli || !formData.kd_dokter) {
+      return;
+    }
+
+    const stillAllowed = filteredDoctorOptions.some((doctor) => doctor.kd_dokter === formData.kd_dokter);
+    if (!stillAllowed) {
+      setFormData((prev) => ({ ...prev, kd_dokter: '' }));
+    }
+  }, [filteredDoctorOptions, formData.kd_dokter, formData.kd_poli]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -311,37 +346,117 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <Label htmlFor="kd_poli">Poli Tujuan</Label>
-                    <select
-                      id="kd_poli"
-                      value={formData.kd_poli}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, kd_poli: e.target.value }))}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                      disabled={saving}
-                    >
-                      <option value="">Pilih Poli Tujuan</option>
-                      {poliOptions.map((poli) => (
-                        <option key={poli.kd_poli} value={poli.kd_poli}>
-                          {poli.nm_poli}
-                        </option>
-                      ))}
-                    </select>
+                    <Popover open={poliOpen} onOpenChange={setPoliOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="kd_poli"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={poliOpen}
+                          className="w-full justify-between"
+                          disabled={saving}
+                        >
+                          <span className="truncate text-left">
+                            {selectedPoliLabel || 'Pilih Poli Tujuan'}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Cari poli..." />
+                          <CommandList className="max-h-72 overflow-y-auto overscroll-contain">
+                            <CommandEmpty>Poli tidak ditemukan.</CommandEmpty>
+                            <CommandGroup>
+                              {poliOptions.map((poli) => (
+                                <CommandItem
+                                  key={poli.kd_poli}
+                                  value={`${poli.kd_poli} ${poli.nm_poli}`}
+                                  onSelect={() => {
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      kd_poli: poli.kd_poli,
+                                      kd_dokter: prev.kd_poli === poli.kd_poli ? prev.kd_dokter : '',
+                                    }));
+                                    setPoliOpen(false);
+                                    setDoctorOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      formData.kd_poli === poli.kd_poli ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  <div className="flex flex-col">
+                                    <span>{poli.nm_poli}</span>
+                                    <span className="text-xs text-muted-foreground">{poli.kd_poli}</span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div>
                     <Label htmlFor="kd_dokter">Dokter Tujuan</Label>
-                    <select
-                      id="kd_dokter"
-                      value={formData.kd_dokter}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, kd_dokter: e.target.value }))}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                      disabled={saving}
-                    >
-                      <option value="">Pilih Dokter Tujuan</option>
-                      {doctorOptions.map((doctor) => (
-                        <option key={doctor.kd_dokter} value={doctor.kd_dokter}>
-                          {doctor.nm_dokter}
-                        </option>
-                      ))}
-                    </select>
+                    <Popover open={doctorOpen} onOpenChange={setDoctorOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="kd_dokter"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={doctorOpen}
+                          className="w-full justify-between"
+                          disabled={saving}
+                        >
+                          <span className="truncate text-left">
+                            {selectedDoctorLabel || 'Pilih Dokter Tujuan'}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Cari dokter..." />
+                          <CommandList className="max-h-72 overflow-y-auto overscroll-contain">
+                            <CommandEmpty>
+                              {formData.kd_poli ? 'Dokter tidak ditemukan pada poli ini.' : 'Dokter tidak ditemukan.'}
+                            </CommandEmpty>
+                            <CommandGroup>
+                              {filteredDoctorOptions.map((doctor) => (
+                                <CommandItem
+                                  key={doctor.kd_dokter}
+                                  value={`${doctor.kd_dokter} ${doctor.nm_dokter}`}
+                                  onSelect={() => {
+                                    setFormData((prev) => ({ ...prev, kd_dokter: doctor.kd_dokter }));
+                                    setDoctorOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      formData.kd_dokter === doctor.kd_dokter ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  <div className="flex flex-col">
+                                    <span>{doctor.nm_dokter}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {doctor.kd_dokter}
+                                      {Array.isArray(doctor.poli_codes) && doctor.poli_codes.length > 0
+                                        ? ` • ${doctor.poli_codes.join(', ')}`
+                                        : ''}
+                                    </span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="md:col-span-2">
                     <Label htmlFor="konsul">Konsul</Label>

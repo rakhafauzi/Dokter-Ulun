@@ -53,10 +53,17 @@ class InternalReferralService {
     try {
       const [rows] = await connection.execute(
         `
-          SELECT kd_dokter, nm_dokter
-          FROM dokter
+          SELECT
+            d.kd_dokter,
+            d.nm_dokter,
+            GROUP_CONCAT(DISTINCT rp.kd_poli ORDER BY rp.kd_poli SEPARATOR ',') AS poli_codes
+          FROM dokter d
+          LEFT JOIN reg_periksa rp
+            ON rp.kd_dokter = d.kd_dokter
+           AND COALESCE(rp.kd_poli, '') <> ''
           WHERE status = '1'
-          ORDER BY nm_dokter ASC
+          GROUP BY d.kd_dokter, d.nm_dokter
+          ORDER BY d.nm_dokter ASC
         `
       );
 
@@ -124,10 +131,17 @@ class InternalReferralService {
 
       const [doctorRows] = await connection.execute(
         `
-          SELECT kd_dokter, nm_dokter
-          FROM dokter
-          WHERE status = '1'
-          ORDER BY nm_dokter ASC
+          SELECT
+            d.kd_dokter,
+            d.nm_dokter,
+            GROUP_CONCAT(DISTINCT rp.kd_poli ORDER BY rp.kd_poli SEPARATOR ',') AS poli_codes
+          FROM dokter d
+          LEFT JOIN reg_periksa rp
+            ON rp.kd_dokter = d.kd_dokter
+           AND COALESCE(rp.kd_poli, '') <> ''
+          WHERE d.status = '1'
+          GROUP BY d.kd_dokter, d.nm_dokter
+          ORDER BY d.nm_dokter ASC
         `
       );
 
