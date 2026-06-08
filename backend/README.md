@@ -1,196 +1,262 @@
 # Dokter Ulun Backend API
 
-Backend server untuk aplikasi Dokter Ulun yang terhubung ke database MySQL.
+Backend Express untuk aplikasi Dokter Ulun yang terhubung ke MySQL dan layanan pendukung seperti Orthanc/PACS.
 
-## Fitur
+Panduan deploy end-to-end tersedia di [README-DEPLOY.md](file:///Users/basoro/Server/data/www/dokter-ulun/README-DEPLOY.md).
 
-- ✅ Autentikasi pengguna dengan bcrypt
-- ✅ Manajemen data rekam medis
-- ✅ Data pasien rawat jalan dan rawat inap
-- ✅ Pencarian pasien
-- ✅ Rate limiting dan security middleware
-- ✅ Error handling yang robust
-- ✅ Validasi input
-- ✅ Connection pooling untuk database
+## Fitur Utama
 
-## Struktur Proyek
+- autentikasi pengguna
+- dashboard data dokter
+- data pasien rawat jalan, rawat inap, IGD, hemodialisa
+- rekam medis dengan lazy load per tab
+- integrasi Orthanc/PACS untuk radiologi
+- berkas digital perawatan
+- ICD dan simulasi INA-CBG
 
-```
+## Struktur Singkat
+
+```text
 backend/
 ├── config/
-│   └── database.js          # Konfigurasi database MySQL
-├── middleware/
-│   ├── errorHandler.js      # Error handling middleware
-│   └── validation.js        # Input validation middleware
+│   └── database.js
 ├── routes/
-│   ├── auth.js             # Routes untuk autentikasi
-│   └── medical.js          # Routes untuk data medis
 ├── services/
-│   ├── authService.js      # Service untuk autentikasi
-│   └── medicalService.js   # Service untuk data medis
-├── .env                    # Environment variables
-├── index.js               # Main server file
-├── package.json           # Dependencies
-└── README.md             # Dokumentasi ini
+├── .env
+├── .env.development.example
+├── .env.production.example
+├── index.js
+├── package.json
+└── README.md
 ```
 
-## Instalasi
+## Konfigurasi Backend
 
-1. Install dependencies:
+Titik konfigurasi utama backend:
+
+- [`index.js`](file:///Users/basoro/Server/data/www/dokter-ulun/backend/index.js)
+  - membaca `.env`
+  - menentukan `PORT`
+  - mengatur CORS
+- [`config/database.js`](file:///Users/basoro/Server/data/www/dokter-ulun/backend/config/database.js)
+  - koneksi MySQL
+- [`services/getMedicalRecordService.js`](file:///Users/basoro/Server/data/www/dokter-ulun/backend/services/getMedicalRecordService.js)
+  - integrasi Orthanc/PACS
+- [`services/digitalFilesService.js`](file:///Users/basoro/Server/data/www/dokter-ulun/backend/services/digitalFilesService.js)
+  - URL berkas digital
+
+## Environment Variables
+
+Template env yang tersedia:
+
+- [`backend/.env.example`](file:///Users/basoro/Server/data/www/dokter-ulun/backend/.env.example)
+- [`backend/.env.development.example`](file:///Users/basoro/Server/data/www/dokter-ulun/backend/.env.development.example)
+- [`backend/.env.production.example`](file:///Users/basoro/Server/data/www/dokter-ulun/backend/.env.production.example)
+
+`backend/.env.example` disiapkan sebagai starter lokal cepat. Untuk server production, gunakan `backend/.env.production.example`.
+
+### Variabel yang Dipakai
+
+```env
+PORT=3000
+NODE_ENV=development
+FRONTEND_URL=http://localhost:8080
+
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=
+MYSQL_DATABASE=mlite
+
+ORTHANC_SERVER=http://127.0.0.1:8042
+ORTHANC_USERNAME=orthanc
+ORTHANC_PASSWORD=orthanc
+
+DIGITAL_FILES_BASE_URL=https://simrs.rshdbarabai.com/webapps/berkasrawat
+```
+
+Keterangan:
+
+- `PORT`
+  - port backend Express
+- `FRONTEND_URL`
+  - origin frontend yang diizinkan oleh CORS
+- `ORTHANC_*`
+  - konfigurasi akses ke server Orthanc
+- `DIGITAL_FILES_BASE_URL`
+  - base URL file digital yang dipakai modal `Berkas Digital`
+
+## Menjalankan Lokal
+
+1. Install dependency:
+
 ```bash
 cd backend
 npm install
 ```
 
-2. Setup environment variables di file `.env`:
-```env
-MYSQL_HOST=your_mysql_host
-MYSQL_USER=your_mysql_user
-MYSQL_PASSWORD=your_mysql_password
-MYSQL_DATABASE=your_mysql_database
-MYSQL_PORT=your_mysql_port
-FRONTEND_URL=http://localhost:8084
-NODE_ENV=development
-PORT=3000
+2. Siapkan env development:
+
+```bash
+cp .env.development.example .env
 ```
 
-3. Jalankan server:
-```bash
-# Development mode dengan auto-reload
-npm run dev
+3. Sesuaikan nilai database dan layanan pendukung di `.env`
 
-# Production mode
+4. Jalankan backend:
+
+```bash
+npm run dev
+```
+
+5. Backend aktif di:
+
+```text
+http://localhost:3000
+```
+
+## Menjalankan Production
+
+1. Siapkan env production:
+
+```bash
+cp .env.production.example .env
+```
+
+2. Jalankan backend:
+
+```bash
 npm start
 ```
 
-## API Endpoints
+3. Atau jalankan sebagai background dengan PM2:
 
-### Health Check
-- `GET /health` - Cek status server
+```bash
+pm2 start npm --name dokter-ulun-api -- start
+pm2 save
+```
 
-### Authentication
-- `POST /api/auth/login` - Login pengguna
-- `GET /api/auth/profile/:username` - Get user profile
-- `POST /api/auth/validate-poli` - Validasi akses poli
-- `POST /api/auth/logout` - Logout pengguna
+## Endpoint Penting
 
-### Medical Data
-- `POST /api/medical/medical-record` - Get rekam medis
-- `POST /api/medical/rawat-jalan-patients` - Get data pasien rawat jalan
-- `GET /api/medical/search-patients` - Pencarian pasien
-- `GET /api/medical/outpatient-visits/:no_rkm_medis` - Get kunjungan rawat jalan
-- `GET /api/medical/inpatient-visits/:no_rkm_medis` - Get kunjungan rawat inap
-- `GET /api/medical/health` - Health check medical service
+### Health
 
-## Contoh Penggunaan
+- `GET /health`
 
-### Login
-```javascript
-POST /api/auth/login
-Content-Type: application/json
+### Auth
 
-{
-  "username": "dokter001",
-  "password": "password123",
-  "remember": false
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/profile/:username`
+
+### Rekam Medis
+
+- `POST /api/get-medical-record`
+- `POST /api/get-medical-record-visit-details`
+- `POST /api/get-medical-record-examinations`
+
+### Pasien
+
+- `POST /api/rawat-jalan-patients`
+- `POST /api/rawat-inap-data`
+- `POST /api/igd-data`
+- `POST /api/hemodialisa-data`
+
+### Radiologi dan PACS
+
+- `GET /api/pacs/radiology-images`
+- `GET /api/pacs/preview/:instanceId`
+
+### Berkas Digital
+
+- `GET /api/digital-files/:no_rawat`
+
+## Integrasi Dengan Frontend
+
+Skema lokal yang direkomendasikan:
+
+- frontend Vite di `http://localhost:8080`
+- backend di `http://localhost:3000`
+- Vite proxy `/api` ke backend
+
+Skema production yang direkomendasikan:
+
+- frontend disajikan oleh Nginx
+- backend tetap berjalan di port internal, misalnya `3000`
+- Nginx melakukan proxy `/api` ke backend
+
+## Contoh Nginx
+
+```nginx
+location /api/ {
+    proxy_pass http://127.0.0.1:3000/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
-
-### Get Rekam Medis
-```javascript
-POST /api/medical/medical-record
-Content-Type: application/json
-
-{
-  "no_rkm_medis": "000001",
-  "no_rawat": "2024/01/01/000001"
-}
-```
-
-### Get Pasien Rawat Jalan
-```javascript
-POST /api/medical/rawat-jalan-patients
-Content-Type: application/json
-
-{
-  "kd_poli": "U0001",
-  "startDate": "2024-01-01",
-  "endDate": "2024-01-31",
-  "status": "all",
-  "statusBayar": "all",
-  "page": 1,
-  "itemsPerPage": 10
-}
-```
-
-### Pencarian Pasien
-```javascript
-GET /api/medical/search-patients?q=nama_pasien&limit=10
-```
-
-## Security Features
-
-- **Helmet.js**: Security headers
-- **CORS**: Cross-origin resource sharing
-- **Rate Limiting**: Pembatasan request per IP
-- **Input Sanitization**: Pembersihan input dari karakter berbahaya
-- **Password Hashing**: Menggunakan bcrypt untuk password
-- **Error Handling**: Error handling yang aman tanpa expose sensitive data
-
-## Database Schema
-
-Backend ini menggunakan tabel-tabel berikut dari database MySQL:
-
-- `mlite_users` - Data pengguna/dokter
-- `dokter` - Data dokter
-- `pasien` - Data pasien
-- `reg_periksa` - Data registrasi pemeriksaan
-- `rawat_jl_dr` - Data rawat jalan dokter
-- `periksa_lab` - Data pemeriksaan laboratorium
-- `ranap_inap` - Data rawat inap
-- `poliklinik` - Data poliklinik
-- `penjab` - Data penanggung jawab
-
-## Development
-
-### Menambah Endpoint Baru
-
-1. Buat service di folder `services/`
-2. Buat route di folder `routes/`
-3. Tambahkan validation jika diperlukan di `middleware/validation.js`
-4. Import route di `index.js`
-
-### Testing
-
-Untuk testing API, gunakan tools seperti:
-- Postman
-- Insomnia
-- curl
-- Thunder Client (VS Code extension)
 
 ## Troubleshooting
 
-### Database Connection Error
-- Pastikan MySQL server berjalan
-- Cek konfigurasi di file `.env`
-- Pastikan user memiliki akses ke database
+### Backend tidak bisa diakses
 
-### Rate Limiting
-- Jika terkena rate limit, tunggu 15 menit atau restart server
-- Sesuaikan konfigurasi rate limit di `index.js`
+Periksa:
 
-### CORS Error
-- Pastikan `FRONTEND_URL` di `.env` sesuai dengan URL frontend
-- Cek konfigurasi CORS di `index.js`
+- `PORT` di `.env`
+- proses backend benar-benar berjalan
+- port tidak dipakai proses lain
 
-## Kontribusi
+### CORS error
 
-1. Fork repository
-2. Buat branch feature (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push ke branch (`git push origin feature/AmazingFeature`)
-5. Buat Pull Request
+Periksa:
 
-## License
+- `FRONTEND_URL` di `.env`
+- domain frontend yang dipakai browser
 
-ISC License
+### PACS tidak tampil
+
+Periksa:
+
+- `ORTHANC_SERVER`
+- `ORTHANC_USERNAME`
+- `ORTHANC_PASSWORD`
+- akses jaringan dari backend ke server Orthanc
+
+### Berkas digital menampilkan base URL belum dikonfigurasi
+
+Periksa:
+
+- `DIGITAL_FILES_BASE_URL` di `.env`
+- backend sudah direstart setelah ubah `.env`
+- response `GET /api/digital-files/:no_rawat`
+
+### Query database gagal
+
+Periksa:
+
+- `MYSQL_HOST`
+- `MYSQL_PORT`
+- `MYSQL_USER`
+- `MYSQL_PASSWORD`
+- `MYSQL_DATABASE`
+
+## Debug Cepat
+
+Contoh cek health:
+
+```bash
+curl http://127.0.0.1:3000/health
+```
+
+Contoh cek digital files:
+
+```bash
+curl http://127.0.0.1:3000/api/digital-files/20260510000104
+```
+
+Contoh cek debug env berkas digital:
+
+```bash
+curl http://127.0.0.1:3000/api/debug/digital-files-env
+```
