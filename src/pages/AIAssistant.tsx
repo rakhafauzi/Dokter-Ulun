@@ -36,7 +36,6 @@ interface AssistantPayload {
     identifier?: string | null;
     identifierType?: string | null;
     careType?: 'all' | 'ralan' | 'ranap' | null;
-    inpatientTab?: 'rawat-bersama' | 'rawat-gabung' | null;
     inpatientStatus?: 'all' | 'masih-dirawat' | 'sudah-pulang' | 'pindah-kamar' | null;
     resumeStatus?: 'all' | 'belum_resume' | 'sudah_resume' | null;
     lastIntent?: string | null;
@@ -71,7 +70,6 @@ const EMPTY_CONTEXT: AssistantContext = {
   identifier: null,
   identifierType: null,
   careType: null,
-  inpatientTab: null,
   inpatientStatus: null,
   resumeStatus: null,
   lastIntent: null
@@ -92,8 +90,6 @@ const promptGroups = [
     description: 'Gunakan variasi waktu, status rawat inap, atau rentang tanggal.',
     prompts: [
       'Tampilkan data pasien saya rawat inap belum pulang',
-      'Tampilkan data pasien rawat bersama saya',
-      'Tampilkan data pasien rawat gabung saya',
       'Tampilkan data pasien rawat inap saya pindah kamar',
       'Tampilkan data pasien rawat inap saya yang belum resume',
       'Tampilkan data pasien rawat inap saya yang sudah resume',
@@ -210,8 +206,6 @@ const suggestionMatchesContext = (prompt: string, context: AssistantContext, las
 
   if (context.careType === 'ranap' && normalizedPrompt.includes('rawat inap')) return true;
   if (context.careType === 'ralan' && normalizedPrompt.includes('rawat jalan')) return true;
-  if (context.inpatientTab === 'rawat-bersama' && /rawat bersama|raber|konsul/.test(normalizedPrompt)) return true;
-  if (context.inpatientTab === 'rawat-gabung' && normalizedPrompt.includes('rawat gabung')) return true;
   if (context.inpatientStatus === 'masih-dirawat' && /belum pulang|masih dirawat/.test(normalizedPrompt)) return true;
   if (context.inpatientStatus === 'sudah-pulang' && normalizedPrompt.includes('sudah pulang')) return true;
   if (context.inpatientStatus === 'pindah-kamar' && normalizedPrompt.includes('pindah kamar')) return true;
@@ -283,7 +277,6 @@ const hasContextValue = (context?: Partial<AssistantContext> | null) =>
     context?.noRkmMedis ||
     context?.identifier ||
     context?.careType ||
-    context?.inpatientTab ||
     context?.inpatientStatus ||
     context?.resumeStatus ||
     context?.lastIntent
@@ -301,7 +294,6 @@ const mergeContexts = (...contexts: Array<Partial<AssistantContext> | null | und
       identifier: current?.identifier ?? merged.identifier,
       identifierType: current?.identifierType ?? merged.identifierType,
       careType: current?.careType ?? merged.careType,
-      inpatientTab: current?.inpatientTab ?? merged.inpatientTab,
       inpatientStatus: current?.inpatientStatus ?? merged.inpatientStatus,
       resumeStatus: current?.resumeStatus ?? merged.resumeStatus,
       lastIntent: current?.lastIntent ?? merged.lastIntent
@@ -339,7 +331,6 @@ const buildContextFromRow = (
     startDate: fallbackContext?.startDate || null,
     endDate: fallbackContext?.endDate || null,
     careType: fallbackContext?.careType || null,
-    inpatientTab: fallbackContext?.inpatientTab || null,
     inpatientStatus: fallbackContext?.inpatientStatus || null,
     resumeStatus: fallbackContext?.resumeStatus || null,
     lastIntent: fallbackIntent || fallbackContext?.lastIntent || null
