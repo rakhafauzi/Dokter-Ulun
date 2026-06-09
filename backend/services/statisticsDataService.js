@@ -1,6 +1,29 @@
 import pool from '../config/database.js';
 
 class StatisticsDataService {
+  static normalizeYear(year, startDate) {
+    const directYear = Number.parseInt(String(year || '').trim(), 10);
+    if (Number.isInteger(directYear) && directYear >= 2000 && directYear <= 2100) {
+      return directYear;
+    }
+
+    const startYear = Number.parseInt(String(startDate || '').slice(0, 4), 10);
+    if (Number.isInteger(startYear) && startYear >= 2000 && startYear <= 2100) {
+      return startYear;
+    }
+
+    return new Date().getFullYear();
+  }
+
+  static normalizeStatusFilters(filters) {
+    if (!Array.isArray(filters)) {
+      return [];
+    }
+
+    return filters
+      .map((filter) => String(filter || '').trim())
+      .filter(Boolean);
+  }
 
   /**
    * Get statistics data based on type
@@ -11,7 +34,7 @@ class StatisticsDataService {
    * @param {number} limit - Limit for results
    * @returns {Promise<Object>} - Statistics data
    */
-  static async getStatisticsData(statisticType, periodType, startDate, endDate, limit = 10) {
+  static async getStatisticsData(statisticType, periodType, startDate, endDate, limit = 10, options = {}) {
     try {
       let result = {};
 
@@ -30,6 +53,21 @@ class StatisticsDataService {
           break;
         case 'summary':
           result = await this.getSummaryStatistics(startDate, endDate);
+          break;
+        case 'rawat-jalan':
+          result = await this.getRawatJalanStatistics({
+            username: options.username,
+            year: options.year,
+            filters: options.filters,
+            startDate
+          });
+          break;
+        case 'rawat-inap':
+          result = await this.getRawatInapStatistics({
+            username: options.username,
+            year: options.year,
+            startDate
+          });
           break;
         default:
           throw new Error('Invalid statistic type');
@@ -295,6 +333,87 @@ class StatisticsDataService {
       paymentStatus: paymentResult || [],
       activeDoctors: activeDoctorsResult?.[0]?.active_doctors || 0,
       topDiagnoses: topDiagnosesResult || []
+    };
+  }
+
+  static async getRawatJalanStatistics({ username, year, filters, startDate }) {
+    const normalizedUsername = String(username || '').trim();
+    if (!normalizedUsername) {
+      throw new Error('Username is required for rawat jalan statistics');
+    }
+
+    const normalizedYear = this.normalizeYear(year, startDate);
+    const normalizedFilters = this.normalizeStatusFilters(filters);
+    const statusClause = normalizedFilters.length > 0
+      ? ` AND rp.stts IN (${normalizedFilters.map(() => '?').join(', ')})`
+      : '';
+
+    const sql = `
+      SELECT
+        MONTH(rp.tgl_registrasi) as month_number,
+        MONTHNAME(rp.tgl_registrasi) as month_name,
+        COUNT(DISTINCT rp.no_rawat) as total
+      FROM reg_periksa rp
+      WHERE rp.kd_dokter = ?
+        AND YEAR(rp.tgl_registrasi) = ?
+        ${statusClause}
+      GROUP BY MONTH(rp.tgl_registrasi), MONTHNAME(rp.tgl_registrasi)
+      ORDER BY MONTH(rp.tgl_registrasi)
+    `;
+
+    const params = [normalizedUsername, normalizedYear, ...normalizedFilters];
+    const [rows] = await pool.execute(sql, params);
+
+    return {
+      type: 'rawat-jalan',
+      year: normalizedYear,
+      username: normalizedUsername,
+      filters: normalizedFilters,
+      total: rows.reduce((sum, row) => sum + Number(row.total || 0), 0),
+      detail: rows.map((row) => ({
+        monthNumber: Number(row.month_number),
+        monthName: row.month_name,
+        total: Number(row.total || 0),
+        monthKey: `${normalizedYear}-${String(row.month_number).padStart(2, '0')}`
+      }))
+    };
+  }
+
+  static async getRawatInapStatistics({ username, year, startDate }) {
+    const normalizedUsername = String(username || '').trim();
+    if (!normalizedUsername) {
+      throw new Error('Username is required for rawat inap statistics');
+    }
+
+    const normalizedYear = this.normalizeYear(year, startDate);
+
+    const sql = `
+      SELECT
+        MONTH(ki.tgl_masuk) as month_number,
+        MONTHNAME(ki.tgl_masuk) as month_name,
+        COUNT(DISTINCT ki.no_rawat) as total
+      FROM kamar_inap ki
+      INNER JOIN dpjp_ranap dr ON ki.no_rawat = dr.no_rawat
+      WHERE dr.kd_dokter = ?
+        AND YEAR(ki.tgl_masuk) = ?
+        AND ki.stts_pulang != 'Pindah Kamar'
+      GROUP BY MONTH(ki.tgl_masuk), MONTHNAME(ki.tgl_masuk)
+      ORDER BY MONTH(ki.tgl_masuk)
+    `;
+
+    const [rows] = await pool.execute(sql, [normalizedUsername, normalizedYear]);
+
+    return {
+      type: 'rawat-inap',
+      year: normalizedYear,
+      username: normalizedUsername,
+      total: rows.reduce((sum, row) => sum + Number(row.total || 0), 0),
+      detail: rows.map((row) => ({
+        monthNumber: Number(row.month_number),
+        monthName: row.month_name,
+        total: Number(row.total || 0),
+        monthKey: `${normalizedYear}-${String(row.month_number).padStart(2, '0')}`
+      }))
     };
   }
 }

@@ -16,6 +16,7 @@ import Statistik from "./pages/Statistik";
 import Login from "./pages/Login";
 import MedicalRecord from "./pages/MedicalRecord";
 import ClinicalPathway from "./pages/ClinicalPathway";
+import StatisticsCare from "./pages/StatisticsCare";
 import Sidebar from "./components/Sidebar";
 
 // Helper function to format no_rawat
@@ -129,6 +130,8 @@ const AppContent = () => {
             <Route path="/tarif" element={<TarifINA />} />
             <Route path="/icd" element={<MasterICD />} />
             <Route path="/statistik" element={<Statistik />} />
+            <Route path="/statistik/rawat-jalan" element={<StatisticsCare mode="rawat-jalan" />} />
+            <Route path="/statistik/rawat-inap" element={<StatisticsCare mode="rawat-inap" />} />
             <Route path="/signature" element={<Index />} />
             <Route path="/srq" element={<Index />} />
             <Route path="/ebook" element={<Index />} />

@@ -29,8 +29,7 @@ interface SidebarProps {
   onLogout?: () => void;
 }
 
-// Define an interface for pasien submenu items that includes the optional 'exact' property
-interface PasienSubmenuItem {
+interface SubmenuItem {
   name: string;
   path: string;
   exact?: boolean;
@@ -39,6 +38,7 @@ interface PasienSubmenuItem {
 const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose, onLogout }) => {
   const location = useLocation();
   const [pasienOpen, setPasienOpen] = useState(true);
+  const [statistikOpen, setStatistikOpen] = useState(true);
   
   const [aboutOpen, setAboutOpen] = useState(false);
 
@@ -50,6 +50,10 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
   const isPasienActive = () => {
     return location.pathname.startsWith('/pasien');
   };
+
+  const isStatistikActive = () => {
+    return location.pathname.startsWith('/statistik');
+  };
   
   const menuItems = [
     { name: 'Dashboard', path: '/', icon: <BarChart2 className="h-5 w-5" /> },
@@ -57,21 +61,24 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
     { name: 'Booking Operasi', path: '/booking', icon: <CalendarClock className="h-5 w-5" /> },
     { name: 'Tarif INA-CBGs', path: '/tarif', icon: <DollarSign className="h-5 w-5" /> },
     { name: 'Kode Medis', path: '/icd', icon: <FileBarChart className="h-5 w-5" /> },
-    { name: 'Statistik', path: '/statistik', icon: <Activity className="h-5 w-5" /> },
     // { name: 'TTD Elektronik', path: '/signature', icon: <Pencil className="h-5 w-5" /> },
     // { name: 'SRQ', path: '/srq', icon: <HelpCircle className="h-5 w-5" /> },
     // { name: 'E-Book', path: '/ebook', icon: <Book className="h-5 w-5" /> },
     // { name: 'IGD', path: '/igd', icon: <AlarmClock className="h-5 w-5" /> },
   ];
 
-  // Update the type to use the defined interface with the 'exact' property
-  const pasienSubmenuItems: PasienSubmenuItem[] = [
-    // { name: 'Semua Pasien', path: '/pasien', exact: true },
+  const pasienSubmenuItems: SubmenuItem[] = [
     { name: 'Booking', path: '/pasien/booking' },
     { name: 'IGD', path: '/pasien/igd' },
     { name: 'Rawat Jalan', path: '/pasien/rawat-jalan' },
     { name: 'Rawat Inap', path: '/pasien/rawat-inap' },
     { name: 'Hemodialisa', path: '/pasien/hemodialisa' },
+  ];
+
+  const statistikSubmenuItems: SubmenuItem[] = [
+    { name: 'Statistik Pasien', path: '/statistik', exact: true },
+    { name: 'Statistik Rawat Jalan', path: '/statistik/rawat-jalan' },
+    { name: 'Statistik Rawat Inap', path: '/statistik/rawat-inap' },
   ];
 
   const handleLogout = () => {
@@ -188,6 +195,49 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
               {item.name}
             </Link>
           ))}
+
+          <div>
+            <Collapsible
+              open={statistikOpen}
+              onOpenChange={setStatistikOpen}
+              className="w-full"
+            >
+              <CollapsibleTrigger
+                className={`flex items-center justify-between w-full px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isStatistikActive()
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center">
+                  <span className={`mr-3 ${isStatistikActive() ? 'text-primary' : 'text-gray-500'}`}>
+                    <Activity className="h-5 w-5" />
+                  </span>
+                  Statistik
+                </div>
+                <span className="text-gray-500">
+                  {statistikOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="ml-8 mt-1 space-y-1">
+                {statistikSubmenuItems.map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      item.exact
+                        ? (location.pathname === item.path ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
+                        : (location.pathname.startsWith(item.path) ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
+                    }`}
+                    onClick={onClose}
+                  >
+                    {item.name}
+                  </Link>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+
         </nav>
       </div>
       

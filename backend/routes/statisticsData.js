@@ -18,7 +18,7 @@ router.use((req, res, next) => {
  * @access Public
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { statisticType, periodType, startDate, endDate, limit } = req.body;
+  const { statisticType, periodType, startDate, endDate, limit, username, year, filters } = req.body;
 
   // Validate required parameters
   if (!statisticType || !startDate || !endDate) {
@@ -29,11 +29,18 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 
   // Validate statistic type
-  const validTypes = ['overview', 'visits', 'diagnosis', 'doctors', 'summary'];
+  const validTypes = ['overview', 'visits', 'diagnosis', 'doctors', 'summary', 'rawat-jalan', 'rawat-inap'];
   if (!validTypes.includes(statisticType)) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid statisticType. Must be one of: overview, visits, diagnosis, doctors, summary'
+      message: 'Invalid statisticType. Must be one of: overview, visits, diagnosis, doctors, summary, rawat-jalan, rawat-inap'
+    });
+  }
+
+  if (['rawat-jalan', 'rawat-inap'].includes(statisticType) && !String(username || '').trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'username is required for rawat-jalan and rawat-inap statistics'
     });
   }
 
@@ -73,7 +80,12 @@ router.post('/', asyncHandler(async (req, res) => {
       periodType || 'monthly',
       startDate,
       endDate,
-      limit || 10
+      limit || 10,
+      {
+        username,
+        year,
+        filters
+      }
     );
 
     res.json(result);
