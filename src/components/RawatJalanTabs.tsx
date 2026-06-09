@@ -69,8 +69,15 @@ const RawatJalanTabs = () => {
   const initialToday = new Date();
   const initialFromDate = parseDateParam(searchParams.get('from'), initialToday);
   const initialToDate = parseDateParam(searchParams.get('to'), initialFromDate);
+  const normalizeTabParam = (value: string | null) => {
+    if (!value || value === 'hari-ini' || value === 'pagi' || value === 'sore') {
+      return 'pasien-poli';
+    }
+
+    return value;
+  };
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'hari-ini');
+  const [activeTab, setActiveTab] = useState(normalizeTabParam(searchParams.get('tab')));
   
   // Date range state - use current date without timezone conversion
   const [date, setDate] = useState<DateRange | undefined>({
@@ -318,17 +325,9 @@ const RawatJalanTabs = () => {
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange}>
       <TabsList className="mb-4">
-        <TabsTrigger value="hari-ini">
+        <TabsTrigger value="pasien-poli">
           <Clock className="mr-2 h-4 w-4" />
-          <span>Hari Ini</span>
-        </TabsTrigger>
-        <TabsTrigger value="pagi">
-          <Calendar className="mr-2 h-4 w-4" />
-          <span>Sesi Pagi</span>
-        </TabsTrigger>
-        <TabsTrigger value="sore">
-          <Calendar className="mr-2 h-4 w-4" />
-          <span>Sesi Sore</span>
+          <span>Pasien Poli</span>
         </TabsTrigger>
         <TabsTrigger value="rujukan_internal">
           <User className="mr-2 h-4 w-4" />
@@ -338,18 +337,21 @@ const RawatJalanTabs = () => {
           <List className="mr-2 h-4 w-4" />
           <span>Pasien Lanjutan</span>
         </TabsTrigger>
+        <TabsTrigger value="internal_lanjutan">
+          <List className="mr-2 h-4 w-4" />
+          <span>Internal Lanjutan</span>
+        </TabsTrigger>
       </TabsList>
       
-      {['hari-ini', 'pagi', 'sore', 'rujukan_internal', 'pasien_lanjutan'].map((tabValue) => (
+      {['pasien-poli', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'].map((tabValue) => (
         <TabsContent key={tabValue} value={tabValue} className="space-y-4">
           <Card>
             <CardHeader className="pb-2 w-full">
               <CardTitle>
-                {tabValue === 'hari-ini' && 'Daftar Pasien Hari Ini'}
-                {tabValue === 'pagi' && 'Daftar Pasien Pagi'}
-                {tabValue === 'sore' && 'Daftar Pasien Sore'}
+                {tabValue === 'pasien-poli' && 'Daftar Pasien Poli'}
                 {tabValue === 'rujukan_internal' && 'Rujukan Internal'}
                 {tabValue === 'pasien_lanjutan' && 'Pasien Lanjutan'}
+                {tabValue === 'internal_lanjutan' && 'Internal Lanjutan'}
               </CardTitle>
               <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
                 <div className="relative w-full sm:w-full">

@@ -10,6 +10,31 @@ class RawatJalanPatientsService {
     return dateStr;
   }
 
+  static normalizeTabFilter(tabFilter = '') {
+    const normalizedTab = String(tabFilter || '').trim();
+
+    if (!normalizedTab || normalizedTab === 'hari-ini' || normalizedTab === 'pagi' || normalizedTab === 'sore') {
+      return 'pasien-poli';
+    }
+
+    return normalizedTab;
+  }
+
+  static getLanjutanDates() {
+    const now = new Date();
+    const wibNow = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const dateMinus1 = new Date(wibNow.getTime() - (24 * 60 * 60 * 1000));
+    const dateMinus2 = new Date(wibNow.getTime() - (2 * 24 * 60 * 60 * 1000));
+    const formatDate = (date) => {
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    return [formatDate(dateMinus1), formatDate(dateMinus2)];
+  }
+
   static async getRawatJalanPatients({
     kd_poli,
     startDate,
@@ -51,21 +76,69 @@ class RawatJalanPatientsService {
       }
 
       const poliPlaceholders = poliCodes.map(() => '?').join(',');
+      const normalizedTabFilter = this.normalizeTabFilter(tabFilter);
+      const isInternalTab = normalizedTabFilter === 'rujukan_internal' || normalizedTabFilter === 'internal_lanjutan';
+      const isLanjutanTab = normalizedTabFilter === 'pasien_lanjutan' || normalizedTabFilter === 'internal_lanjutan';
+      const fromClause = isInternalTab
+        ? `
+          FROM reg_periksa rp
+          INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
+          INNER JOIN rujukan_internal_poli rip ON rp.no_rawat = rip.no_rawat
+          LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+          LEFT JOIN dokter d_target ON rip.kd_dokter = d_target.kd_dokter
+          LEFT JOIN poliklinik pol ON rp.kd_poli = pol.kd_poli
+          LEFT JOIN poliklinik pol_target ON rip.kd_poli = pol_target.kd_poli
+          LEFT JOIN penjab pj ON rp.kd_pj = pj.kd_pj
+        `
+        : `
+          FROM reg_periksa rp
+          INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
+          LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+          LEFT JOIN poliklinik pol ON rp.kd_poli = pol.kd_poli
+          LEFT JOIN penjab pj ON rp.kd_pj = pj.kd_pj
+        `;
+      const doctorCodeColumn = isInternalTab ? 'rip.kd_dokter' : 'rp.kd_dokter';
+      const doctorNameColumn = isInternalTab
+        ? `COALESCE(d_target.nm_dokter, 'Dokter Tidak Diketahui')`
+        : `COALESCE(d.nm_dokter, 'Dokter Tidak Diketahui')`;
+      const poliNameColumn = isInternalTab
+        ? `COALESCE(pol_target.nm_poli, 'Poliklinik Tidak Diketahui')`
+        : `COALESCE(pol.nm_poli, 'Poliklinik Tidak Diketahui')`;
 
       // Build WHERE conditions
       let conditions = [];
       let params = [];
+      let doctorConditions = [];
+      let doctorParams = [];
       
       console.log('Building query conditions...');
       
-      // Date range filtering (required)
-      conditions.push('rp.tgl_registrasi BETWEEN ? AND ?');
-      params.push(formattedStartDate, formattedEndDate);
-      console.log('Date range condition:', `tgl_registrasi BETWEEN '${formattedStartDate}' AND '${formattedEndDate}'`);
-      
-      conditions.push(`rp.kd_poli IN (${poliPlaceholders})`);
+      const poliCondition = isInternalTab
+        ? `rip.kd_poli IN (${poliPlaceholders})`
+        : `rp.kd_poli IN (${poliPlaceholders})`;
+
+      conditions.push(poliCondition);
       params.push(...poliCodes);
-      console.log('Poliklinik condition:', 'rp.kd_poli IN capability user', poliCodes);
+      doctorConditions.push(poliCondition);
+      doctorParams.push(...poliCodes);
+      console.log('Poliklinik condition:', poliCondition, poliCodes);
+
+      if (isLanjutanTab) {
+        const [dateMinus1, dateMinus2] = this.getLanjutanDates();
+        conditions.push('rp.tgl_registrasi IN (?, ?)');
+        conditions.push(`rp.stts = 'Lanjutan'`);
+        params.push(dateMinus1, dateMinus2);
+        doctorConditions.push('rp.tgl_registrasi IN (?, ?)');
+        doctorConditions.push(`rp.stts = 'Lanjutan'`);
+        doctorParams.push(dateMinus1, dateMinus2);
+        console.log('Lanjutan date condition:', [dateMinus1, dateMinus2]);
+      } else {
+        conditions.push('rp.tgl_registrasi BETWEEN ? AND ?');
+        params.push(formattedStartDate, formattedEndDate);
+        doctorConditions.push('rp.tgl_registrasi BETWEEN ? AND ?');
+        doctorParams.push(formattedStartDate, formattedEndDate);
+        console.log('Date range condition:', `tgl_registrasi BETWEEN '${formattedStartDate}' AND '${formattedEndDate}'`);
+      }
 
       // Default doctor filter follows the logged-in user, unless "all" is explicitly requested.
       const normalizedDoctorFilter = String(kd_dokter || '').trim();
@@ -74,17 +147,19 @@ class RawatJalanPatientsService {
         : (normalizedDoctorFilter || username);
 
       if (effectiveDoctorFilter !== 'all') {
-        conditions.push('rp.kd_dokter = ?');
+        conditions.push(`${doctorCodeColumn} = ?`);
         params.push(effectiveDoctorFilter);
         console.log('Doctor filter applied:', effectiveDoctorFilter);
       } else {
         console.log('Doctor filter: showing all doctors in allowed poli');
       }
       
-      // Status filtering - only add condition if not "all"
-      if (status && status.trim() && status !== 'all') {
+      // Status filtering - PHP native lanjutan tabs are fixed to 'Lanjutan'
+      if (!isLanjutanTab && status && status.trim() && status !== 'all') {
         conditions.push('rp.stts = ?');
         params.push(status);
+        doctorConditions.push('rp.stts = ?');
+        doctorParams.push(status);
         console.log('Status filter applied:', status);
       } else {
         console.log('Status filter: showing all statuses (status value:', status, ')');
@@ -94,47 +169,28 @@ class RawatJalanPatientsService {
       if (statusBayar && statusBayar.trim() && statusBayar !== 'all') {
         conditions.push('rp.status_bayar = ?');
         params.push(statusBayar);
+        doctorConditions.push('rp.status_bayar = ?');
+        doctorParams.push(statusBayar);
         console.log('Payment status filter applied:', statusBayar);
       } else {
         console.log('Payment status filter: showing all payment statuses (statusBayar value:', statusBayar, ')');
       }
 
       // Tab-specific filtering
-      if (tabFilter) {
-        switch(tabFilter) {
-          case 'pagi':
-            conditions.push('LOWER(pol.nm_poli) LIKE ?');
-            params.push('%pagi%');
-            console.log('Tab filter applied: Pagi');
-            break;
-          case 'sore':
-            conditions.push('LOWER(pol.nm_poli) LIKE ?');
-            params.push('%sore%');
-            console.log('Tab filter applied: Sore');
-            break;
-          case 'rujukan_internal':
-            conditions.push('EXISTS (SELECT 1 FROM rujukan_internal_poli rip WHERE rip.no_rawat = rp.no_rawat)');
-            console.log('Tab filter applied: Rujukan Internal');
-            break;
-          case 'pasien_lanjutan':
-            // Yesterday's patients with status 'Belum' in WIB timezone
-            const now = new Date();
-            const wibNow = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-            const yesterday = new Date(wibNow.getTime() - (24 * 60 * 60 * 1000));
-            const year = yesterday.getUTCFullYear();
-            const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
-            const day = String(yesterday.getUTCDate()).padStart(2, '0');
-            const formattedYesterday = `${year}-${month}-${day}`;
-            conditions.push('rp.tgl_registrasi = ? AND rp.stts = ?');
-            params.push(formattedYesterday, 'Belum');
-            console.log('Tab filter applied: Pasien Lanjutan for date:', formattedYesterday);
-            break;
-          case 'hari_ini':
-          default:
-            // No additional filter for "Hari Ini" - shows all data within date range
-            console.log('Tab filter applied: Hari Ini (default)');
-            break;
-        }
+      switch(normalizedTabFilter) {
+        case 'rujukan_internal':
+          console.log('Tab filter applied: Rujukan Internal');
+          break;
+        case 'pasien_lanjutan':
+          console.log('Tab filter applied: Pasien Lanjutan');
+          break;
+        case 'internal_lanjutan':
+          console.log('Tab filter applied: Internal Lanjutan');
+          break;
+        case 'pasien-poli':
+        default:
+          console.log('Tab filter applied: Pasien Poli (default)');
+          break;
       }
 
       // Pagination parameters
@@ -146,29 +202,16 @@ class RawatJalanPatientsService {
       // Count query
       const countSql = `
         SELECT COUNT(*) as total
-        FROM reg_periksa rp
-        INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
-        LEFT JOIN poliklinik pol ON rp.kd_poli = pol.kd_poli
-        LEFT JOIN penjab pj ON rp.kd_pj = pj.kd_pj
+        ${fromClause}
         WHERE ${conditions.join(' AND ')}
       `;
 
       const doctorSql = `
         SELECT DISTINCT
-          rp.kd_dokter,
-          COALESCE(d.nm_dokter, 'Dokter Tidak Diketahui') as nm_dokter
-        FROM reg_periksa rp
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
-        LEFT JOIN poliklinik pol ON rp.kd_poli = pol.kd_poli
-        WHERE rp.tgl_registrasi BETWEEN ? AND ?
-          AND rp.kd_poli IN (${poliPlaceholders})
-          ${status && status.trim() && status !== 'all' ? 'AND rp.stts = ?' : ''}
-          ${statusBayar && statusBayar.trim() && statusBayar !== 'all' ? 'AND rp.status_bayar = ?' : ''}
-          ${tabFilter === 'pagi' ? 'AND LOWER(pol.nm_poli) LIKE ?' : ''}
-          ${tabFilter === 'sore' ? 'AND LOWER(pol.nm_poli) LIKE ?' : ''}
-          ${tabFilter === 'rujukan_internal' ? 'AND EXISTS (SELECT 1 FROM rujukan_internal_poli rip WHERE rip.no_rawat = rp.no_rawat)' : ''}
-          ${tabFilter === 'pasien_lanjutan' ? 'AND rp.tgl_registrasi = ? AND rp.stts = ?' : ''}
+          ${doctorCodeColumn} as kd_dokter,
+          ${doctorNameColumn} as nm_dokter
+        ${fromClause}
+        WHERE ${doctorConditions.join(' AND ')}
         ORDER BY nm_dokter ASC
       `;
 
@@ -188,14 +231,10 @@ class RawatJalanPatientsService {
           p.alamat,
           p.jk,
           p.tgl_lahir,
-          COALESCE(d.nm_dokter, 'Dokter Tidak Diketahui') as nm_dokter,
-          COALESCE(pol.nm_poli, 'Poliklinik Tidak Diketahui') as nm_poli,
+          ${doctorNameColumn} as nm_dokter,
+          ${poliNameColumn} as nm_poli,
           COALESCE(pj.png_jawab, 'Umum') as png_jawab
-        FROM reg_periksa rp
-        INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
-        LEFT JOIN poliklinik pol ON rp.kd_poli = pol.kd_poli
-        LEFT JOIN penjab pj ON rp.kd_pj = pj.kd_pj
+        ${fromClause}
         WHERE ${conditions.join(' AND ')}
         ORDER BY rp.no_reg ASC
         ${limitClause}
@@ -207,30 +246,6 @@ class RawatJalanPatientsService {
       // Execute count query
       const [countResult] = await db.execute(countSql, params);
       const total = countResult[0]?.total || 0;
-
-      const doctorParams = [formattedStartDate, formattedEndDate, ...poliCodes];
-      if (status && status.trim() && status !== 'all') {
-        doctorParams.push(status);
-      }
-      if (statusBayar && statusBayar.trim() && statusBayar !== 'all') {
-        doctorParams.push(statusBayar);
-      }
-      if (tabFilter === 'pagi') {
-        doctorParams.push('%pagi%');
-      }
-      if (tabFilter === 'sore') {
-        doctorParams.push('%sore%');
-      }
-      if (tabFilter === 'pasien_lanjutan') {
-        const now = new Date();
-        const wibNow = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-        const yesterday = new Date(wibNow.getTime() - (24 * 60 * 60 * 1000));
-        const year = yesterday.getUTCFullYear();
-        const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(yesterday.getUTCDate()).padStart(2, '0');
-        const formattedYesterday = `${year}-${month}-${day}`;
-        doctorParams.push(formattedYesterday, 'Belum');
-      }
 
       const [doctorResult] = await db.execute(doctorSql, doctorParams);
       
