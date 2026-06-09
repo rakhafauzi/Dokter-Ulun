@@ -73,6 +73,7 @@ ORTHANC_USERNAME=orthanc
 ORTHANC_PASSWORD=orthanc
 
 DIGITAL_FILES_BASE_URL=https://simrs.rshdbarabai.com/webapps/berkasrawat
+DOCTOR_ACCESS_ALIASES={"DR00025":["D0000045","D0000226","D0000275"]}
 ```
 
 Keterangan:
@@ -85,6 +86,23 @@ Keterangan:
   - konfigurasi akses ke server Orthanc
 - `DIGITAL_FILES_BASE_URL`
   - base URL file digital yang dipakai modal `Berkas Digital`
+- `DOCTOR_ACCESS_ALIASES`
+  - mapping alias dokter satu arah untuk fitur yang membutuhkan penyamaan akses data ranap
+  - format JSON object dengan pola `"KODE_DOKTER_UTAMA": ["KODE_ALIAS_1", "KODE_ALIAS_2"]`
+  - hanya key yang mewarisi akses ke array, tidak berlaku sebaliknya
+
+Contoh:
+
+```env
+DOCTOR_ACCESS_ALIASES={"D0000040":["DR00016"],"DR00025":["D0000045","D0000226","D0000275"]}
+```
+
+Perilaku contoh di atas:
+
+- `DR00025` dapat mengakses data milik `DR00025`, `D0000045`, `D0000226`, dan `D0000275`
+- `D0000045` hanya dapat mengakses data miliknya sendiri
+- `D0000226` hanya dapat mengakses data miliknya sendiri
+- `D0000275` hanya dapat mengakses data miliknya sendiri
 
 ## Menjalankan Lokal
 

@@ -1,9 +1,24 @@
 import { executeQuery } from '../config/database.js';
+import { getAccessibleDoctorCodesByPhpNative } from './doctorAccessMapping.js';
 
 class ResumePasienDataService {
   enumCaraKeluar = ['Atas Izin Dokter', 'Pindah RS', 'Pulang Atas Permintaan Sendiri', 'Lainnya'];
   enumKeadaan = ['Membaik', 'Sembuh', 'Keadaan Khusus', 'Meninggal'];
   enumDilanjutkan = ['Kembali Ke RS', 'RS Lain', 'Dokter Luar', 'Puskesmes', 'Lainnya'];
+
+  buildInClausePlaceholders(values = []) {
+    return values.map(() => '?').join(', ');
+  }
+
+  shouldUseAdmissionDateForDischargeFilter(accessibleDoctorCodes = []) {
+    return accessibleDoctorCodes.includes('DR00016');
+  }
+
+  getDischargeDateFilterColumn(accessibleDoctorCodes = []) {
+    return this.shouldUseAdmissionDateForDischargeFilter(accessibleDoctorCodes)
+      ? 'ki.tgl_masuk'
+      : 'ki.tgl_keluar';
+  }
 
   applyStatusRawatFilter(whereConditions, params, statusPulang) {
     const normalizedStatus = String(statusPulang || 'all').trim();
@@ -162,16 +177,19 @@ class ResumePasienDataService {
       let whereConditions = ['ki.no_rawat IS NOT NULL'];
       let params = [];
       const normalizedUsername = String(username || '').trim();
+      const accessibleDoctorCodes = getAccessibleDoctorCodesByPhpNative(normalizedUsername);
       const normalizedResumeStatus = String(resumeStatus || 'all').trim();
 
-      if (normalizedUsername) {
+      if (accessibleDoctorCodes.length > 0) {
+        const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
         whereConditions.push(`EXISTS (
           SELECT 1
           FROM dpjp_ranap dr_user
           WHERE dr_user.no_rawat = ki.no_rawat
-            AND dr_user.kd_dokter = ?
+            AND dr_user.kd_dokter IN (${doctorPlaceholders})
+            AND COALESCE(dr_user.jenis_dpjp, 'Utama') IN ('Utama', 'PPDS', 'Internship')
         )`);
-        params.push(normalizedUsername);
+        params.push(...accessibleDoctorCodes);
       }
 
       // Search filter
@@ -191,16 +209,24 @@ class ResumePasienDataService {
       // Status rawat filter
       this.applyStatusRawatFilter(whereConditions, params, statusPulang);
 
-      // Date range filter - using tgl_keluar from kamar_inap
+      // Date range filter follows PHP native: use tgl_masuk for DR00016 scope, otherwise tgl_keluar.
       if (startDate && endDate) {
-        whereConditions.push('DATE(ki.tgl_keluar) BETWEEN ? AND ?');
+        const dateColumn = String(statusPulang || '').trim() === 'sudah-pulang'
+          ? this.getDischargeDateFilterColumn(accessibleDoctorCodes)
+          : 'ki.tgl_masuk';
+
+        whereConditions.push(`DATE(${dateColumn}) BETWEEN ? AND ?`);
         params.push(startDate, endDate);
       }
 
       if (normalizedResumeStatus === 'sudah_resume') {
         whereConditions.push('rpr.no_rawat IS NOT NULL');
+        whereConditions.push('rpr.ket_keluar IS NULL');
+        whereConditions.push('rpr.ket_keadaan LIKE ?');
+        params.push(`%${normalizedUsername}%`);
       } else if (normalizedResumeStatus === 'belum_resume') {
-        whereConditions.push('rpr.no_rawat IS NULL');
+        whereConditions.push('rpr.ket_keadaan NOT LIKE ?');
+        params.push(`%${normalizedUsername}%`);
       }
 
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';

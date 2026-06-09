@@ -1065,6 +1065,7 @@ const RawatInapTabs = () => {
     tab: RawatInapListTab;
     startDate: string;
     endDate: string;
+    rawatBersamaResumeStatus?: string;
     includeTabCounts?: boolean;
     countsOnly?: boolean;
   };
@@ -1073,8 +1074,12 @@ const RawatInapTabs = () => {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<RawatInapTab>(initialRawatInapTab);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || "");
-  const [statusPulang, setStatusPulang] = useState(searchParams.get('statusPulang') || "masih-dirawat");
-  const [resumeStatus, setResumeStatus] = useState(searchParams.get('resumeStatus') || "all");
+  const [statusPulangRawatInap, setStatusPulangRawatInap] = useState(searchParams.get('statusPulangRawatInap') || "masih-dirawat");
+  const [statusPulangResume, setStatusPulangResume] = useState(searchParams.get('statusPulangResume') || "sudah-pulang");
+  const [resumeStatus, setResumeStatus] = useState(searchParams.get('resumeStatus') || "belum_resume");
+  const [rawatBersamaResumeStatus, setRawatBersamaResumeStatus] = useState(
+    searchParams.get('rawatBersamaResumeStatus') || "belum_ada_resume"
+  );
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: parseDateParam(searchParams.get('from'), defaultRawatInapFrom),
     to: parseDateParam(searchParams.get('to'), defaultRawatInapTo)
@@ -1091,11 +1096,12 @@ const RawatInapTabs = () => {
     page: currentPage.toString(),
     itemsPerPage: itemsPerPage.toString(),
     search: searchQuery,
-    statusPulang: statusPulang,
+    statusPulang: statusPulangRawatInap,
     username: user?.username || '',
     tab: tabValue,
     startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
     endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
+    rawatBersamaResumeStatus,
     ...overrides
   });
 
@@ -1103,7 +1109,7 @@ const RawatInapTabs = () => {
     page: currentPage.toString(),
     itemsPerPage: itemsPerPage.toString(),
     search: searchQuery,
-    statusPulang: statusPulang,
+    statusPulang: statusPulangResume,
     username: user?.username || '',
     resumeStatus,
     startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
@@ -1111,14 +1117,30 @@ const RawatInapTabs = () => {
     ...overrides
   });
 
+  const getStatusPulangByTab = (tab: string) => (
+    tab === 'resume-pasien' ? statusPulangResume : statusPulangRawatInap
+  );
+
+  const setStatusPulangByTab = (tab: string, value: string) => {
+    if (tab === 'resume-pasien') {
+      setStatusPulangResume(value);
+      return;
+    }
+
+    setStatusPulangRawatInap(value);
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
 
     params.set('tab', activeTab);
     params.set('page', String(currentPage));
     params.set('itemsPerPage', String(itemsPerPage));
-    params.set('statusPulang', statusPulang);
+    params.set('statusPulangRawatInap', statusPulangRawatInap);
+    params.set('statusPulangResume', statusPulangResume);
     params.set('resumeStatus', resumeStatus);
+    params.set('rawatBersamaResumeStatus', rawatBersamaResumeStatus);
+    params.delete('statusPulang');
 
     if (dateRange?.from) {
       params.set('from', format(dateRange.from, 'yyyy-MM-dd'));
@@ -1145,8 +1167,10 @@ const RawatInapTabs = () => {
     activeTab,
     currentPage,
     itemsPerPage,
-    statusPulang,
+    statusPulangRawatInap,
+    statusPulangResume,
     resumeStatus,
+    rawatBersamaResumeStatus,
     searchQuery,
     dateRange?.from,
     dateRange?.to,
@@ -1343,8 +1367,9 @@ const RawatInapTabs = () => {
 
   const handleClearFilters = (tab: string) => {
     setSearchQuery("");
-    setStatusPulang("masih-dirawat");
-    setResumeStatus("all");
+    setStatusPulangByTab(tab, tab === 'resume-pasien' ? "sudah-pulang" : "masih-dirawat");
+    setResumeStatus("belum_resume");
+    setRawatBersamaResumeStatus("belum_ada_resume");
     setDateRange({
       from: defaultRawatInapFrom,
       to: defaultRawatInapTo
@@ -1464,7 +1489,7 @@ const RawatInapTabs = () => {
           </PopoverContent>
         </Popover>
 
-        <Select value={statusPulang} onValueChange={setStatusPulang}>
+        <Select value={getStatusPulangByTab(tab)} onValueChange={(value) => setStatusPulangByTab(tab, value)}>
           <SelectTrigger className="w-full sm:w-auto min-w-[160px]">
             <SelectValue placeholder="Status Rawat" />
           </SelectTrigger>
@@ -1485,6 +1510,20 @@ const RawatInapTabs = () => {
               <SelectItem value="all">Semua Resume</SelectItem>
               <SelectItem value="belum_resume">Belum Resume</SelectItem>
               <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : null}
+
+        {tab === 'rawat-bersama' && getStatusPulangByTab(tab) === 'sudah-pulang' ? (
+          <Select value={rawatBersamaResumeStatus} onValueChange={setRawatBersamaResumeStatus}>
+            <SelectTrigger className="w-full sm:w-auto min-w-[210px]">
+              <SelectValue placeholder="Mode Resume Bersama" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="belum_ada_resume">Belum Ada Resume</SelectItem>
+              <SelectItem value="belum_resume_dokter">Belum Resume Dokter</SelectItem>
+              <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
+              <SelectItem value="all">Semua Resume</SelectItem>
             </SelectContent>
           </Select>
         ) : null}
