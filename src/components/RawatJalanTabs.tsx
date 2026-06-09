@@ -9,6 +9,7 @@ import {
   Search, 
   Calendar, 
   User, 
+  AlarmClock,
   Clock, 
   List, 
   Filter,
@@ -63,11 +64,13 @@ const rawatJalanColumns = [
   { accessor: 'paymentStatus', header: 'Status Bayar' },
 ];
 
-const rawatJalanTabValues = ['pasien-poli', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'] as const;
+const rawatJalanTabValues = ['hari-ini', 'pagi', 'sore', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'] as const;
 type RawatJalanTab = typeof rawatJalanTabValues[number];
 
 const emptyTabCounts: Record<RawatJalanTab, number> = {
-  'pasien-poli': 0,
+  'hari-ini': 0,
+  pagi: 0,
+  sore: 0,
   rujukan_internal: 0,
   pasien_lanjutan: 0,
   internal_lanjutan: 0
@@ -80,11 +83,11 @@ const RawatJalanTabs = () => {
   const initialFromDate = parseDateParam(searchParams.get('from'), initialToday);
   const initialToDate = parseDateParam(searchParams.get('to'), initialFromDate);
   const normalizeTabParam = (value: string | null): RawatJalanTab => {
-    if (!value || value === 'hari-ini' || value === 'pagi' || value === 'sore') {
-      return 'pasien-poli';
+    if (!value || value === 'pasien-poli') {
+      return 'hari-ini';
     }
 
-    return rawatJalanTabValues.includes(value as RawatJalanTab) ? (value as RawatJalanTab) : 'pasien-poli';
+    return rawatJalanTabValues.includes(value as RawatJalanTab) ? (value as RawatJalanTab) : 'hari-ini';
   };
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [activeTab, setActiveTab] = useState(normalizeTabParam(searchParams.get('tab')));
@@ -317,7 +320,7 @@ const RawatJalanTabs = () => {
   };
 
   const handleTabChange = (newTab: string) => {
-    setActiveTab(newTab);
+    setActiveTab(normalizeTabParam(newTab));
     setCurrentPage(1);
   };
   
@@ -388,9 +391,17 @@ const RawatJalanTabs = () => {
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange}>
       <TabsList className="mb-4">
-        <TabsTrigger value="pasien-poli">
+        <TabsTrigger value="hari-ini">
           <Clock className="mr-2 h-4 w-4" />
-          <span>Pasien Poli ({tabCounts['pasien-poli']})</span>
+          <span>Hari Ini ({tabCounts['hari-ini']})</span>
+        </TabsTrigger>
+        <TabsTrigger value="pagi">
+          <AlarmClock className="mr-2 h-4 w-4" />
+          <span>Sesi Pagi ({tabCounts.pagi})</span>
+        </TabsTrigger>
+        <TabsTrigger value="sore">
+          <Clock className="mr-2 h-4 w-4" />
+          <span>Sesi Sore ({tabCounts.sore})</span>
         </TabsTrigger>
         <TabsTrigger value="rujukan_internal">
           <User className="mr-2 h-4 w-4" />
@@ -411,7 +422,9 @@ const RawatJalanTabs = () => {
           <Card>
             <CardHeader className="pb-2 w-full">
               <CardTitle>
-                {tabValue === 'pasien-poli' && 'Daftar Pasien Poli'}
+                {tabValue === 'hari-ini' && 'Daftar Pasien Hari Ini'}
+                {tabValue === 'pagi' && 'Daftar Pasien Sesi Pagi'}
+                {tabValue === 'sore' && 'Daftar Pasien Sesi Sore'}
                 {tabValue === 'rujukan_internal' && 'Rujukan Internal'}
                 {tabValue === 'pasien_lanjutan' && 'Pasien Lanjutan'}
                 {tabValue === 'internal_lanjutan' && 'Internal Lanjutan'}

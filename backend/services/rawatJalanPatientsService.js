@@ -13,11 +13,46 @@ class RawatJalanPatientsService {
   static normalizeTabFilter(tabFilter = '') {
     const normalizedTab = String(tabFilter || '').trim();
 
-    if (!normalizedTab || normalizedTab === 'hari-ini' || normalizedTab === 'pagi' || normalizedTab === 'sore') {
-      return 'pasien-poli';
+    if (!normalizedTab || normalizedTab === 'pasien-poli') {
+      return 'hari-ini';
     }
 
     return normalizedTab;
+  }
+
+  static async getSessionPoliGroups(poliCodes = []) {
+    if (!Array.isArray(poliCodes) || poliCodes.length === 0) {
+      return {
+        hariIni: [],
+        pagi: [],
+        sore: []
+      };
+    }
+
+    const placeholders = poliCodes.map(() => '?').join(',');
+    const [rows] = await db.execute(
+      `
+        SELECT kd_poli, nm_poli
+        FROM poliklinik
+        WHERE kd_poli IN (${placeholders})
+      `,
+      poliCodes
+    );
+
+    const soreCodes = new Set(
+      (rows || [])
+        .filter((row) => String(row.nm_poli || '').toLowerCase().includes('sore'))
+        .map((row) => row.kd_poli)
+    );
+
+    const pagiCodes = poliCodes.filter((code) => !soreCodes.has(code));
+    const sorePoliCodes = poliCodes.filter((code) => soreCodes.has(code));
+
+    return {
+      hariIni: poliCodes,
+      pagi: pagiCodes,
+      sore: sorePoliCodes
+    };
   }
 
   static getLanjutanDates() {
@@ -75,8 +110,34 @@ class RawatJalanPatientsService {
         throw new Error('Minimal satu kd_poli wajib dikirim');
       }
 
-      const poliPlaceholders = poliCodes.map(() => '?').join(',');
       const normalizedTabFilter = this.normalizeTabFilter(tabFilter);
+      const sessionPoliGroups = await this.getSessionPoliGroups(poliCodes);
+      const selectedPoliCodes = normalizedTabFilter === 'pagi'
+        ? sessionPoliGroups.pagi
+        : normalizedTabFilter === 'sore'
+          ? sessionPoliGroups.sore
+          : sessionPoliGroups.hariIni;
+      const effectivePoliCodes = selectedPoliCodes.length > 0 || !['pagi', 'sore'].includes(normalizedTabFilter)
+        ? selectedPoliCodes
+        : [];
+
+      if (['pagi', 'sore'].includes(normalizedTabFilter) && effectivePoliCodes.length === 0) {
+        return {
+          success: true,
+          data: [],
+          doctors: [],
+          total: 0,
+          limit: parseInt(itemsPerPage || '10', 10),
+          offset: 0,
+          page: parseInt(page || '1', 10),
+          totalPages: 0
+        };
+      }
+
+      const filteredPoliCodes = effectivePoliCodes.length > 0
+        ? effectivePoliCodes
+        : poliCodes;
+      const poliPlaceholders = filteredPoliCodes.map(() => '?').join(',');
       const isInternalTab = normalizedTabFilter === 'rujukan_internal' || normalizedTabFilter === 'internal_lanjutan';
       const isLanjutanTab = normalizedTabFilter === 'pasien_lanjutan' || normalizedTabFilter === 'internal_lanjutan';
       const fromClause = isInternalTab
@@ -118,10 +179,10 @@ class RawatJalanPatientsService {
         : `rp.kd_poli IN (${poliPlaceholders})`;
 
       conditions.push(poliCondition);
-      params.push(...poliCodes);
+      params.push(...filteredPoliCodes);
       doctorConditions.push(poliCondition);
-      doctorParams.push(...poliCodes);
-      console.log('Poliklinik condition:', poliCondition, poliCodes);
+      doctorParams.push(...filteredPoliCodes);
+      console.log('Poliklinik condition:', poliCondition, filteredPoliCodes);
 
       if (isLanjutanTab) {
         const [dateMinus1, dateMinus2] = this.getLanjutanDates();
@@ -187,9 +248,15 @@ class RawatJalanPatientsService {
         case 'internal_lanjutan':
           console.log('Tab filter applied: Internal Lanjutan');
           break;
-        case 'pasien-poli':
+        case 'pagi':
+          console.log('Tab filter applied: Sesi Pagi');
+          break;
+        case 'sore':
+          console.log('Tab filter applied: Sesi Sore');
+          break;
+        case 'hari-ini':
         default:
-          console.log('Tab filter applied: Pasien Poli (default)');
+          console.log('Tab filter applied: Hari Ini (default)');
           break;
       }
 
@@ -281,7 +348,7 @@ class RawatJalanPatientsService {
           FROM reg_periksa 
           WHERE kd_poli IN (${poliPlaceholders})
         `;
-        const [checkResult] = await db.execute(checkQuery, poliCodes);
+        const [checkResult] = await db.execute(checkQuery, filteredPoliCodes);
         console.log('Data check query result:', checkResult);
         
         // Check if dates exist in the range
@@ -291,7 +358,7 @@ class RawatJalanPatientsService {
           WHERE tgl_registrasi BETWEEN ? AND ?
           AND kd_poli IN (${poliPlaceholders})
         `;
-        const [dateCheckResult] = await db.execute(dateCheckQuery, [formattedStartDate, formattedEndDate, ...poliCodes]);
+        const [dateCheckResult] = await db.execute(dateCheckQuery, [formattedStartDate, formattedEndDate, ...filteredPoliCodes]);
         console.log('Date range check result:', dateCheckResult);
       }
 
@@ -333,7 +400,7 @@ class RawatJalanPatientsService {
         dateRange: `${formattedStartDate} to ${formattedEndDate}`,
         requestedBy: username,
         selectedDoctor: effectiveDoctorFilter,
-        poliklinik: kd_poli,
+        poliklinik: filteredPoliCodes.join(','),
         status: status === 'all' ? 'ALL' : status,
         statusBayar: statusBayar === 'all' ? 'ALL' : statusBayar,
         tabFilter
