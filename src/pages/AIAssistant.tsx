@@ -37,7 +37,6 @@ interface AssistantPayload {
     identifierType?: string | null;
     careType?: 'all' | 'ralan' | 'ranap' | null;
     inpatientStatus?: 'all' | 'masih-dirawat' | 'sudah-pulang' | 'pindah-kamar' | null;
-    resumeStatus?: 'all' | 'belum_resume' | 'sudah_resume' | null;
     lastIntent?: string | null;
   };
 }
@@ -71,7 +70,6 @@ const EMPTY_CONTEXT: AssistantContext = {
   identifierType: null,
   careType: null,
   inpatientStatus: null,
-  resumeStatus: null,
   lastIntent: null
 };
 
@@ -90,9 +88,6 @@ const promptGroups = [
     description: 'Gunakan variasi waktu, status rawat inap, atau rentang tanggal.',
     prompts: [
       'Tampilkan data pasien saya rawat inap belum pulang',
-      'Tampilkan data pasien rawat inap saya pindah kamar',
-      'Tampilkan data pasien rawat inap saya yang belum resume',
-      'Tampilkan data pasien rawat inap saya yang sudah resume',
       'Tampilkan data pasien saya dari tanggal [tanggal awal] sampai [tanggal akhir]',
       'Tampilkan data pasien saya rawat inap dari tanggal [tanggal awal] sampai [tanggal akhir]'
     ]
@@ -208,9 +203,6 @@ const suggestionMatchesContext = (prompt: string, context: AssistantContext, las
   if (context.careType === 'ralan' && normalizedPrompt.includes('rawat jalan')) return true;
   if (context.inpatientStatus === 'masih-dirawat' && /belum pulang|masih dirawat/.test(normalizedPrompt)) return true;
   if (context.inpatientStatus === 'sudah-pulang' && normalizedPrompt.includes('sudah pulang')) return true;
-  if (context.inpatientStatus === 'pindah-kamar' && normalizedPrompt.includes('pindah kamar')) return true;
-  if (context.resumeStatus === 'belum_resume' && normalizedPrompt.includes('belum resume')) return true;
-  if (context.resumeStatus === 'sudah_resume' && normalizedPrompt.includes('sudah resume')) return true;
   if (context.patientName && /pasien ini|diagnosis|resep|lab|radiologi|kunjungan terakhir/.test(normalizedPrompt)) return true;
   if ((context.startDate && context.endDate) && /rentang tanggal|tanggal awal|tanggal akhir/.test(normalizedPrompt)) return true;
   if (context.targetDate && /tanggal ini|tanggal yang sama/.test(normalizedPrompt)) return true;
@@ -278,7 +270,6 @@ const hasContextValue = (context?: Partial<AssistantContext> | null) =>
     context?.identifier ||
     context?.careType ||
     context?.inpatientStatus ||
-    context?.resumeStatus ||
     context?.lastIntent
   );
 
@@ -295,7 +286,6 @@ const mergeContexts = (...contexts: Array<Partial<AssistantContext> | null | und
       identifierType: current?.identifierType ?? merged.identifierType,
       careType: current?.careType ?? merged.careType,
       inpatientStatus: current?.inpatientStatus ?? merged.inpatientStatus,
-      resumeStatus: current?.resumeStatus ?? merged.resumeStatus,
       lastIntent: current?.lastIntent ?? merged.lastIntent
     }),
     { ...EMPTY_CONTEXT }
@@ -332,7 +322,6 @@ const buildContextFromRow = (
     endDate: fallbackContext?.endDate || null,
     careType: fallbackContext?.careType || null,
     inpatientStatus: fallbackContext?.inpatientStatus || null,
-    resumeStatus: fallbackContext?.resumeStatus || null,
     lastIntent: fallbackIntent || fallbackContext?.lastIntent || null
   };
 };
