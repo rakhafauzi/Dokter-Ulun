@@ -17,6 +17,7 @@ import Login from "./pages/Login";
 import MedicalRecord from "./pages/MedicalRecord";
 import ClinicalPathway from "./pages/ClinicalPathway";
 import StatisticsCare from "./pages/StatisticsCare";
+import AIAssistant from "./pages/AIAssistant";
 import Sidebar from "./components/Sidebar";
 
 // Helper function to format no_rawat
@@ -138,6 +139,7 @@ const AppContent = () => {
             <Route path="/icd10" element={<MasterICD />} />
             <Route path="/icd9" element={<MasterICD />} />
             <Route path="/igd" element={<Index />} />
+            <Route path="/ai-assistant" element={<AIAssistant />} />
             <Route path="/rekam-medik" element={<MedicalRecord />} />
             <Route path="/rekam-medik/:no_rkm_medis" element={<MedicalRecord />} />
             <Route path="/rekam-medik/:no_rkm_medis/:no_rawat" element={<MedicalRecord />} />

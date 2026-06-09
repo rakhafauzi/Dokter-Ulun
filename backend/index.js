@@ -15,6 +15,7 @@ import HemodialisaDataService from './services/hemodialisaDataService.js';
 import GetMedicalRecordService from './services/getMedicalRecordService.js';
 import DigitalFilesService from './services/digitalFilesService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
+import DoctorAiAssistantService from './services/doctorAiAssistantService.js';
 import IcdDataService from './services/icdDataService.js';
 import IgdDataService from './services/igdDataService.js';
 import InacbgSimulationService from './services/inacbgSimulationService.js';
@@ -1104,6 +1105,35 @@ app.delete('/api/laboratory-data', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+});
+
+// Medical Scribe endpoint
+app.post('/api/doctor-ai-assistant', async (req, res) => {
+  try {
+    const { message, username, doctorName, conversationHistory } = req.body;
+
+    if (!message || !username) {
+      return res.status(400).json({
+        success: false,
+        error: 'message and username are required'
+      });
+    }
+
+    const result = await DoctorAiAssistantService.ask({
+      message,
+      username,
+      doctorName,
+      conversationHistory
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Doctor AI assistant error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memproses AI assistant'
     });
   }
 });
