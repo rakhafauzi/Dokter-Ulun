@@ -11,6 +11,8 @@ interface User {
   role: 'doctor' | 'admin' | 'nurse' | 'staff' | 'medis';
   kd_poli: string;
   all_poli?: string[];
+  jenis_poli?: string;
+  jenis_poli_sore?: string;
   jk: 'L' | 'P';
   no_telp?: string;
 }
@@ -67,6 +69,8 @@ const loginApi = async (username: string, password: string): Promise<{token: str
           role: 'medis', // Default role, you can enhance this based on your DB
           kd_poli: data.user.kd_poli || '',
           all_poli: data.user.all_poli || [],
+          jenis_poli: data.user.jenis_poli || '',
+          jenis_poli_sore: data.user.jenis_poli_sore || '',
           jk: data.user.jk || 'L', // Default to 'L' if not provided
           no_telp: data.user.no_telp
         }

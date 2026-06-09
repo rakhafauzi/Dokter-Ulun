@@ -3,6 +3,41 @@ import { executeQuery } from '../config/database.js';
 
 // Authentication service
 export class AuthService {
+  static async getSessionPoliAssignments(username) {
+    const sql = `
+      SELECT jadwal.kd_poli, poliklinik.nm_poli
+      FROM dokter
+      JOIN jadwal ON dokter.kd_dokter = jadwal.kd_dokter
+      JOIN poliklinik ON jadwal.kd_poli = poliklinik.kd_poli
+      WHERE dokter.kd_dokter = ?
+      GROUP BY jadwal.kd_poli
+    `;
+
+    const rows = await executeQuery(sql, [username]);
+    const poliRows = Array.isArray(rows) ? rows : [];
+    const firstPoli = poliRows[0] || null;
+    const secondPoli = poliRows[1] || null;
+    const firstPoliName = String(firstPoli?.nm_poli || '').toUpperCase();
+    const firstPoliIsSore = firstPoliName.includes('SORE');
+
+    if (!firstPoli) {
+      return {
+        jenis_poli: '',
+        jenis_poli_sore: '',
+        jadwal_poli: []
+      };
+    }
+
+    return {
+      jenis_poli: firstPoli.kd_poli || '',
+      jenis_poli_sore: firstPoliIsSore ? '' : (secondPoli?.kd_poli || ''),
+      jadwal_poli: poliRows.map((row) => ({
+        kd_poli: row.kd_poli,
+        nm_poli: row.nm_poli
+      }))
+    };
+  }
+
   // Authenticate user
   static async authenticateUser(username, password) {
     try {
@@ -30,7 +65,7 @@ export class AuthService {
       }
       
       // Process user data
-      return this.processUserData(user);
+      return await this.processUserData(user);
       
     } catch (error) {
       console.error('Authentication error:', error);
@@ -56,13 +91,14 @@ export class AuthService {
   }
   
   // Process user data
-  static processUserData(user) {
+  static async processUserData(user) {
     const capValue = user.cap || '';
     const kdPoliArray = capValue.split(',')
       .map(item => item.trim())
       .filter(item => item && item !== '');
     
     const kdPoliString = kdPoliArray.join(',');
+    const poliAssignments = await this.getSessionPoliAssignments(user.username);
     
     return {
       id_user: user.id_user,
@@ -70,6 +106,9 @@ export class AuthService {
       username: user.username,
       kd_poli: kdPoliString,
       all_poli: kdPoliArray,
+      jenis_poli: poliAssignments.jenis_poli,
+      jenis_poli_sore: poliAssignments.jenis_poli_sore,
+      jadwal_poli: poliAssignments.jadwal_poli,
       jk: user.jk || 'L',
       no_telp: user.no_telp || null
     };
@@ -91,7 +130,7 @@ export class AuthService {
         return null;
       }
       
-      return this.processUserData(users[0]);
+      return await this.processUserData(users[0]);
       
     } catch (error) {
       console.error('Get user error:', error);

@@ -100,7 +100,7 @@ const RawatJalanTabs = () => {
   
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || "all");
   const [statusBayarFilter, setStatusBayarFilter] = useState<string>(searchParams.get('statusBayar') || "all");
-  const [doctorFilter, setDoctorFilter] = useState<string>(searchParams.get('doctor') || "");
+  const [doctorFilter, setDoctorFilter] = useState<string>(searchParams.get('doctor') || "all");
   const [doctorOptions, setDoctorOptions] = useState<Array<{ kd_dokter: string; nm_dokter: string }>>([]);
   const [rawatJalanPatients, setRawatJalanPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -108,13 +108,13 @@ const RawatJalanTabs = () => {
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   const [tabCounts, setTabCounts] = useState<Record<RawatJalanTab, number>>(emptyTabCounts);
-  const effectiveDoctorFilter = doctorFilter || user?.username || "all";
-  const requestDoctorFilter = doctorFilter === "all"
-    ? "all"
-    : (doctorFilter || user?.username || undefined);
+  const effectiveDoctorFilter = doctorFilter || "all";
+  const requestDoctorFilter = doctorFilter || "all";
 
   const buildRequestBody = (tabFilter: RawatJalanTab, overrides: Record<string, string> = {}) => ({
     kd_poli: user?.kd_poli,
+    jenis_poli: user?.jenis_poli || '',
+    jenis_poli_sore: user?.jenis_poli_sore || '',
     startDate: date?.from ? formatDateWIB(date.from) : '',
     endDate: date?.to ? formatDateWIB(date.to) : '',
     username: user?.username,
@@ -271,7 +271,7 @@ const RawatJalanTabs = () => {
       params.delete('search');
     }
 
-    if (doctorFilter) {
+    if (doctorFilter && doctorFilter !== "all") {
       params.set('doctor', doctorFilter);
     } else {
       params.delete('doctor');

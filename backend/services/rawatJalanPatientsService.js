@@ -1,4 +1,5 @@
 import db from '../config/database.js';
+import { AuthService } from './authService.js';
 
 class RawatJalanPatientsService {
   static validateAndFormatDate(dateStr) {
@@ -74,6 +75,8 @@ class RawatJalanPatientsService {
 
   static async getRawatJalanPatients({
     kd_poli,
+    jenis_poli,
+    jenis_poli_sore,
     startDate,
     endDate,
     status,
@@ -85,7 +88,7 @@ class RawatJalanPatientsService {
     itemsPerPage = 10
   }) {
     try {
-      console.log('Received request body:', { kd_poli, startDate, endDate, status, statusBayar, username, kd_dokter, tabFilter });
+      console.log('Received request body:', { kd_poli, jenis_poli, jenis_poli_sore, startDate, endDate, status, statusBayar, username, kd_dokter, tabFilter });
       console.log('Current time (WIB):', new Date(new Date().getTime() + (7 * 60 * 60 * 1000)).toISOString());
       
       if (!kd_poli || !startDate || !endDate || !username) {
@@ -113,11 +116,14 @@ class RawatJalanPatientsService {
       }
 
       const normalizedTabFilter = this.normalizeTabFilter(tabFilter);
+      const serverPoliAssignments = await AuthService.getSessionPoliAssignments(username);
+      const normalizedJenisPoli = String(jenis_poli || serverPoliAssignments.jenis_poli || '').trim();
+      const normalizedJenisPoliSore = String(jenis_poli_sore || serverPoliAssignments.jenis_poli_sore || '').trim();
       const sessionPoliGroups = await this.getSessionPoliGroups(poliCodes);
       const selectedPoliCodes = normalizedTabFilter === 'pagi'
-        ? sessionPoliGroups.pagi
+        ? (normalizedJenisPoli ? [normalizedJenisPoli] : sessionPoliGroups.pagi)
         : normalizedTabFilter === 'sore'
-          ? sessionPoliGroups.sore
+          ? (normalizedJenisPoliSore ? [normalizedJenisPoliSore] : sessionPoliGroups.sore)
           : sessionPoliGroups.hariIni;
       const effectivePoliCodes = selectedPoliCodes.length > 0 || !['pagi', 'sore'].includes(normalizedTabFilter)
         ? selectedPoliCodes
@@ -203,11 +209,11 @@ class RawatJalanPatientsService {
         console.log('Date range condition:', `tgl_registrasi BETWEEN '${formattedStartDate}' AND '${formattedEndDate}'`);
       }
 
-      // Default doctor filter follows the logged-in user, unless "all" is explicitly requested.
+      // PHP native rawat jalan does not filter by dokter by default.
       const normalizedDoctorFilter = String(kd_dokter || '').trim();
       const effectiveDoctorFilter = normalizedDoctorFilter === 'all'
         ? 'all'
-        : (normalizedDoctorFilter || username);
+        : (normalizedDoctorFilter || 'all');
 
       if (effectiveDoctorFilter !== 'all') {
         conditions.push(`${doctorCodeColumn} = ?`);
