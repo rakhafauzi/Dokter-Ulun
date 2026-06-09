@@ -13,8 +13,6 @@ class DoctorAiAssistantService {
       'Tampilkan data pasien saya rawat inap belum pulang',
       'Tampilkan data pasien rawat bersama saya',
       'Tampilkan data pasien rawat gabung saya',
-      'Berapa pasien rawat inap saya yang belum resume?',
-      'Berapa pasien rawat gabung saya?',
       'Tampilkan data pasien rawat inap saya pindah kamar',
       'Tampilkan data pasien rawat inap saya yang belum resume',
       'Tampilkan data pasien rawat inap saya yang sudah resume',
@@ -401,44 +399,6 @@ class DoctorAiAssistantService {
     return '';
   }
 
-  buildPatientSearchClause(
-    plan,
-    params,
-    {
-      patientAlias = 'p',
-      noRawatColumn = 'rp.no_rawat',
-      noRkmMedisColumn = 'p.no_rkm_medis',
-      noKtpColumn = 'p.no_ktp'
-    } = {}
-  ) {
-    const clauses = [];
-
-    if (plan.patientName) {
-      params.push(`%${plan.patientName}%`);
-      clauses.push(`${patientAlias}.nm_pasien LIKE ?`);
-    }
-
-    if (plan.patientIdentifier) {
-      const identifierType = String(plan.identifierType || '').trim().toLowerCase();
-      if (identifierType === 'no_rawat') {
-        params.push(plan.patientIdentifier);
-        clauses.push(`${noRawatColumn} = ?`);
-      } else if (identifierType === 'no_ktp') {
-        params.push(plan.patientIdentifier);
-        clauses.push(`${noKtpColumn} = ?`);
-      } else {
-        params.push(plan.patientIdentifier);
-        clauses.push(`${noRkmMedisColumn} = ?`);
-      }
-    }
-
-    if (clauses.length === 0) {
-      return '';
-    }
-
-    return clauses.map((clause) => `AND ${clause}`).join('\n        ');
-  }
-
   formatPatientListPeriod(plan) {
     if (plan.startDate && plan.endDate) {
       return `rentang tanggal ${plan.startDate} sampai ${plan.endDate}`;
@@ -450,10 +410,6 @@ class DoctorAiAssistantService {
 
     if (plan.careType === 'ranap' && plan.inpatientStatus === 'masih-dirawat') {
       return 'saat ini';
-    }
-
-    if (plan.careType === 'ranap') {
-      return 'seluruh periode data';
     }
 
     return `tanggal ${this.getCurrentDateWib()}`;
@@ -478,7 +434,6 @@ class DoctorAiAssistantService {
     if (context.careType === 'ranap' && context.inpatientStatus === 'pindah-kamar') {
       contextualSuggestions.push(
         'Tampilkan data pasien rawat inap saya pindah kamar',
-        'Berapa pasien rawat inap saya pindah kamar?',
         'Tampilkan data pasien rawat inap saya pindah kamar dari tanggal [tanggal awal] sampai [tanggal akhir]',
         'Tampilkan data pasien rawat inap saya pindah kamar yang belum resume'
       );
@@ -487,7 +442,6 @@ class DoctorAiAssistantService {
     if (context.inpatientTab === 'rawat-bersama') {
       contextualSuggestions.push(
         'Tampilkan data pasien rawat bersama saya',
-        'Berapa pasien rawat bersama saya?',
         'Tampilkan data pasien rawat bersama saya yang sudah pulang',
         'Tampilkan data pasien rawat bersama saya dari tanggal [tanggal awal] sampai [tanggal akhir]'
       );
@@ -496,7 +450,6 @@ class DoctorAiAssistantService {
     if (context.inpatientTab === 'rawat-gabung') {
       contextualSuggestions.push(
         'Tampilkan data pasien rawat gabung saya',
-        'Berapa pasien rawat gabung saya?',
         'Tampilkan data pasien rawat gabung saya yang belum resume',
         'Tampilkan data pasien rawat gabung saya dari tanggal [tanggal awal] sampai [tanggal akhir]'
       );
@@ -505,7 +458,6 @@ class DoctorAiAssistantService {
     if (context.careType === 'ranap' && context.resumeStatus === 'belum_resume') {
       contextualSuggestions.push(
         'Tampilkan data pasien rawat inap saya yang belum resume',
-        'Berapa pasien rawat inap saya yang belum resume?',
         'Tampilkan data pasien rawat inap saya yang belum resume dan belum pulang',
         'Tampilkan data pasien rawat inap saya yang belum resume dari tanggal [tanggal awal] sampai [tanggal akhir]'
       );
@@ -514,7 +466,6 @@ class DoctorAiAssistantService {
     if (context.careType === 'ranap' && context.resumeStatus === 'sudah_resume') {
       contextualSuggestions.push(
         'Tampilkan data pasien rawat inap saya yang sudah resume',
-        'Berapa pasien rawat inap saya yang sudah resume?',
         'Tampilkan data pasien rawat inap saya yang sudah resume dan sudah pulang',
         'Tampilkan data pasien rawat inap saya yang sudah resume dari tanggal [tanggal awal] sampai [tanggal akhir]'
       );
@@ -577,15 +528,6 @@ class DoctorAiAssistantService {
       );
     }
 
-    if (normalizedIntent === 'inpatient_operational_summary') {
-      contextualSuggestions.push(
-        'Tampilkan data pasien rawat inap saya yang belum resume',
-        'Tampilkan data pasien rawat inap saya pindah kamar',
-        'Tampilkan data pasien rawat bersama saya',
-        'Tampilkan data pasien rawat gabung saya'
-      );
-    }
-
     if (normalizedIntent === 'patient_last_visit_summary' && hasPatientContext) {
       contextualSuggestions.push(
         `Tampilkan riwayat rawat inap ${patientLabel}`,
@@ -638,8 +580,6 @@ class DoctorAiAssistantService {
         return this.handleTodayPatientList(resolvedPlan, normalizedUsername, conversationContext);
       case 'today_patient_count':
         return this.handleTodayPatientCount(resolvedPlan, normalizedUsername, conversationContext);
-      case 'inpatient_operational_summary':
-        return this.handleInpatientOperationalSummary(resolvedPlan, normalizedUsername, conversationContext);
       case 'lab_results_by_patient_date':
         return this.handleLabResultsByPatientDate(resolvedPlan, normalizedUsername, conversationContext);
       case 'patient_last_visit_summary':
@@ -663,7 +603,7 @@ class DoctorAiAssistantService {
       default:
         return this.buildResponse({
           intent: 'unsupported',
-          answer: 'Saat ini saya bisa membantu pencarian rekam medis pasien, pencarian pasien via nomor identitas, daftar pasien dokter, ringkasan operasional rawat inap, status resume rawat inap, pasien pindah kamar, rawat bersama, rawat gabung, kunjungan terakhir, diagnosis, resep, hasil lab, hasil radiologi, rawat inap, laporan operasi, dan jumlah pasien dokter.',
+          answer: 'Saat ini saya bisa membantu pencarian rekam medis pasien, pencarian pasien via nomor identitas, daftar pasien dokter, status resume rawat inap, pasien pindah kamar, rawat bersama, rawat gabung, kunjungan terakhir, diagnosis, resep, hasil lab, hasil radiologi, rawat inap, laporan operasi, dan jumlah pasien dokter.',
           rows: [],
           sql: null,
           suggestions: this.defaultSuggestions,
@@ -732,15 +672,14 @@ Intent yang didukung:
 9. inpatient_history_by_patient
 10. operation_report_by_patient
 11. today_patient_list
-12. inpatient_operational_summary
-13. inpatient_resume_status_list
-14. inpatient_movement_list
-15. inpatient_collaboration_list
-16. unsupported
+12. inpatient_resume_status_list
+13. inpatient_movement_list
+14. inpatient_collaboration_list
+15. unsupported
 
 Skema JSON:
 {
-  "intent": "patient_medical_record_search | patient_search_by_identifier | today_patient_count | today_patient_list | lab_results_by_patient_date | patient_last_visit_summary | diagnosis_history_by_patient | prescription_history_by_patient | radiology_results_by_patient_date | inpatient_history_by_patient | operation_report_by_patient | inpatient_operational_summary | inpatient_resume_status_list | inpatient_movement_list | inpatient_collaboration_list | unsupported",
+  "intent": "patient_medical_record_search | patient_search_by_identifier | today_patient_count | today_patient_list | lab_results_by_patient_date | patient_last_visit_summary | diagnosis_history_by_patient | prescription_history_by_patient | radiology_results_by_patient_date | inpatient_history_by_patient | operation_report_by_patient | inpatient_resume_status_list | inpatient_movement_list | inpatient_collaboration_list | unsupported",
   "patientName": "string atau null",
   "patientIdentifier": "string atau null",
   "identifierType": "no_rkm_medis | no_ktp | no_rawat | unknown | null",
@@ -759,7 +698,6 @@ Aturan:
 - Jika user menanyakan pasien berdasarkan nama, gunakan patient_medical_record_search.
 - Jika user menanyakan pasien dengan no rekam medis, NIK, atau no rawat, gunakan patient_search_by_identifier.
 - Jika user menanyakan "berapa pasien saya untuk hari ini", gunakan today_patient_count.
-- Jika user menanyakan "berapa pasien" dan konteksnya rawat inap, rawat bersama, rawat gabung, belum resume, sudah resume, belum pulang, sudah pulang, atau pindah kamar, gunakan inpatient_operational_summary.
 - Jika user menanyakan "tampilkan data pasien saya hari ini", "siapa saja pasien saya hari ini", daftar pasien hari ini, kemarin, rentang tanggal, rawat inap, rawat jalan, atau belum pulang, gunakan today_patient_list.
 - Jika user menanyakan kunjungan terakhir pasien, gunakan patient_last_visit_summary.
 - Jika user menanyakan diagnosis pasien, ICD pasien, atau riwayat diagnosis, gunakan diagnosis_history_by_patient.
@@ -771,7 +709,6 @@ Aturan:
 - Jika user menanyakan pasien rawat inap yang belum resume, sudah resume, atau status resume rawat inap, gunakan inpatient_resume_status_list.
 - Jika user menanyakan pasien rawat inap pindah kamar atau perpindahan kamar pasien ranap, gunakan inpatient_movement_list.
 - Jika user menanyakan pasien rawat bersama, pasien raber, pasien konsul rawat inap, atau pasien rawat gabung, gunakan inpatient_collaboration_list.
-- Untuk intent operasional rawat inap, patientName atau patientIdentifier boleh diisi jika user menyebut nama pasien, no RM, NIK, atau no rawat sebagai filter.
 - Jika user menyebut "pasien ini", "yang sama", "dia", "labnya", "radiologinya", "diagnosisnya", atau sejenisnya, boleh kosongkan patientName agar backend mengambil dari konteks.
 - Jika user menyebut "tanggal yang sama", "hari yang sama", atau sejenisnya, boleh kosongkan targetDate agar backend mengambil dari konteks.
 - Jika user menyebut "hari ini", ubah menjadi tanggal ${today}.
@@ -1164,249 +1101,6 @@ Aturan:
     });
   }
 
-  async handleInpatientOperationalSummary(plan, username, previousContext) {
-    const accessibleDoctorCodes = getAccessibleDoctorCodesByPhpNative(username);
-    const doctorCodes = accessibleDoctorCodes.length > 0 ? accessibleDoctorCodes : [username];
-    const doctorPlaceholders = this.buildInClausePlaceholders(doctorCodes);
-    const normalizedPlan = {
-      ...plan,
-      careType: 'ranap'
-    };
-    const hasSpecificFilter = Boolean(
-      normalizedPlan.inpatientTab ||
-      normalizedPlan.inpatientStatus ||
-      normalizedPlan.resumeStatus ||
-      normalizedPlan.patientName ||
-      normalizedPlan.patientIdentifier
-    );
-
-    const countGeneralInpatient = async (overrides = {}) => {
-      const effectivePlan = { ...normalizedPlan, ...overrides, careType: 'ranap' };
-      const statusPulangValue = String(effectivePlan.inpatientStatus || '').trim();
-      const dateColumn = statusPulangValue === 'sudah-pulang'
-        ? this.getDischargeDateFilterColumn(doctorCodes)
-        : 'ki.tgl_masuk';
-      const params = [...doctorCodes];
-      const dateClause = this.buildDateFilterClause(effectivePlan, params, dateColumn, false);
-      const inpatientStatusClause = this.buildKamarInapStatusClause(effectivePlan);
-      const resumeStatusClause = this.buildResumeStatusClause(effectivePlan);
-      const patientSearchClause = this.buildPatientSearchClause(effectivePlan, params, {
-        patientAlias: 'p',
-        noRawatColumn: 'ki.no_rawat'
-      });
-      const sql = `
-        SELECT COUNT(DISTINCT ki.no_rawat) AS total_pasien
-        FROM kamar_inap ki
-        LEFT JOIN resume_pasien_ranap rpr ON ki.no_rawat = rpr.no_rawat
-        LEFT JOIN reg_periksa rp ON ki.no_rawat = rp.no_rawat
-        LEFT JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        WHERE EXISTS (
-          SELECT 1
-          FROM dpjp_ranap dr_user
-          WHERE dr_user.no_rawat = ki.no_rawat
-            AND dr_user.kd_dokter IN (${doctorPlaceholders})
-            AND COALESCE(dr_user.jenis_dpjp, 'Utama') IN ('Utama', 'PPDS', 'Internship')
-        )
-          ${dateClause}
-          ${inpatientStatusClause}
-          ${resumeStatusClause}
-          ${patientSearchClause}
-      `;
-      const rows = await executeQuery(sql, params);
-      return Number(rows?.[0]?.total_pasien || 0);
-    };
-
-    const countMovement = async (overrides = {}) => {
-      const effectivePlan = {
-        ...normalizedPlan,
-        ...overrides,
-        careType: 'ranap',
-        inpatientStatus: 'pindah-kamar'
-      };
-      const params = [...doctorCodes];
-      const dateClause = this.buildDateFilterClause(effectivePlan, params, 'ki.tgl_masuk', false);
-      const resumeStatusClause = this.buildResumeStatusClause(effectivePlan);
-      const patientSearchClause = this.buildPatientSearchClause(effectivePlan, params, {
-        patientAlias: 'p',
-        noRawatColumn: 'ki.no_rawat'
-      });
-      const sql = `
-        SELECT COUNT(DISTINCT ki.no_rawat) AS total_pasien
-        FROM kamar_inap ki
-        LEFT JOIN resume_pasien_ranap rpr ON ki.no_rawat = rpr.no_rawat
-        LEFT JOIN reg_periksa rp ON ki.no_rawat = rp.no_rawat
-        LEFT JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        WHERE EXISTS (
-          SELECT 1
-          FROM dpjp_ranap dr_user
-          WHERE dr_user.no_rawat = ki.no_rawat
-            AND dr_user.kd_dokter IN (${doctorPlaceholders})
-        )
-          AND COALESCE(ki.stts_pulang, '') = 'Pindah Kamar'
-          ${dateClause}
-          ${resumeStatusClause}
-          ${patientSearchClause}
-      `;
-      const rows = await executeQuery(sql, params);
-      return Number(rows?.[0]?.total_pasien || 0);
-    };
-
-    const countCollaboration = async (tab, overrides = {}) => {
-      const effectivePlan = {
-        ...normalizedPlan,
-        ...overrides,
-        careType: 'ranap',
-        inpatientTab: tab
-      };
-      const statusPulangValue = String(effectivePlan.inpatientStatus || '').trim();
-      const dateColumn = statusPulangValue === 'sudah-pulang'
-        ? this.getDischargeDateFilterColumn(doctorCodes)
-        : 'ki.tgl_masuk';
-      const params = [...doctorCodes];
-      const dateClause = this.buildDateFilterClause(effectivePlan, params, dateColumn, false);
-      const resumeStatusClause = this.buildResumeStatusClause(effectivePlan);
-      const patientSearchClause = this.buildPatientSearchClause(effectivePlan, params, {
-        patientAlias: 'p',
-        noRawatColumn: tab === 'rawat-gabung' ? 'rp.no_rawat' : 'ki.no_rawat'
-      });
-      const statusClause = this.buildKamarInapStatusClause({ ...effectivePlan, careType: 'ranap' });
-
-      const sql = tab === 'rawat-gabung'
-        ? `
-          SELECT COUNT(DISTINCT rp.no_rawat) AS total_pasien
-          FROM ranap_gabung rg
-          LEFT JOIN reg_periksa rp ON rg.no_rawat2 = rp.no_rawat
-          LEFT JOIN kamar_inap ki ON rg.no_rawat = ki.no_rawat
-          LEFT JOIN resume_pasien_ranap rpr ON rp.no_rawat = rpr.no_rawat
-          LEFT JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-          LEFT JOIN dpjp_ranap dr ON rp.no_rawat = dr.no_rawat
-          WHERE dr.kd_dokter IN (${doctorPlaceholders})
-            AND COALESCE(dr.jenis_dpjp, 'Utama') IN ('Utama', 'PPDS', 'Internship')
-            ${dateClause}
-            ${statusClause}
-            ${resumeStatusClause}
-            ${patientSearchClause}
-        `
-        : `
-          SELECT COUNT(DISTINCT ki.no_rawat) AS total_pasien
-          FROM kamar_inap ki
-          LEFT JOIN reg_periksa rp ON ki.no_rawat = rp.no_rawat
-          LEFT JOIN resume_pasien_ranap rpr ON ki.no_rawat = rpr.no_rawat
-          LEFT JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-          WHERE EXISTS (
-            SELECT 1
-            FROM dpjp_ranap dr_raber
-            WHERE dr_raber.no_rawat = ki.no_rawat
-              AND dr_raber.kd_dokter IN (${doctorPlaceholders})
-              AND dr_raber.jenis_dpjp IN ('Raber', 'Konsul')
-          )
-            ${dateClause}
-            ${statusClause}
-            ${resumeStatusClause}
-            ${patientSearchClause}
-        `;
-
-      const rows = await executeQuery(sql, params);
-      return Number(rows?.[0]?.total_pasien || 0);
-    };
-
-    if (!hasSpecificFilter) {
-      const [
-        totalRanap,
-        masihDirawat,
-        sudahPulang,
-        belumResume,
-        sudahResume,
-        pindahKamar,
-        rawatBersama,
-        rawatGabung
-      ] = await Promise.all([
-        countGeneralInpatient(),
-        countGeneralInpatient({ inpatientStatus: 'masih-dirawat' }),
-        countGeneralInpatient({ inpatientStatus: 'sudah-pulang' }),
-        countGeneralInpatient({ resumeStatus: 'belum_resume' }),
-        countGeneralInpatient({ resumeStatus: 'sudah_resume' }),
-        countMovement(),
-        countCollaboration('rawat-bersama'),
-        countCollaboration('rawat-gabung')
-      ]);
-
-      const periodLabel = this.formatPatientListPeriod(normalizedPlan);
-      return this.buildResponse({
-        intent: 'inpatient_operational_summary',
-        answer: `Ringkasan operasional rawat inap Anda pada ${periodLabel} sudah saya siapkan.`,
-        rows: [
-          {
-            total_rawat_inap: totalRanap,
-            masih_dirawat: masihDirawat,
-            sudah_pulang: sudahPulang,
-            belum_resume: belumResume,
-            sudah_resume: sudahResume,
-            pindah_kamar: pindahKamar,
-            rawat_bersama: rawatBersama,
-            rawat_gabung: rawatGabung
-          }
-        ],
-        sql: null,
-        suggestions: [
-          'Tampilkan data pasien rawat inap saya yang belum resume',
-          'Tampilkan data pasien rawat inap saya pindah kamar',
-          'Tampilkan data pasien rawat bersama saya',
-          'Tampilkan data pasien rawat gabung saya'
-        ],
-        plan: normalizedPlan,
-        previousContext
-      });
-    }
-
-    let totalPasien = 0;
-    let label = 'rawat inap';
-
-    if (normalizedPlan.inpatientTab === 'rawat-bersama') {
-      totalPasien = await countCollaboration('rawat-bersama');
-      label = 'rawat bersama';
-    } else if (normalizedPlan.inpatientTab === 'rawat-gabung') {
-      totalPasien = await countCollaboration('rawat-gabung');
-      label = 'rawat gabung';
-    } else if (normalizedPlan.inpatientStatus === 'pindah-kamar') {
-      totalPasien = await countMovement();
-      label = 'rawat inap pindah kamar';
-    } else {
-      totalPasien = await countGeneralInpatient();
-      if (normalizedPlan.resumeStatus === 'belum_resume') {
-        label = 'rawat inap belum resume';
-      } else if (normalizedPlan.resumeStatus === 'sudah_resume') {
-        label = 'rawat inap sudah resume';
-      } else if (normalizedPlan.inpatientStatus === 'masih-dirawat') {
-        label = 'rawat inap belum pulang';
-      } else if (normalizedPlan.inpatientStatus === 'sudah-pulang') {
-        label = 'rawat inap sudah pulang';
-      }
-    }
-
-    const periodLabel = this.formatPatientListPeriod(normalizedPlan);
-    return this.buildResponse({
-      intent: 'inpatient_operational_summary',
-      answer: `Jumlah pasien ${label} Anda pada ${periodLabel} adalah ${totalPasien}.`,
-      rows: [
-        {
-          kategori: label,
-          total_pasien: totalPasien,
-          periode: periodLabel
-        }
-      ],
-      sql: null,
-      suggestions: [
-        'Tampilkan data pasien rawat inap saya yang belum resume',
-        'Tampilkan data pasien rawat inap saya pindah kamar',
-        'Tampilkan data pasien rawat bersama saya',
-        'Tampilkan data pasien rawat gabung saya'
-      ],
-      plan: normalizedPlan,
-      previousContext
-    });
-  }
-
   async handleInpatientResumeStatusList(plan, username, previousContext) {
     const accessibleDoctorCodes = getAccessibleDoctorCodesByPhpNative(username);
     const doctorCodes = accessibleDoctorCodes.length > 0 ? accessibleDoctorCodes : [username];
@@ -1419,10 +1113,6 @@ Aturan:
     const dateClause = this.buildDateFilterClause(plan, params, dateColumn, false);
     const inpatientStatusClause = this.buildKamarInapStatusClause({ ...plan, careType: 'ranap' });
     const resumeStatusClause = this.buildResumeStatusClause(plan);
-    const patientSearchClause = this.buildPatientSearchClause(plan, params, {
-      patientAlias: 'p',
-      noRawatColumn: 'ki.no_rawat'
-    });
     const sql = `
       SELECT
         ki.no_rawat,
@@ -1467,7 +1157,6 @@ Aturan:
         ${dateClause}
         ${inpatientStatusClause}
         ${resumeStatusClause}
-        ${patientSearchClause}
       GROUP BY ki.no_rawat, p.no_rkm_medis, p.nm_pasien, rpr.no_rawat
       ORDER BY MIN(ki.tgl_masuk) DESC
       LIMIT 200
@@ -1512,10 +1201,6 @@ Aturan:
     };
     const dateClause = this.buildDateFilterClause(normalizedPlan, params, 'ki.tgl_masuk', false);
     const resumeStatusClause = this.buildResumeStatusClause(plan);
-    const patientSearchClause = this.buildPatientSearchClause(plan, params, {
-      patientAlias: 'p',
-      noRawatColumn: 'ki.no_rawat'
-    });
     const sql = `
       SELECT
         ki.no_rawat,
@@ -1547,7 +1232,6 @@ Aturan:
         AND COALESCE(ki.stts_pulang, '') = 'Pindah Kamar'
         ${dateClause}
         ${resumeStatusClause}
-        ${patientSearchClause}
       ORDER BY ki.tgl_masuk DESC, p.nm_pasien ASC
       LIMIT 200
     `;
@@ -1607,10 +1291,6 @@ Aturan:
       : 'ki.tgl_masuk';
     const dateClause = this.buildDateFilterClause(plan, params, dateColumn, false);
     const resumeStatusClause = this.buildResumeStatusClause(plan);
-    const patientSearchClause = this.buildPatientSearchClause(plan, params, {
-      patientAlias: 'p',
-      noRawatColumn: normalizedTab === 'rawat-gabung' ? 'rp.no_rawat' : 'ki.no_rawat'
-    });
 
     const sql = normalizedTab === 'rawat-gabung'
       ? `
@@ -1654,7 +1334,6 @@ Aturan:
           ${dateClause}
           ${this.buildKamarInapStatusClause({ ...plan, careType: 'ranap' })}
           ${resumeStatusClause}
-          ${patientSearchClause}
         GROUP BY rp.no_rawat, p.no_rkm_medis, p.nm_pasien, rpr.no_rawat
         ORDER BY rp.tgl_registrasi ASC, rp.jam_reg ASC
         LIMIT 200
@@ -1704,7 +1383,6 @@ Aturan:
           ${dateClause}
           ${this.buildKamarInapStatusClause({ ...plan, careType: 'ranap' })}
           ${resumeStatusClause}
-          ${patientSearchClause}
         GROUP BY ki.no_rawat, p.no_rkm_medis, p.nm_pasien, rpr.no_rawat
         ORDER BY MIN(ki.tgl_masuk) ASC
         LIMIT 200

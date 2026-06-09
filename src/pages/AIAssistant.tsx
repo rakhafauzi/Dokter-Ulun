@@ -92,17 +92,11 @@ const promptGroups = [
     description: 'Gunakan variasi waktu, status rawat inap, atau rentang tanggal.',
     prompts: [
       'Tampilkan data pasien saya rawat inap belum pulang',
-      'Berapa pasien rawat inap saya yang belum pulang?',
       'Tampilkan data pasien rawat bersama saya',
-      'Berapa pasien rawat bersama saya?',
       'Tampilkan data pasien rawat gabung saya',
-      'Berapa pasien rawat gabung saya?',
       'Tampilkan data pasien rawat inap saya pindah kamar',
-      'Berapa pasien rawat inap saya pindah kamar?',
       'Tampilkan data pasien rawat inap saya yang belum resume',
-      'Berapa pasien rawat inap saya yang belum resume?',
       'Tampilkan data pasien rawat inap saya yang sudah resume',
-      'Berapa pasien rawat inap saya yang sudah resume?',
       'Tampilkan data pasien saya dari tanggal [tanggal awal] sampai [tanggal akhir]',
       'Tampilkan data pasien saya rawat inap dari tanggal [tanggal awal] sampai [tanggal akhir]'
     ]
