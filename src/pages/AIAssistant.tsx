@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { API_URLS } from '@/config/api';
+import { API_CONFIG, API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 
@@ -36,7 +36,9 @@ interface AssistantPayload {
     identifier?: string | null;
     identifierType?: string | null;
     careType?: 'all' | 'ralan' | 'ranap' | null;
+    inpatientTab?: 'rawat-bersama' | 'rawat-gabung' | null;
     inpatientStatus?: 'all' | 'masih-dirawat' | 'sudah-pulang' | 'pindah-kamar' | null;
+    resumeStatus?: 'all' | 'belum_resume' | 'sudah_resume' | null;
     lastIntent?: string | null;
   };
 }
@@ -69,7 +71,9 @@ const EMPTY_CONTEXT: AssistantContext = {
   identifier: null,
   identifierType: null,
   careType: null,
+  inpatientTab: null,
   inpatientStatus: null,
+  resumeStatus: null,
   lastIntent: null
 };
 
@@ -88,6 +92,17 @@ const promptGroups = [
     description: 'Gunakan variasi waktu, status rawat inap, atau rentang tanggal.',
     prompts: [
       'Tampilkan data pasien saya rawat inap belum pulang',
+      'Berapa pasien rawat inap saya yang belum pulang?',
+      'Tampilkan data pasien rawat bersama saya',
+      'Berapa pasien rawat bersama saya?',
+      'Tampilkan data pasien rawat gabung saya',
+      'Berapa pasien rawat gabung saya?',
+      'Tampilkan data pasien rawat inap saya pindah kamar',
+      'Berapa pasien rawat inap saya pindah kamar?',
+      'Tampilkan data pasien rawat inap saya yang belum resume',
+      'Berapa pasien rawat inap saya yang belum resume?',
+      'Tampilkan data pasien rawat inap saya yang sudah resume',
+      'Berapa pasien rawat inap saya yang sudah resume?',
       'Tampilkan data pasien saya dari tanggal [tanggal awal] sampai [tanggal akhir]',
       'Tampilkan data pasien saya rawat inap dari tanggal [tanggal awal] sampai [tanggal akhir]'
     ]
@@ -196,6 +211,52 @@ const buildDefaultVariableValue = (variable: string, context?: AssistantPayload[
 const fillPromptTemplate = (template: string, values: Record<string, string>) =>
   template.replace(PLACEHOLDER_REGEX, (_, key) => values[String(key).trim()] || `[${key}]`);
 
+const suggestionMatchesContext = (prompt: string, context: AssistantContext, lastIntent?: string | null) => {
+  const normalizedPrompt = prompt.toLowerCase();
+
+  if (context.careType === 'ranap' && normalizedPrompt.includes('rawat inap')) return true;
+  if (context.careType === 'ralan' && normalizedPrompt.includes('rawat jalan')) return true;
+  if (context.inpatientTab === 'rawat-bersama' && /rawat bersama|raber|konsul/.test(normalizedPrompt)) return true;
+  if (context.inpatientTab === 'rawat-gabung' && normalizedPrompt.includes('rawat gabung')) return true;
+  if (context.inpatientStatus === 'masih-dirawat' && /belum pulang|masih dirawat/.test(normalizedPrompt)) return true;
+  if (context.inpatientStatus === 'sudah-pulang' && normalizedPrompt.includes('sudah pulang')) return true;
+  if (context.inpatientStatus === 'pindah-kamar' && normalizedPrompt.includes('pindah kamar')) return true;
+  if (context.resumeStatus === 'belum_resume' && normalizedPrompt.includes('belum resume')) return true;
+  if (context.resumeStatus === 'sudah_resume' && normalizedPrompt.includes('sudah resume')) return true;
+  if (context.patientName && /pasien ini|diagnosis|resep|lab|radiologi|kunjungan terakhir/.test(normalizedPrompt)) return true;
+  if ((context.startDate && context.endDate) && /rentang tanggal|tanggal awal|tanggal akhir/.test(normalizedPrompt)) return true;
+  if (context.targetDate && /tanggal ini|tanggal yang sama/.test(normalizedPrompt)) return true;
+  if (lastIntent === 'today_patient_list' && /berapa pasien|kemarin/.test(normalizedPrompt)) return true;
+
+  return false;
+};
+
+const rankSuggestions = (
+  prompts: string[],
+  context: AssistantContext,
+  input: string,
+  lastIntent?: string | null
+) => {
+  const normalizedInput = input.trim().toLowerCase();
+
+  return [...prompts]
+    .sort((left, right) => {
+      const leftMatchesContext = suggestionMatchesContext(left, context, lastIntent) ? 1 : 0;
+      const rightMatchesContext = suggestionMatchesContext(right, context, lastIntent) ? 1 : 0;
+      const leftMatchesInput = normalizedInput && left.toLowerCase().includes(normalizedInput) ? 1 : 0;
+      const rightMatchesInput = normalizedInput && right.toLowerCase().includes(normalizedInput) ? 1 : 0;
+      const leftScore = leftMatchesContext * 4 + leftMatchesInput * 2;
+      const rightScore = rightMatchesContext * 4 + rightMatchesInput * 2;
+
+      if (leftScore !== rightScore) {
+        return rightScore - leftScore;
+      }
+
+      return left.length - right.length;
+    })
+    .slice(0, 8);
+};
+
 const filterPromptsByInput = (prompts: string[], input: string) => {
   const normalizedInput = input.trim().toLowerCase();
   if (!normalizedInput) {
@@ -218,6 +279,29 @@ const getRowValue = (row: Record<string, unknown>, keys: readonly string[]) => {
   return null;
 };
 
+const normalizeNoRawatForRoute = (value: string) => value.replace(/\//g, '');
+
+const getMedicalRecordLink = (row: Record<string, unknown>) => {
+  const noRkmMedis = getRowValue(row, ROW_CONTEXT_KEYS.noRkmMedis);
+  const noRawat = getRowValue(row, ROW_CONTEXT_KEYS.noRawat);
+
+  if (!noRkmMedis || !noRawat) {
+    return null;
+  }
+
+  const baseUrl =
+    API_CONFIG.BASE_URL_WITHOUT_API ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
+
+  if (!baseUrl) {
+    return null;
+  }
+
+  return `${baseUrl}/rekam-medik/${encodeURIComponent(noRkmMedis)}/${encodeURIComponent(
+    normalizeNoRawatForRoute(noRawat)
+  )}`;
+};
+
 const hasContextValue = (context?: Partial<AssistantContext> | null) =>
   Boolean(
     context?.patientName ||
@@ -228,7 +312,9 @@ const hasContextValue = (context?: Partial<AssistantContext> | null) =>
     context?.noRkmMedis ||
     context?.identifier ||
     context?.careType ||
+    context?.inpatientTab ||
     context?.inpatientStatus ||
+    context?.resumeStatus ||
     context?.lastIntent
   );
 
@@ -244,7 +330,9 @@ const mergeContexts = (...contexts: Array<Partial<AssistantContext> | null | und
       identifier: current?.identifier ?? merged.identifier,
       identifierType: current?.identifierType ?? merged.identifierType,
       careType: current?.careType ?? merged.careType,
+      inpatientTab: current?.inpatientTab ?? merged.inpatientTab,
       inpatientStatus: current?.inpatientStatus ?? merged.inpatientStatus,
+      resumeStatus: current?.resumeStatus ?? merged.resumeStatus,
       lastIntent: current?.lastIntent ?? merged.lastIntent
     }),
     { ...EMPTY_CONTEXT }
@@ -280,7 +368,9 @@ const buildContextFromRow = (
     startDate: fallbackContext?.startDate || null,
     endDate: fallbackContext?.endDate || null,
     careType: fallbackContext?.careType || null,
+    inpatientTab: fallbackContext?.inpatientTab || null,
     inpatientStatus: fallbackContext?.inpatientStatus || null,
+    resumeStatus: fallbackContext?.resumeStatus || null,
     lastIntent: fallbackIntent || fallbackContext?.lastIntent || null
   };
 };
@@ -338,8 +428,13 @@ const AIAssistant = () => {
   const quickSuggestionPrompts = useMemo(() => {
     const backendSuggestions = lastAssistantPayload?.suggestions || [];
     const mergedSuggestions = [...backendSuggestions, ...examplePrompts];
-    return Array.from(new Set(mergedSuggestions));
-  }, [lastAssistantPayload?.suggestions]);
+    return rankSuggestions(
+      Array.from(new Set(mergedSuggestions)),
+      activeContext,
+      message,
+      lastAssistantPayload?.intent || activeContext.lastIntent || null
+    );
+  }, [activeContext, lastAssistantPayload?.intent, lastAssistantPayload?.suggestions, message]);
   const visibleSuggestionPrompts = useMemo(
     () => filterPromptsByInput(quickSuggestionPrompts, message),
     [quickSuggestionPrompts, message]
@@ -396,6 +491,7 @@ const AIAssistant = () => {
     if (!finalMessage || !user?.username) {
       return;
     }
+    const debugTraceId = `ai-${Date.now()}`;
 
     const userTurn: ChatTurn = {
       id: `user-${Date.now()}`,
@@ -429,6 +525,9 @@ const AIAssistant = () => {
     setMessage('');
 
     try {
+      // #region debug-point A:ai-request-start
+      import.meta.env.DEV && fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"prod-ai-json-error",runId:"pre-fix",hypothesisId:"A",location:"src/pages/AIAssistant.tsx:submitQuestion",msg:"[DEBUG] AI request start",data:{traceId:debugTraceId,url:API_URLS.DOCTOR_AI_ASSISTANT,username:user.username,hasSelectedContext:Boolean(selectedContext),historyCount:historyForRequest.length},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       const response = await fetch(API_URLS.DOCTOR_AI_ASSISTANT, {
         method: 'POST',
         headers: {
@@ -442,6 +541,10 @@ const AIAssistant = () => {
           conversationHistory: historyForRequest
         })
       });
+
+      // #region debug-point B:ai-response-meta
+      import.meta.env.DEV && response.clone().text().then((body)=>fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"prod-ai-json-error",runId:"pre-fix",hypothesisId:"B",location:"src/pages/AIAssistant.tsx:submitQuestion",msg:"[DEBUG] AI response meta",data:{traceId:debugTraceId,url:response.url,status:response.status,ok:response.ok,redirected:response.redirected,contentType:response.headers.get('content-type'),bodyStart:body.slice(0,180)},ts:Date.now()})}).catch(()=>{})).catch((cloneError)=>fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"prod-ai-json-error",runId:"pre-fix",hypothesisId:"B",location:"src/pages/AIAssistant.tsx:submitQuestion",msg:"[DEBUG] AI response clone failed",data:{traceId:debugTraceId,error:cloneError instanceof Error ? cloneError.message : String(cloneError)},ts:Date.now()})}).catch(()=>{}));
+      // #endregion
 
       const payload = await response.json();
       if (!response.ok || !payload.success || !payload.data) {
@@ -458,6 +561,9 @@ const AIAssistant = () => {
       setSelectedContext(null);
       setChatHistory((previous) => [...previous, assistantTurn]);
     } catch (error) {
+      // #region debug-point C:ai-request-error
+      import.meta.env.DEV && fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"prod-ai-json-error",runId:"pre-fix",hypothesisId:"C",location:"src/pages/AIAssistant.tsx:submitQuestion",msg:"[DEBUG] AI request error",data:{traceId:debugTraceId,error:error instanceof Error ? error.message : String(error)},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       console.error('AI assistant request failed:', error);
       toast({
         title: 'AI Assistant Error',
@@ -598,181 +704,198 @@ const AIAssistant = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="p-2 md:p-6 space-y-6 md:space-y-8 w-full mx-auto animate-fade-in">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-bold">AI Asisten Dokter</h1>
+      <div className="p-2 md:p-6 space-y-6 md:space-y-8 w-full mx-auto animate-fade-in shadow-md bg-white rounded-md">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-6 w-6 text-primary" />
+              <h1 className="text-2xl font-bold">AI Asisten Dokter</h1>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Asisten ini untuk membantu dokter login mencari data pasien, kunjungan terakhir, diagnosis, resep, hasil lab, hasil radiologi, rawat inap, laporan operasi, dan jumlah pasien.
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Asisten ini hanya menjalankan query MySQL baca-saja (`SELECT`) untuk membantu dokter login mencari data pasien, kunjungan terakhir, diagnosis, resep, hasil lab, hasil radiologi, rawat inap, laporan operasi, dan jumlah pasien.
-          </p>
+          <Button type="button" variant="outline" onClick={handleResetContext} disabled={loading}>
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Reset Konteks
+          </Button>
         </div>
-        <Button type="button" variant="outline" onClick={handleResetContext} disabled={loading}>
-          <RotateCcw className="mr-2 h-4 w-4" />
-          Reset Konteks
-        </Button>
-      </div>
 
-      <div className="grid gap-6">
-        <Card className="min-w-0">
-          <CardHeader>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <CardTitle>Chat</CardTitle>
-              <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
-                <Badge variant="outline" className="max-w-full whitespace-normal">
-                  Pasien: {activeContext.patientName || '-'}
-                </Badge>
-                <Badge variant="outline" className="max-w-full whitespace-normal">
-                  No. Rawat: {activeContext.noRawat || '-'}
-                </Badge>
-                <Badge variant="outline" className="max-w-full whitespace-normal">
-                  No. RM: {activeContext.noRkmMedis || '-'}
-                </Badge>
+        <div className="grid gap-6">
+          <Card className="min-w-0">
+            <CardHeader>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <CardTitle>Chat</CardTitle>
+                <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+                  <Badge variant="outline" className="max-w-full whitespace-normal">
+                    Pasien: {activeContext.patientName || '-'}
+                  </Badge>
+                  <Badge variant="outline" className="max-w-full whitespace-normal">
+                    No. Rawat: {activeContext.noRawat || '-'}
+                  </Badge>
+                  <Badge variant="outline" className="max-w-full whitespace-normal">
+                    No. RM: {activeContext.noRkmMedis || '-'}
+                  </Badge>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="max-h-[560px] space-y-4 overflow-y-auto rounded-md border bg-muted/20 p-4">
-              {chatHistory.map((turn) => (
-                <div
-                  key={turn.id}
-                  className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="max-h-[560px] space-y-4 overflow-y-auto rounded-md border bg-muted/20 p-4">
+                {chatHistory.map((turn) => (
                   <div
-                    className={`max-w-[90%] rounded-lg px-4 py-3 shadow-sm ${
-                      turn.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-white border'
-                    }`}
+                    key={turn.id}
+                    className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className="mb-2 flex items-center gap-2 text-xs font-medium opacity-80">
-                      {turn.role === 'user' ? <User2 className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-                      <span>{turn.role === 'user' ? 'Dokter' : 'AI Asisten'}</span>
-                    </div>
-                    <div className="whitespace-pre-wrap text-sm">{turn.message}</div>
-
-                    {turn.role === 'assistant' && turn.payload?.rows?.length ? (
-                      <div className="mt-4 space-y-3">
-                        {canSelectRowAsContext(turn.payload?.intent, turn.payload?.careType) ? (
-                          <div className="text-xs text-muted-foreground">
-                            Klik baris pasien untuk menjadikannya konteks aktif.
-                          </div>
-                        ) : null}
-                        <div className="overflow-x-auto rounded-md border">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-muted/50">
-                                {turn.payload.columns.map((column) => (
-                                  <th key={column} className="p-3 text-left font-medium">
-                                    {column}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {turn.payload.rows.map((row, index) => {
-                                const rowContext = buildContextFromRow(
-                                  row,
-                                  turn.payload?.context,
-                                  turn.payload?.intent || null
-                                );
-                                const isSelectable =
-                                  canSelectRowAsContext(turn.payload?.intent, turn.payload?.careType) && Boolean(rowContext);
-                                const isActiveRow = isSelectable && isSameContextRow(row, activeContext);
-
-                                return (
-                                  <tr
-                                    key={`${index}-${JSON.stringify(row)}`}
-                                    className={`border-t ${
-                                      isSelectable ? 'cursor-pointer hover:bg-muted/50' : ''
-                                    } ${isActiveRow ? 'bg-primary/10' : ''}`}
-                                    onClick={() =>
-                                      isSelectable ? handleSelectRowContext(row, turn.payload) : undefined
-                                    }
-                                  >
-                                    {turn.payload?.columns.map((column) => (
-                                      <td key={`${index}-${column}`} className="p-3 align-top">
-                                        {formatCellValue(row[column])}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                        {canSelectRowAsContext(turn.payload?.intent, turn.payload?.careType) &&
-                        turn.payload.rows.some((item) =>
-                          Boolean(buildContextFromRow(item, turn.payload?.context, turn.payload?.intent || null))
-                        ) ? (
-                          <div className="text-[11px] text-muted-foreground">
-                            Baris yang berisi identitas pasien bisa diklik untuk memperbarui konteks aktif.
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="rounded-lg border bg-white px-4 py-3 shadow-sm">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Memproses pertanyaan...</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <Textarea
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder="Tulis pertanyaan Anda, misalnya: tampilkan diagnosis pasien [nama pasien]"
-                rows={4}
-                disabled={loading}
-              />
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-muted-foreground">
-                  Saran pertanyaan untuk input chat
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {visibleSuggestionPrompts.map((prompt) => (
-                    <Button
-                      key={prompt}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-auto whitespace-normal text-left"
-                      onClick={() => handlePromptTemplateClick(prompt)}
-                      disabled={loading}
+                    <div
+                      className={`max-w-[90%] rounded-lg px-4 py-3 shadow-sm ${
+                        turn.role === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-white border'
+                      }`}
                     >
-                      {prompt}
-                    </Button>
-                  ))}
-                </div>
-                {message.trim() && visibleSuggestionPrompts.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">
-                    Tidak ada saran yang cocok dengan teks input saat ini.
+                      <div className="mb-2 flex items-center gap-2 text-xs font-medium opacity-80">
+                        {turn.role === 'user' ? <User2 className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                        <span>{turn.role === 'user' ? 'Dokter' : 'AI Asisten'}</span>
+                      </div>
+                      <div className="whitespace-pre-wrap text-sm">{turn.message}</div>
+
+                      {turn.role === 'assistant' && turn.payload?.rows?.length ? (
+                        <div className="mt-4 space-y-3">
+                          {canSelectRowAsContext(turn.payload?.intent, turn.payload?.careType) ? (
+                            <div className="text-xs text-muted-foreground">
+                              Klik baris pasien untuk menjadikannya konteks aktif.
+                            </div>
+                          ) : null}
+                          <div className="overflow-x-auto rounded-md border">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-muted/50">
+                                  {turn.payload.columns.map((column) => (
+                                    <th key={column} className="p-3 text-left font-medium">
+                                      {column}
+                                    </th>
+                                  ))}
+                                  <th className="p-3 text-left font-medium">Aksi</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {turn.payload.rows.map((row, index) => {
+                                  const rowContext = buildContextFromRow(
+                                    row,
+                                    turn.payload?.context,
+                                    turn.payload?.intent || null
+                                  );
+                                  const isSelectable =
+                                    canSelectRowAsContext(turn.payload?.intent, turn.payload?.careType) && Boolean(rowContext);
+                                  const isActiveRow = isSelectable && isSameContextRow(row, activeContext);
+                                  const medicalRecordLink = getMedicalRecordLink(row);
+
+                                  return (
+                                    <tr
+                                      key={`${index}-${JSON.stringify(row)}`}
+                                      className={`border-t ${
+                                        isSelectable ? 'cursor-pointer hover:bg-muted/50' : ''
+                                      } ${isActiveRow ? 'bg-primary/10' : ''}`}
+                                      onClick={() =>
+                                        isSelectable ? handleSelectRowContext(row, turn.payload) : undefined
+                                      }
+                                    >
+                                      {turn.payload?.columns.map((column) => (
+                                        <td key={`${index}-${column}`} className="p-3 align-top">
+                                          {formatCellValue(row[column])}
+                                        </td>
+                                      ))}
+                                      <td className="p-3 align-top">
+                                        {medicalRecordLink ? (
+                                          <a
+                                            href={medicalRecordLink}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                                            onClick={(event) => event.stopPropagation()}
+                                          >
+                                            Buka Rekam Medis
+                                          </a>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">-</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          {canSelectRowAsContext(turn.payload?.intent, turn.payload?.careType) &&
+                          turn.payload.rows.some((item) =>
+                            Boolean(buildContextFromRow(item, turn.payload?.context, turn.payload?.intent || null))
+                          ) ? (
+                            <div className="text-[11px] text-muted-foreground">
+                              Baris yang berisi identitas pasien bisa diklik untuk memperbarui konteks aktif.
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                ) : null}
+                ))}
+
+                {loading && (
+                  <div className="flex justify-start">
+                    <div className="rounded-lg border bg-white px-4 py-3 shadow-sm">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Memproses pertanyaan...</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-end">
-                <Button type="submit" disabled={loading || !message.trim()}>
-                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Kirim
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+
+              <form onSubmit={handleSubmit} className="space-y-3">
+                <Textarea
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  placeholder="Tulis pertanyaan Anda, misalnya: tampilkan diagnosis pasien [nama pasien]"
+                  rows={4}
+                  disabled={loading}
+                />
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    Saran pertanyaan untuk input chat
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {visibleSuggestionPrompts.map((prompt) => (
+                      <Button
+                        key={prompt}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-auto whitespace-normal text-left"
+                        onClick={() => handlePromptTemplateClick(prompt)}
+                        disabled={loading}
+                      >
+                        {prompt}
+                      </Button>
+                    ))}
+                  </div>
+                  {message.trim() && visibleSuggestionPrompts.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">
+                      Tidak ada saran yang cocok dengan teks input saat ini.
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={loading || !message.trim()}>
+                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                    Kirim
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
     </>
   );
 };
