@@ -89,6 +89,9 @@ const emptyTabCounts: Record<RawatJalanTab, number> = {
   internal_lanjutan_sore: 0
 };
 
+const pagiTabGroup: RawatJalanTab[] = ['pagi', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'];
+const soreTabGroup: RawatJalanTab[] = ['sore', 'rujukan_internal_sore', 'pasien_lanjutan_sore', 'internal_lanjutan_sore'];
+
 const RawatJalanTabs = () => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -123,6 +126,8 @@ const RawatJalanTabs = () => {
   const [tabCounts, setTabCounts] = useState<Record<RawatJalanTab, number>>(emptyTabCounts);
   const effectiveDoctorFilter = doctorFilter || "all";
   const requestDoctorFilter = doctorFilter || "all";
+  const isPagiGroupActive = pagiTabGroup.includes(activeTab);
+  const isSoreGroupActive = soreTabGroup.includes(activeTab);
 
   const buildRequestBody = (tabFilter: RawatJalanTab, overrides: Record<string, string> = {}) => ({
     kd_poli: user?.kd_poli,
@@ -412,34 +417,42 @@ const RawatJalanTabs = () => {
           <AlarmClock className="mr-2 h-4 w-4" />
           <span>Sesi Pagi ({tabCounts.pagi})</span>
         </TabsTrigger>
-        <TabsTrigger value="rujukan_internal">
-          <User className="mr-2 h-4 w-4" />
-          <span>Internal Pagi ({tabCounts.rujukan_internal})</span>
-        </TabsTrigger>
-        <TabsTrigger value="pasien_lanjutan">
-          <List className="mr-2 h-4 w-4" />
-          <span>Lanjutan Pagi ({tabCounts.pasien_lanjutan})</span>
-        </TabsTrigger>
-        <TabsTrigger value="internal_lanjutan">
-          <List className="mr-2 h-4 w-4" />
-          <span>Internal Lanjut Pagi ({tabCounts.internal_lanjutan})</span>
-        </TabsTrigger>
+        {isPagiGroupActive && (
+          <>
+            <TabsTrigger value="rujukan_internal">
+              <User className="mr-2 h-4 w-4" />
+              <span>Internal Pagi ({tabCounts.rujukan_internal})</span>
+            </TabsTrigger>
+            <TabsTrigger value="pasien_lanjutan">
+              <List className="mr-2 h-4 w-4" />
+              <span>Lanjutan Pagi ({tabCounts.pasien_lanjutan})</span>
+            </TabsTrigger>
+            <TabsTrigger value="internal_lanjutan">
+              <List className="mr-2 h-4 w-4" />
+              <span>Internal Lanjut Pagi ({tabCounts.internal_lanjutan})</span>
+            </TabsTrigger>
+          </>
+        )}
         <TabsTrigger value="sore">
           <Clock className="mr-2 h-4 w-4" />
           <span>Sesi Sore ({tabCounts.sore})</span>
         </TabsTrigger>
-        <TabsTrigger value="rujukan_internal_sore">
-          <User className="mr-2 h-4 w-4" />
-          <span>Internal Sore ({tabCounts.rujukan_internal_sore})</span>
-        </TabsTrigger>
-        <TabsTrigger value="pasien_lanjutan_sore">
-          <List className="mr-2 h-4 w-4" />
-          <span>Lanjutan Sore ({tabCounts.pasien_lanjutan_sore})</span>
-        </TabsTrigger>
-        <TabsTrigger value="internal_lanjutan_sore">
-          <List className="mr-2 h-4 w-4" />
-          <span>Internal Lanjut Sore ({tabCounts.internal_lanjutan_sore})</span>
-        </TabsTrigger>
+        {isSoreGroupActive && (
+          <>
+            <TabsTrigger value="rujukan_internal_sore">
+              <User className="mr-2 h-4 w-4" />
+              <span>Internal Sore ({tabCounts.rujukan_internal_sore})</span>
+            </TabsTrigger>
+            <TabsTrigger value="pasien_lanjutan_sore">
+              <List className="mr-2 h-4 w-4" />
+              <span>Lanjutan Sore ({tabCounts.pasien_lanjutan_sore})</span>
+            </TabsTrigger>
+            <TabsTrigger value="internal_lanjutan_sore">
+              <List className="mr-2 h-4 w-4" />
+              <span>Internal Lanjut Sore ({tabCounts.internal_lanjutan_sore})</span>
+            </TabsTrigger>
+          </>
+        )}
       </TabsList>
       
       {rawatJalanTabValues.map((tabValue) => (
