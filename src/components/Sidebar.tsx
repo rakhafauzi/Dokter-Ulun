@@ -58,11 +58,11 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
   
   const menuItems = [
     { name: 'Dashboard', path: '/', icon: <BarChart2 className="h-5 w-5" /> },
+    { name: 'AI Asisten', path: '/ai-assistant', icon: <Bot className="h-5 w-5" /> },
     { name: 'Presensi', path: '/presensi', icon: <FileCheck className="h-5 w-5" /> },
     { name: 'Booking Operasi', path: '/booking', icon: <CalendarClock className="h-5 w-5" /> },
     { name: 'Tarif INA-CBGs', path: '/tarif', icon: <DollarSign className="h-5 w-5" /> },
     { name: 'Kode Medis', path: '/icd', icon: <FileBarChart className="h-5 w-5" /> },
-    { name: 'AI Asisten', path: '/ai-assistant', icon: <Bot className="h-5 w-5" /> },
     // { name: 'TTD Elektronik', path: '/signature', icon: <Pencil className="h-5 w-5" /> },
     // { name: 'SRQ', path: '/srq', icon: <HelpCircle className="h-5 w-5" /> },
     // { name: 'E-Book', path: '/ebook', icon: <Book className="h-5 w-5" /> },
