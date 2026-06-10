@@ -19,7 +19,7 @@ router.get('/info', (req, res) => {
       },
       pemeriksaan_ranap: {
         status_rawat: 'Ranap',
-        fields: ['no_rawat', 'tgl_perawatan', 'jam_rawat', 'suhu_tubuh', 'tensi', 'nadi', 'respirasi', 'tinggi', 'berat', 'spo2', 'gcs', 'kesadaran', 'keluhan', 'pemeriksaan', 'rtl', 'penilaian', 'instruksi', 'evaluasi', 'nip']
+        fields: ['no_rawat', 'tgl_perawatan', 'jam_rawat', 'suhu_tubuh', 'tensi', 'nadi', 'respirasi', 'tinggi', 'berat', 'spo2', 'gcs', 'keluhan', 'pemeriksaan', 'rtl', 'penilaian', 'instruksi', 'evaluasi', 'nip']
       }
     },
     required_fields: ['no_rawat', 'status_rawat', 'original_date', 'original_time'],

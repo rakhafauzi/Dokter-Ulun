@@ -74,7 +74,6 @@ export const updateExaminationData = async (examinationData) => {
           berat = ?,
           spo2 = ?,
           gcs = ?,
-          kesadaran = ?,
           keluhan = ?,
           pemeriksaan = ?,
           rtl = ?,
@@ -86,7 +85,7 @@ export const updateExaminationData = async (examinationData) => {
       `;
       params = [
         tgl_perawatan || null, jam_rawat || null, suhu || null, tensi || null, nadi || null, respirasi || null,
-        tinggi || null, berat || null, spo2 || null, gcs || null, kesadaran || null, keluhan || null, pemeriksaan || null, rtl || null, penilaian || null, instruksi || null, evaluasi || null, nip || null,
+        tinggi || null, berat || null, spo2 || null, gcs || null, keluhan || null, pemeriksaan || null, rtl || null, penilaian || null, instruksi || null, evaluasi || null, nip || null,
         no_rawat, original_date, original_time
       ];
     }
