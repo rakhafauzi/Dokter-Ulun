@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import {
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, ArrowLeft,
   Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play,
-  BadgeAlert, Maximize2
+  BadgeAlert, Maximize2, Biohazard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
