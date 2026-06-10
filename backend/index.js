@@ -25,6 +25,7 @@ import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
 import OperationReportService from './services/operationReportService.js';
 import PatientNotesService from './services/patientNotesService.js';
+import PatientContactService from './services/patientContactService.js';
 import ProcedureService from './services/procedureService.js';
 import PrescriptionDataService from './services/prescriptionDataService.js';
 import RadiologyDataService from './services/radiologyDataService.js';
@@ -747,6 +748,19 @@ app.delete('/api/patient-notes', async (req, res) => {
   } catch (error) {
     console.error('Error in patient-notes DELETE endpoint:', error);
     res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.put('/api/patient-contact', async (req, res) => {
+  try {
+    const result = await PatientContactService.updatePatientWhatsapp(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-contact PUT endpoint:', error);
+    res.status(400).json({
       success: false,
       error: error.message
     });

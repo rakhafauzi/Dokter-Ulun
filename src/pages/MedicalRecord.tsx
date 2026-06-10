@@ -11,7 +11,7 @@ import {
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock,
   Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play,
-  BadgeAlert, Maximize2, Biohazard
+  BadgeAlert, Maximize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -150,6 +150,8 @@ interface MedicalRecordData {
     telepon: string;
     golongan_darah: string;
     alergi: string;
+    prb?: string;
+    prb_program?: string;
     status_lanjut?: string;
   };
   outpatient_visits: any[];
@@ -654,6 +656,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [allergyHistory, setAllergyHistory] = useState<AllergyHistoryItem[]>([]);
   const [allergyHistoryLoading, setAllergyHistoryLoading] = useState(false);
   const [savingAllergy, setSavingAllergy] = useState(false);
+  const [isWhatsappModalOpen, setIsWhatsappModalOpen] = useState(false);
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [savingWhatsapp, setSavingWhatsapp] = useState(false);
 
   const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
   const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
@@ -3288,6 +3293,70 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     user?.username
   ]);
 
+  const handleSaveWhatsapp = useCallback(async () => {
+    if (!no_rkm_medis) {
+      toast({
+        title: "Error",
+        description: "Nomor rekam medis pasien tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!whatsappNumber.trim()) {
+      toast({
+        title: "Error",
+        description: "Nomor WhatsApp wajib diisi",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSavingWhatsapp(true);
+      const response = await fetch(API_URLS.PATIENT_CONTACT, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rkm_medis,
+          no_tlp: whatsappNumber.trim()
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Nomor WhatsApp berhasil diperbarui'
+      });
+
+      setIsWhatsappModalOpen(false);
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error saving patient whatsapp:', error);
+      const message = error instanceof Error ? error.message : 'Gagal memperbarui nomor WhatsApp';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSavingWhatsapp(false);
+    }
+  }, [
+    fetchMedicalRecord,
+    no_rkm_medis,
+    toast,
+    whatsappNumber
+  ]);
+
   const fetchPackageOptions = useCallback(async (searchText = '') => {
     try {
       setPackageSearchLoading(true);
@@ -4924,8 +4993,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     alamat: "",
     telepon: "",
     golongan_darah: "",
-    alergi: ""
+    alergi: "",
+    prb: "",
+    prb_program: ""
   };
+
+  const prbInfoList = [currentPatient.prb, currentPatient.prb_program]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .flatMap((value) => value.split(',').map((item) => item.trim()).filter(Boolean));
+  const prbInfoText = prbInfoList.join(', ');
 
   const dummySearchResults = [
     {
@@ -5009,7 +5086,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <User className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Nama</p>
-                  <p className="font-medium">{currentPatient.nama}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{currentPatient.nama}</p>
+                    {defaultExaminationStatusRawat === 'Ralan' && prbInfoText ? (
+                      <p
+                        className="text-xs text-amber-700"
+                        title={prbInfoText}
+                      >
+                        (PRB : {prbInfoText})
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               </div>
               <div className="flex items-start space-x-4">
@@ -5046,7 +5133,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <Phone className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Telepon</p>
-                  <p className="font-medium">{currentPatient.telepon}</p>
+                  <a
+                    href="#"
+                    className="font-medium text-green-600 hover:text-green-700 hover:underline"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setWhatsappNumber(String(medicalData?.patient?.telepon || '').trim());
+                      setIsWhatsappModalOpen(true);
+                    }}
+                  >
+                    {currentPatient.telepon || 'Input nomor WhatsApp'}
+                  </a>
                 </div>
               </div>
               <div className="flex items-start space-x-4">
@@ -8209,6 +8306,45 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </div>
             </div>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isWhatsappModalOpen}
+        onOpenChange={(open) => {
+          setIsWhatsappModalOpen(open);
+          if (open) {
+            setWhatsappNumber(String(medicalData?.patient?.telepon || '').trim());
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update No WhatsApp</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="patient-whatsapp">Nomor WhatsApp</Label>
+              <Input
+                id="patient-whatsapp"
+                placeholder="Contoh: 08123456789"
+                value={whatsappNumber}
+                onChange={(event) => setWhatsappNumber(event.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsWhatsappModalOpen(false)}
+                disabled={savingWhatsapp}
+              >
+                Batal
+              </Button>
+              <Button onClick={() => void handleSaveWhatsapp()} disabled={savingWhatsapp}>
+                {savingWhatsapp ? 'Menyimpan...' : 'Simpan'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       

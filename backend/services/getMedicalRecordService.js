@@ -1072,6 +1072,8 @@ class GetMedicalRecordService {
       const [
         patientRows,
         patientAllergyRows,
+        patientPrbRows,
+        patientPrbProgramRows,
         latestVisitRows,
         outpatientPageResult,
         inpatientPageResult,
@@ -1127,6 +1129,28 @@ class GetMedicalRecordService {
           `,
           [no_rm]
         ),
+        focusNoRawat
+          ? db.execute(
+              `
+                SELECT bp.prb
+                FROM bpjs_prb bp
+                INNER JOIN bridging_sep bs ON bs.no_sep = bp.no_sep
+                WHERE bs.no_rawat = ?
+                LIMIT 1
+              `,
+              [focusNoRawat]
+            )
+          : Promise.resolve([[]]),
+        db.execute(
+          `
+            SELECT pp.nm_program
+            FROM pasien p
+            LEFT JOIN peserta_prb pp ON pp.no_peserta = p.no_peserta
+            WHERE p.no_rkm_medis = ?
+            LIMIT 1
+          `,
+          [no_rm]
+        ),
         db.execute(
           `
             SELECT status_lanjut
@@ -1166,6 +1190,8 @@ class GetMedicalRecordService {
 
       const patientList = patientRows[0];
       const patientAllergies = patientAllergyRows[0];
+      const patientPrb = patientPrbRows[0];
+      const patientPrbProgram = patientPrbProgramRows[0];
       const latestVisits = latestVisitRows[0];
 
       if (patientList.length === 0) {
@@ -1174,6 +1200,8 @@ class GetMedicalRecordService {
 
       const patient = patientList[0];
       const allergySummary = String(patientAllergies?.[0]?.alergi || '').trim();
+      const prbLabel = String(patientPrb?.[0]?.prb || '').trim();
+      const prbProgram = String(patientPrbProgram?.[0]?.nm_program || '').trim();
       const outpatientVisits = outpatientPageResult?.rows || [];
       const inpatientVisitRefs = inpatientPageResult?.rows || [];
 
@@ -1223,6 +1251,8 @@ class GetMedicalRecordService {
           telepon: patient.no_tlp || '',
           golongan_darah: patient.gol_darah || '',
           alergi: allergySummary,
+          prb: prbLabel,
+          prb_program: prbProgram,
           status_lanjut: latestVisits[0]?.status_lanjut || 'Ralan'
         },
         outpatient_visits: finalOutpatientVisits,
