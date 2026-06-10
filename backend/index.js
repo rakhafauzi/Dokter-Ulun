@@ -25,6 +25,7 @@ import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
 import OperationReportService from './services/operationReportService.js';
 import PatientNotesService from './services/patientNotesService.js';
+import PatientContactService from './services/patientContactService.js';
 import ProcedureService from './services/procedureService.js';
 import PrescriptionDataService from './services/prescriptionDataService.js';
 import RadiologyDataService from './services/radiologyDataService.js';
@@ -753,6 +754,32 @@ app.delete('/api/patient-notes', async (req, res) => {
   }
 });
 
+app.put('/api/patient-contact', async (req, res) => {
+  try {
+    const result = await PatientContactService.updatePatientWhatsapp(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-contact PUT endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/patient-contact/message', async (req, res) => {
+  try {
+    const result = await PatientContactService.sendWhatsappMessage(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-contact message POST endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/internal-referrals/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
@@ -1054,7 +1081,7 @@ app.get('/api/laboratory-data', async (req, res) => {
 app.post('/api/laboratory-data', async (req, res) => {
   try {
     const { action } = req.query;
-    const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat, username } = req.body;
+    const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat, username, klinis } = req.body;
     
     let result;
     
@@ -1063,14 +1090,14 @@ app.post('/api/laboratory-data', async (req, res) => {
         if (!no_rawat || !dokter_perujuk) {
           return res.status(400).json({ error: 'no_rawat and dokter_perujuk are required' });
         }
-        result = await LaboratoryDataService.createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat);
+        result = await LaboratoryDataService.createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat, klinis);
         break;
         
       case 'update_lab_request':
         if (!noorder) {
           return res.status(400).json({ error: 'noorder is required' });
         }
-        result = await LaboratoryDataService.updateLabRequest(noorder, examinations, details, status_rawat, username);
+        result = await LaboratoryDataService.updateLabRequest(noorder, examinations, details, status_rawat, username, klinis);
         break;
         
       default:
@@ -1336,7 +1363,7 @@ app.get('/api/radiology-data', async (req, res) => {
 app.post('/api/radiology-data', async (req, res) => {
   try {
     const { action } = req.query;
-    const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat, username } = req.body;
+    const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat, username, klinis } = req.body;
 
     let result;
 
@@ -1345,14 +1372,14 @@ app.post('/api/radiology-data', async (req, res) => {
         if (!no_rawat || !dokter_perujuk) {
           return res.status(400).json({ error: 'no_rawat and dokter_perujuk are required' });
         }
-        result = await RadiologyDataService.createRadiologyRequest(no_rawat, dokter_perujuk, examinations, status_rawat);
+        result = await RadiologyDataService.createRadiologyRequest(no_rawat, dokter_perujuk, examinations, status_rawat, klinis);
         break;
 
       case 'update_radiology_request':
         if (!noorder) {
           return res.status(400).json({ error: 'noorder is required' });
         }
-        result = await RadiologyDataService.updateRadiologyRequest(noorder, examinations, status_rawat, username);
+        result = await RadiologyDataService.updateRadiologyRequest(noorder, examinations, status_rawat, username, klinis);
         break;
 
       default:

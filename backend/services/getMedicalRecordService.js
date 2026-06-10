@@ -3,6 +3,27 @@ import db from '../config/database.js';
 class GetMedicalRecordService {
   static DEFAULT_LIMIT = 5;
 
+  static getEnvValue(key) {
+    const upper = String(key || '').trim();
+    if (!upper) {
+      return '';
+    }
+
+    const aliasKeys = {
+      STOK_RESEP_RAJAL: ['STOK_RESEP_RALAN']
+    };
+
+    const aliases = Array.isArray(aliasKeys[upper]) ? aliasKeys[upper] : [];
+    return (
+      String(process.env[upper] || '').trim() ||
+      String(process.env[upper.toLowerCase()] || '').trim() ||
+      aliases
+        .map((alias) => String(process.env[alias] || '').trim() || String(process.env[alias.toLowerCase()] || '').trim())
+        .find(Boolean) ||
+      ''
+    );
+  }
+
   // Utility function to format date only (no time conversion)
   static formatDateOnly(dateStr) {
     if (!dateStr) return '';
@@ -45,6 +66,35 @@ class GetMedicalRecordService {
     }
 
     return this.formatDateOnly(rawValue);
+  }
+
+  static async resolveMedicationStockBangsalCode(noRawat, status) {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+
+    if (normalizedStatus === 'ranap') {
+      return this.getEnvValue('STOK_RESEP_RANAP');
+    }
+
+    if (normalizedStatus === 'pulang' || normalizedStatus === 'ibs' || normalizedStatus === 'ralan') {
+      const [rows] = await db.execute(
+        `
+          SELECT kd_poli
+          FROM reg_periksa
+          WHERE no_rawat = ?
+          LIMIT 1
+        `,
+        [noRawat]
+      );
+
+      const kdPoli = String(rows?.[0]?.kd_poli || '').trim();
+      if (['B0054', 'IGDK', 'IGD01'].includes(kdPoli)) {
+        return this.getEnvValue('STOK_RESEP_IGD');
+      }
+
+      return this.getEnvValue('STOK_RESEP_RAJAL');
+    }
+
+    return '';
   }
 
   static async getOrthancConfig() {
@@ -288,6 +338,7 @@ class GetMedicalRecordService {
       tanggal: this.formatDateOnly(row.tgl_perawatan) + ' ' + row.jam_rawat,
       tgl_perawatan: this.formatDateOnly(row.tgl_perawatan),
       jam_rawat: row.jam_rawat,
+      nip: row.nip || '',
       tekanan_darah: row.tensi || '',
       nadi: row.nadi || '',
       respirasi: row.respirasi || '',
@@ -440,6 +491,8 @@ class GetMedicalRecordService {
 
   // Helper function to fetch medications request using 2-step approach
   static async fetchMedicationsRequest(noRawat, status) {
+    const stockBangsalCode = await this.resolveMedicationStockBangsalCode(noRawat, status);
+
     // Step 1: Get list of unique prescriptions
     const prescRequestQuery = `
       SELECT DISTINCT no_resep, tgl_peresepan, jam_peresepan, kd_dokter
@@ -458,27 +511,95 @@ class GetMedicalRecordService {
       }
       
       const detailRequestQuery = `
-        SELECT dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng
+        SELECT
+          dro.kode_brng,
+          dro.jml,
+          dro.aturan_pakai,
+          ob.nama_brng,
+          ob.kode_sat AS satuan,
+          COALESCE(SUM(gb.stok), 0) AS stok
         FROM resep_dokter dro
         LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
+        LEFT JOIN gudangbarang gb ON gb.kode_brng = dro.kode_brng AND gb.kd_bangsal = ?
         WHERE dro.no_resep = ?
+        GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat
         ORDER BY ob.nama_brng
       `;
-      const [detailRequestRows] = await db.execute(detailRequestQuery, [prescRequestRow.no_resep]);
+      const compoundQuery = `
+        SELECT
+          rdr.no_racik,
+          rdr.nama_racik,
+          rdr.kd_racik,
+          rdr.jml_dr,
+          rdr.aturan_pakai,
+          rdr.keterangan,
+          mr.nm_racik
+        FROM resep_dokter_racikan rdr
+        LEFT JOIN metode_racik mr ON mr.kd_racik = rdr.kd_racik
+        WHERE rdr.no_resep = ?
+        ORDER BY rdr.no_racik ASC
+      `;
+      const [detailRequestRows, compoundRows] = await Promise.all([
+        db.execute(detailRequestQuery, [stockBangsalCode, prescRequestRow.no_resep]).then(([rows]) => rows),
+        db.execute(compoundQuery, [prescRequestRow.no_resep]).then(([rows]) => rows)
+      ]);
       
       const obatList = detailRequestRows.map(row => ({
         kode_brng: row.kode_brng || '',
         nama: row.nama_brng || '-',
         jumlah: row.jml || '-',
-        aturan_pakai: row.aturan_pakai || '-'
+        aturan_pakai: row.aturan_pakai || '-',
+        satuan: row.satuan || '',
+        stok: Number(row.stok) || 0
       }));
+
+      const compounds = [];
+      for (const compoundRow of compoundRows) {
+        const [compoundDetailRows] = await db.execute(
+          `
+            SELECT
+              rdrd.kode_brng,
+              rdrd.kandungan,
+              rdrd.jml,
+              db.nama_brng,
+              db.kode_sat AS satuan,
+              COALESCE(SUM(gb.stok), 0) AS stok
+            FROM resep_dokter_racikan_detail rdrd
+            LEFT JOIN databarang db ON db.kode_brng = rdrd.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = rdrd.kode_brng AND gb.kd_bangsal = ?
+            WHERE rdrd.no_resep = ? AND rdrd.no_racik = ?
+            GROUP BY rdrd.kode_brng, rdrd.kandungan, rdrd.jml, db.nama_brng, db.kode_sat
+            ORDER BY db.nama_brng ASC
+          `,
+          [stockBangsalCode, prescRequestRow.no_resep, compoundRow.no_racik]
+        );
+
+        compounds.push({
+          no_racik: compoundRow.no_racik,
+          nama_racik: compoundRow.nama_racik || '',
+          kd_racik: compoundRow.kd_racik || '',
+          nm_racik: compoundRow.nm_racik || '',
+          jml_dr: compoundRow.jml_dr || '',
+          aturan_pakai: compoundRow.aturan_pakai || '',
+          keterangan: compoundRow.keterangan || '',
+          details: compoundDetailRows.map((detailRow) => ({
+            kode_brng: detailRow.kode_brng || '',
+            nama_brng: detailRow.nama_brng || '-',
+            kandungan: detailRow.kandungan || '',
+            jml: detailRow.jml || '',
+            satuan: detailRow.satuan || '',
+            stok: Number(detailRow.stok) || 0
+          }))
+        });
+      }
       
-      if (obatList.length > 0) {
+      if (obatList.length > 0 || compounds.length > 0) {
         medicationsRequest.push({
           tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
           no_resep: prescRequestRow.no_resep,
           kd_dokter: prescRequestRow.kd_dokter || '',
-          obat: obatList
+          obat: obatList,
+          compounds
         });
       }
     }
@@ -494,6 +615,7 @@ class GetMedicalRecordService {
         pl.tgl_permintaan,
         pl.jam_permintaan,
         pl.dokter_perujuk,
+        dpk.klinis,
         ppl.kd_jenis_prw,
         jpl.nm_perawatan,
         pdpl.id_template,
@@ -506,6 +628,7 @@ class GetMedicalRecordService {
       FROM permintaan_lab pl 
       LEFT JOIN permintaan_pemeriksaan_lab ppl ON ppl.noorder = pl.noorder 
       LEFT JOIN jns_perawatan_lab jpl ON jpl.kd_jenis_prw = ppl.kd_jenis_prw
+      LEFT JOIN diagnosa_pasien_klinis dpk ON dpk.noorder = pl.noorder
       LEFT JOIN permintaan_detail_permintaan_lab pdpl
         ON pdpl.noorder = pl.noorder
         AND pdpl.kd_jenis_prw = ppl.kd_jenis_prw
@@ -525,6 +648,7 @@ class GetMedicalRecordService {
           noorder: row.noorder || '',
           tanggal: this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan,
           dokter_perujuk: row.dokter_perujuk || '',
+          klinis: row.klinis || '',
           pemeriksaanMap: new Map()
         });
       }
@@ -562,6 +686,7 @@ class GetMedicalRecordService {
       noorder: requestEntry.noorder,
       tanggal: requestEntry.tanggal,
       dokter_perujuk: requestEntry.dokter_perujuk,
+      klinis: requestEntry.klinis,
       pemeriksaan: Array.from(requestEntry.pemeriksaanMap.values())
     }));
   }
@@ -689,9 +814,11 @@ class GetMedicalRecordService {
         pr.tgl_permintaan,
         pr.jam_permintaan,
         pr.dokter_perujuk,
+        dpk.klinis,
         ppr.kd_jenis_prw,
         jpr.nm_perawatan
       FROM permintaan_radiologi pr
+      LEFT JOIN diagnosa_pasien_klinis dpk ON dpk.noorder = pr.noorder
       LEFT JOIN permintaan_pemeriksaan_radiologi ppr ON ppr.noorder = pr.noorder
       LEFT JOIN jns_perawatan_radiologi jpr ON jpr.kd_jenis_prw = ppr.kd_jenis_prw
       WHERE pr.no_rawat = ? AND pr.status = ?
@@ -709,6 +836,7 @@ class GetMedicalRecordService {
           noorder: row.noorder || '',
           tanggal: this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan,
           dokter_perujuk: row.dokter_perujuk || '',
+          klinis: row.klinis || '',
           pemeriksaan: []
         });
       }
@@ -1072,6 +1200,8 @@ class GetMedicalRecordService {
       const [
         patientRows,
         patientAllergyRows,
+        patientPrbRows,
+        patientPrbProgramRows,
         latestVisitRows,
         outpatientPageResult,
         inpatientPageResult,
@@ -1127,6 +1257,28 @@ class GetMedicalRecordService {
           `,
           [no_rm]
         ),
+        focusNoRawat
+          ? db.execute(
+              `
+                SELECT bp.prb
+                FROM bpjs_prb bp
+                INNER JOIN bridging_sep bs ON bs.no_sep = bp.no_sep
+                WHERE bs.no_rawat = ?
+                LIMIT 1
+              `,
+              [focusNoRawat]
+            )
+          : Promise.resolve([[]]),
+        db.execute(
+          `
+            SELECT pp.nm_program
+            FROM pasien p
+            LEFT JOIN peserta_prb pp ON pp.no_peserta = p.no_peserta
+            WHERE p.no_rkm_medis = ?
+            LIMIT 1
+          `,
+          [no_rm]
+        ),
         db.execute(
           `
             SELECT status_lanjut
@@ -1166,6 +1318,8 @@ class GetMedicalRecordService {
 
       const patientList = patientRows[0];
       const patientAllergies = patientAllergyRows[0];
+      const patientPrb = patientPrbRows[0];
+      const patientPrbProgram = patientPrbProgramRows[0];
       const latestVisits = latestVisitRows[0];
 
       if (patientList.length === 0) {
@@ -1174,6 +1328,8 @@ class GetMedicalRecordService {
 
       const patient = patientList[0];
       const allergySummary = String(patientAllergies?.[0]?.alergi || '').trim();
+      const prbLabel = String(patientPrb?.[0]?.prb || '').trim();
+      const prbProgram = String(patientPrbProgram?.[0]?.nm_program || '').trim();
       const outpatientVisits = outpatientPageResult?.rows || [];
       const inpatientVisitRefs = inpatientPageResult?.rows || [];
 
@@ -1223,6 +1379,8 @@ class GetMedicalRecordService {
           telepon: patient.no_tlp || '',
           golongan_darah: patient.gol_darah || '',
           alergi: allergySummary,
+          prb: prbLabel,
+          prb_program: prbProgram,
           status_lanjut: latestVisits[0]?.status_lanjut || 'Ralan'
         },
         outpatient_visits: finalOutpatientVisits,

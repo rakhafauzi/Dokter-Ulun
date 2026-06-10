@@ -80,7 +80,16 @@ interface RacikanMedicine {
 interface CompoundPrescription {
   tanggal: string;
   nama_racikan: string;
+  jumlah: string;
+  kd_racik: string;
+  aturan_pakai: string;
+  keterangan: string;
   komposisi: RacikanMedicine[];
+}
+
+interface CompoundMethodOption {
+  kd_racik: string;
+  nm_racik: string;
 }
 
 interface LabTest {
@@ -137,8 +146,8 @@ interface ProcedureOption {
 }
 
 type ProcedureStatusRawat = 'Ralan' | 'Ranap';
-type LabStatusRawat = 'Ralan' | 'Ranap';
-type RadiologyStatusRawat = 'Ralan' | 'Ranap';
+type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
+type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 
 interface MedicalRecordData {
   patient: {
@@ -150,6 +159,8 @@ interface MedicalRecordData {
     telepon: string;
     golongan_darah: string;
     alergi: string;
+    prb?: string;
+    prb_program?: string;
     status_lanjut?: string;
   };
   outpatient_visits: any[];
@@ -213,6 +224,7 @@ interface ExaminationHistoryItem {
 const PAGE_SIZE = 5;
 type VisitHistoryTabValue = 'outpatient' | 'inpatient';
 type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
+type CareSectionTabValue = 'outpatient' | 'inpatient';
 type MedicalRecordFetchOptions = {
   reset?: boolean;
   outpatientPage?: number;
@@ -273,6 +285,10 @@ const createEmptyRacikanMedicine = (): RacikanMedicine => ({
 const createDefaultCompoundPrescription = (): CompoundPrescription => ({
   tanggal: getCurrentPrescriptionDate(),
   nama_racikan: '',
+  jumlah: '',
+  kd_racik: '',
+  aturan_pakai: '',
+  keterangan: '',
   komposisi: [createEmptyRacikanMedicine()]
 });
 
@@ -329,7 +345,15 @@ const getDefaultRadiologyRequestForm = (): RadiologyFormItem[] => ([{
 }]);
 
 const mapStatusLanjutToStatusRawat = (statusLanjut?: string | null) => {
-  return statusLanjut === 'Ranap' || statusLanjut === 'Dirawat' ? 'Ranap' : 'Ralan';
+  if (statusLanjut === 'Ranap' || statusLanjut === 'Dirawat') {
+    return 'Ranap';
+  }
+
+  if (statusLanjut === 'IGD') {
+    return 'IGD';
+  }
+
+  return 'Ralan';
 };
 
 const mapPrescriptionSourceToStatus = (source?: string | null): PrescriptionStatus => {
@@ -345,8 +369,18 @@ const mapPrescriptionSourceToStatus = (source?: string | null): PrescriptionStat
   }
 };
 
-const mapRequestSourceToStatusRawat = (source?: string | null): ProcedureStatusRawat => {
-  return String(source || '').trim().toLowerCase() === 'rawat inap' ? 'Ranap' : 'Ralan';
+const mapRequestSourceToStatusRawat = (source?: string | null): LabStatusRawat => {
+  const normalizedSource = String(source || '').trim().toLowerCase();
+
+  if (normalizedSource === 'rawat inap') {
+    return 'Ranap';
+  }
+
+  if (normalizedSource === 'igd' || normalizedSource === 'gawat darurat' || normalizedSource === 'instalasi gawat darurat') {
+    return 'IGD';
+  }
+
+  return 'Ralan';
 };
 
 const getPrescriptionDateOnly = (value?: string | null) => {
@@ -620,6 +654,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     medicalData?.outpatient_visits,
     medicalData?.patient?.status_lanjut
   ]);
+  const preferredCareSectionTab = useMemo<CareSectionTabValue>(
+    () => (defaultExaminationStatusRawat === 'Ranap' ? 'inpatient' : 'outpatient'),
+    [defaultExaminationStatusRawat]
+  );
 
   // Form states
   const [medications, setMedications] = useState<Medication[]>(() => getDefaultMedicationForm('Ralan'));
@@ -629,6 +667,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [medicineSearchLoading, setMedicineSearchLoading] = useState<Record<string, boolean>>({});
 
   const [compoundPrescriptions, setCompoundPrescriptions] = useState<CompoundPrescription[]>([createDefaultCompoundPrescription()]);
+  const [compoundMethods, setCompoundMethods] = useState<CompoundMethodOption[]>([]);
   const [compoundMedicineOptions, setCompoundMedicineOptions] = useState<Record<string, MedicineOption[]>>({});
   const [compoundMedicineSearchOpen, setCompoundMedicineSearchOpen] = useState<Record<string, boolean>>({});
   const [compoundMedicineSearchQuery, setCompoundMedicineSearchQuery] = useState<Record<string, string>>({});
@@ -654,6 +693,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [allergyHistory, setAllergyHistory] = useState<AllergyHistoryItem[]>([]);
   const [allergyHistoryLoading, setAllergyHistoryLoading] = useState(false);
   const [savingAllergy, setSavingAllergy] = useState(false);
+  const [isWhatsappModalOpen, setIsWhatsappModalOpen] = useState(false);
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [savingWhatsapp, setSavingWhatsapp] = useState(false);
+  const [whatsappMessage, setWhatsappMessage] = useState('');
+  const [sendingWhatsappMessage, setSendingWhatsappMessage] = useState(false);
 
   const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
   const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
@@ -663,6 +707,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [labTemplatesByIndex, setLabTemplatesByIndex] = useState<Record<number, LabTemplateOption[]>>({});
   const [labTemplateLoadingByIndex, setLabTemplateLoadingByIndex] = useState<Record<number, boolean>>({});
   const [labStatusRawat, setLabStatusRawat] = useState<LabStatusRawat>('Ralan');
+  const [labKlinis, setLabKlinis] = useState('');
 
   const [procedures, setProcedures] = useState<ProcedureFormItem[]>(getDefaultProcedureForm);
   const [procedureOptions, setProcedureOptions] = useState<Record<number, ProcedureOption[]>>({});
@@ -699,6 +744,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [radiologySearchQuery, setRadiologySearchQuery] = useState<Record<number, string>>({});
   const [radiologySearchLoading, setRadiologySearchLoading] = useState(false);
   const [radiologyStatusRawat, setRadiologyStatusRawat] = useState<RadiologyStatusRawat>('Ralan');
+  const [radiologyKlinis, setRadiologyKlinis] = useState('');
   const [isExaminationFormOpen, setIsExaminationFormOpen] = useState(false);
   const [isProcedureFormOpen, setIsProcedureFormOpen] = useState(false);
   const [isMedicationFormOpen, setIsMedicationFormOpen] = useState(false);
@@ -1219,6 +1265,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [defaultExaminationStatusRawat, editingExamination]);
 
   useEffect(() => {
+    setVisitHistoryTab(preferredCareSectionTab);
+    setExaminationHistoryTab(preferredCareSectionTab);
+  }, [preferredCareSectionTab]);
+
+  useEffect(() => {
     setProcedureStatusRawat(defaultExaminationStatusRawat as ProcedureStatusRawat);
 
     if (!editingLabRequestNo) {
@@ -1336,14 +1387,18 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <strong>P (Planning):</strong>
               <p className="whitespace-pre-line break-words">{formatMultilineText(exam.p || exam.rtl || '-')}</p>
             </div>
-            <div className="text-sm">
-              <strong>I (Implementation):</strong>
-              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.i || exam.instruksi || '-')}</p>
-            </div>
-            <div className="text-sm">
-              <strong>E (Evaluation):</strong>
-              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.e || exam.evaluasi || '-')}</p>
-            </div>
+            {rawatType === 'Ranap' && (
+              <div className="text-sm">
+                <strong>I (Implementation):</strong>
+                <p className="whitespace-pre-line break-words">{formatMultilineText(exam.i || exam.instruksi || '-')}</p>
+              </div>
+            )}
+            {rawatType === 'Ranap' && (
+              <div className="text-sm">
+                <strong>E (Evaluation):</strong>
+                <p className="whitespace-pre-line break-words">{formatMultilineText(exam.e || exam.evaluasi || '-')}</p>
+              </div>
+            )}
             <p className="text-sm"><strong>Petugas:</strong> {exam.pegawai || exam.nip || '-'}</p>
           </div>
         </div>
@@ -1486,6 +1541,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return items.map((med, index) => {
       const allowedToDelete = canDeletePrescription(med);
+      const compoundItems = Array.isArray(med?.compounds) ? med.compounds : [];
+      const hasCompoundItems = compoundItems.length > 0;
+      const canEditThisPrescription = canEditPrescription(med) && !hasCompoundItems;
 
       return (
       <div key={`${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
@@ -1509,7 +1567,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         </div>
         <div className="space-y-2">
           <div className="flex justify-between items-center mb-2">
-            <h4 className="font-medium">Obat:</h4>
+            <h4 className="font-medium">{(Array.isArray(med?.obat) ? med.obat.length : 0) > 0 ? 'Obat:' : 'Resep:'}</h4>
             <div className="flex flex-wrap gap-2">
               {isRequestTab ? (
                 <>
@@ -1517,10 +1575,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                     variant="outline"
                     size="sm"
                     onClick={() => handleEditResep(med)}
-                    disabled={!canEditPrescription(med)}
+                    disabled={!canEditThisPrescription}
                   >
                     <Pencil className="h-4 w-4 mr-2" />
-                    {canEditPrescription(med) ? 'Edit Resep' : 'Bukan Data Anda'}
+                    {canEditPrescription(med)
+                      ? (hasCompoundItems ? 'Ada Racikan' : 'Edit Resep')
+                      : 'Bukan Data Anda'}
                   </Button>
                   <Button
                     variant="destructive"
@@ -1539,7 +1599,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </Button>
             </div>
           </div>
-          {(med.obat || []).map((obat: any, i: number) => (
+          {(Array.isArray(med?.obat) ? med.obat : []).map((obat: any, i: number) => (
             <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
               <div>
                 <p className="text-sm text-muted-foreground">Nama</p>
@@ -1555,6 +1615,54 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </div>
             </div>
           ))}
+          {hasCompoundItems ? (
+            <div className="space-y-3 pt-2">
+              <h4 className="font-medium text-blue-700">Racikan:</h4>
+              {compoundItems.map((compound: any, compoundIndex: number) => (
+                <div key={`${compound.no_racik || compoundIndex}`} className="rounded border border-blue-200 bg-blue-50/40 p-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Nama Racikan</p>
+                      <p className="font-medium">{compound.nama_racik || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Jumlah</p>
+                      <p className="font-medium">{compound.jml_dr || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Metode</p>
+                      <p className="font-medium">{compound.nm_racik || compound.kd_racik || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Aturan Pakai</p>
+                      <p className="font-medium">{compound.aturan_pakai || '-'}</p>
+                    </div>
+                  </div>
+                  {compound.keterangan ? (
+                    <p className="mt-2 text-sm text-muted-foreground">Keterangan: {compound.keterangan}</p>
+                  ) : null}
+                  <div className="mt-3 space-y-2">
+                    {(Array.isArray(compound?.details) ? compound.details : []).map((detail: any, detailIndex: number) => (
+                      <div key={`${detail.kode_brng || detailIndex}`} className="grid grid-cols-1 gap-3 border-l-2 border-blue-300 pl-3 md:grid-cols-3">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Obat</p>
+                          <p className="font-medium">{detail.nama_brng || detail.nama || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Kandungan</p>
+                          <p className="font-medium">{detail.kandungan ?? detail.jumlah ?? '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Jumlah Obat</p>
+                          <p className="font-medium">{detail.jml ?? '-'}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     )});
@@ -1611,6 +1719,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             {deletingLabRequestNo === lab.noorder ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
           </Button>
         </div>
+        {lab.klinis ? (
+          <div className="mb-4">
+            <p className="text-sm text-muted-foreground">Klinis</p>
+            <p className="font-medium whitespace-pre-line break-words">{lab.klinis}</p>
+          </div>
+        ) : null}
         <div className="space-y-2">
           <h4 className="font-medium">Pemeriksaan:</h4>
           {(lab.pemeriksaan || []).map((test: any, testIndex: number) => (
@@ -1835,6 +1949,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             {deletingRadiologyRequestNo === rad.noorder ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
           </Button>
         </div>
+        {rad.klinis ? (
+          <div className="mb-4">
+            <p className="text-sm text-muted-foreground">Klinis</p>
+            <p className="font-medium whitespace-pre-line break-words">{rad.klinis}</p>
+          </div>
+        ) : null}
         <div className="space-y-2">
           <h4 className="font-medium">Pemeriksaan:</h4>
           {Array.isArray(rad.pemeriksaan) && rad.pemeriksaan.length > 0 ? (
@@ -2385,11 +2505,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [statusRawat]);
 
   useEffect(() => {
-    setLabStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setLabStatusRawat(
+      statusRawat === 'Ranap' ? 'Ranap' : statusRawat === 'IGD' ? 'IGD' : 'Ralan'
+    );
   }, [statusRawat]);
 
   useEffect(() => {
-    setRadiologyStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setRadiologyStatusRawat(
+      statusRawat === 'Ranap' ? 'Ranap' : statusRawat === 'IGD' ? 'IGD' : 'Ralan'
+    );
   }, [statusRawat]);
 
   useEffect(() => {
@@ -2771,7 +2895,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     const newMedication: Medication = {
       tanggal: getCurrentPrescriptionDate(),
       status: med.status || (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan'),
-      obat: med.obat.map((o: any) => ({
+      obat: (Array.isArray(med?.obat) ? med.obat : []).map((o: any) => ({
         kode_brng: o.kode_brng || '',
         nama: o.nama,
         jumlah: String(o.jumlah ?? ''),
@@ -2781,14 +2905,38 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       }))
     };
 
-    if (isFirstEmpty) {
+    const compoundItems = Array.isArray(med?.compounds)
+      ? med.compounds.map((compound: any) => ({
+          tanggal: getCurrentPrescriptionDate(),
+          nama_racikan: compound.nama_racik || '',
+          jumlah: String(compound.jml_dr ?? compound.jumlah ?? ''),
+          kd_racik: compound.kd_racik || '',
+          aturan_pakai: compound.aturan_pakai || '',
+          keterangan: compound.keterangan || '',
+          komposisi: (Array.isArray(compound.details) ? compound.details : []).map((detail: any) => ({
+            kode_brng: detail.kode_brng || '',
+            nama: detail.nama_brng || detail.nama || '',
+            jumlah: String(detail.kandungan ?? detail.jumlah ?? ''),
+            satuan: detail.satuan || '',
+            stok: Number(detail.stok) || 0
+          }))
+        }))
+      : [];
+    const hasMedicineItems = newMedication.obat.length > 0;
+
+    if (hasMedicineItems && isFirstEmpty) {
       setMedications([newMedication]);
-    } else {
+    } else if (hasMedicineItems) {
       setMedications([...medications, newMedication]);
     }
 
+    if (compoundItems.length > 0) {
+      setCompoundPrescriptions(compoundItems);
+      setIsCompoundFormOpen(true);
+    }
+
     setEditingPrescriptionNo(null);
-    setIsMedicationFormOpen(true);
+    setIsMedicationFormOpen(hasMedicineItems);
     setActiveTab('medications');
     
     toast({
@@ -2999,6 +3147,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setLabServiceSearchQuery({});
     setLabTemplatesByIndex({});
     setLabTemplateLoadingByIndex({});
+    setLabKlinis('');
     setLabStatusRawat(defaultExaminationStatusRawat as LabStatusRawat);
     setEditingLabRequestNo(null);
     setLabFormNoRawat('');
@@ -3140,6 +3289,32 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
   }, [formattedNoRawat]);
+
+  const fetchCompoundMethods = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({
+        action: 'get_compound_methods'
+      });
+
+      const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setCompoundMethods(Array.isArray(responseJson.data) ? responseJson.data : []);
+    } catch (error) {
+      console.error('Error fetching compound methods:', error);
+      setCompoundMethods([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchCompoundMethods();
+  }, [fetchCompoundMethods]);
 
   const resetAllergyForm = useCallback(() => {
     setAllergyCategory('');
@@ -3286,6 +3461,131 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     selectedAllergyOption,
     toast,
     user?.username
+  ]);
+
+  const handleSaveWhatsapp = useCallback(async () => {
+    if (!no_rkm_medis) {
+      toast({
+        title: "Error",
+        description: "Nomor rekam medis pasien tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!whatsappNumber.trim()) {
+      toast({
+        title: "Error",
+        description: "Nomor WhatsApp wajib diisi",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSavingWhatsapp(true);
+      const response = await fetch(API_URLS.PATIENT_CONTACT, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rkm_medis,
+          no_tlp: whatsappNumber.trim()
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Nomor WhatsApp berhasil diperbarui'
+      });
+
+      setIsWhatsappModalOpen(false);
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error saving patient whatsapp:', error);
+      const message = error instanceof Error ? error.message : 'Gagal memperbarui nomor WhatsApp';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSavingWhatsapp(false);
+    }
+  }, [
+    fetchMedicalRecord,
+    no_rkm_medis,
+    toast,
+    whatsappNumber
+  ]);
+
+  const handleSendWhatsappMessage = useCallback(async () => {
+    if (!whatsappNumber.trim()) {
+      toast({
+        title: "Error",
+        description: "Nomor WhatsApp wajib diisi",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!whatsappMessage.trim()) {
+      toast({
+        title: "Error",
+        description: "Pesan WhatsApp wajib diisi",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSendingWhatsappMessage(true);
+      const response = await fetch(API_URLS.PATIENT_CONTACT_MESSAGE, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_tlp: whatsappNumber.trim(),
+          message: whatsappMessage.trim()
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Pesan WhatsApp berhasil dikirim'
+      });
+      setWhatsappMessage('');
+    } catch (error) {
+      console.error('Error sending patient whatsapp message:', error);
+      const message = error instanceof Error ? error.message : 'Gagal mengirim pesan WhatsApp';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSendingWhatsappMessage(false);
+    }
+  }, [
+    toast,
+    whatsappMessage,
+    whatsappNumber
   ]);
 
   const fetchPackageOptions = useCallback(async (searchText = '') => {
@@ -3551,6 +3851,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setRadiologies(getDefaultRadiologyRequestForm());
     setRadiologySearchOpen({});
     setRadiologySearchQuery({});
+    setRadiologyKlinis('');
     setRadiologyStatusRawat(defaultExaminationStatusRawat as RadiologyStatusRawat);
     setEditingRadiologyRequestNo(null);
     setRadiologyFormNoRawat('');
@@ -3620,6 +3921,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setLabServiceSearchQuery(copiedQueries);
     setLabTemplateLoadingByIndex({});
     setLabStatusRawat(mapRequestSourceToStatusRawat(lab.source));
+    setLabKlinis(String(lab.klinis || ''));
     setEditingLabRequestNo(null);
     setLabFormNoRawat(lab.no_rawat || '');
     setIsLabFormOpen(true);
@@ -3681,6 +3983,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setLabServiceSearchQuery(editQueries);
     setLabTemplateLoadingByIndex({});
     setLabStatusRawat(mapRequestSourceToStatusRawat(lab.source));
+    setLabKlinis(String(lab.klinis || ''));
     setEditingLabRequestNo(lab.noorder);
     setLabFormNoRawat(lab.no_rawat || '');
     setIsLabFormOpen(true);
@@ -3777,6 +4080,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     });
     setRadiologySearchQuery(copiedQueries);
     setRadiologyStatusRawat(mapRequestSourceToStatusRawat(rad.source));
+    setRadiologyKlinis(String(rad.klinis || ''));
     setEditingRadiologyRequestNo(null);
     setRadiologyFormNoRawat(rad.no_rawat || '');
     setIsRadiologyFormOpen(true);
@@ -3829,6 +4133,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     });
     setRadiologySearchQuery(editQueries);
     setRadiologyStatusRawat(mapRequestSourceToStatusRawat(rad.source));
+    setRadiologyKlinis(String(rad.klinis || ''));
     setEditingRadiologyRequestNo(rad.noorder);
     setRadiologyFormNoRawat(rad.no_rawat || '');
     setIsRadiologyFormOpen(true);
@@ -4712,6 +5017,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             no_rawat: effectiveNoRawat,
             dokter_perujuk: user.username,
             status_rawat: labStatusRawat,
+            klinis: labKlinis.trim(),
             noorder: editingLabRequestNo,
             username: currentUsername,
             examinations: validLabRequests,
@@ -4771,6 +5077,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             no_rawat: effectiveNoRawat,
             dokter_perujuk: user.username,
             status_rawat: radiologyStatusRawat,
+            klinis: radiologyKlinis.trim(),
             noorder: editingRadiologyRequestNo,
             username: currentUsername,
             examinations: validRadiologyRequests
@@ -4796,6 +5103,86 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
         resetRadiologyForm();
         setActiveTab('radiology');
+        await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+      } else if (type === 'Resep Racikan') {
+        if (!formattedNoRawat) {
+          throw new Error('Pilih kunjungan pasien terlebih dahulu');
+        }
+
+        if (!user?.username) {
+          throw new Error('User login tidak ditemukan');
+        }
+
+        const validCompounds = compoundPrescriptions
+          .map((compound) => ({
+            tanggal: compound.tanggal,
+            nama_racik: compound.nama_racikan.trim(),
+            jumlah: compound.jumlah.trim(),
+            kd_racik: compound.kd_racik.trim(),
+            aturan_pakai: compound.aturan_pakai.trim(),
+            keterangan: compound.keterangan.trim(),
+            details: compound.komposisi
+              .map((item) => ({
+                kode_brng: String(item.kode_brng ?? '').trim(),
+                nama: String(item.nama ?? '').trim(),
+                kandungan: String(item.jumlah ?? '').trim()
+              }))
+              .filter((item) => item.kode_brng && item.nama && item.kandungan)
+          }))
+          .filter((compound) => (
+            compound.tanggal &&
+            compound.nama_racik &&
+            compound.jumlah &&
+            compound.kd_racik &&
+            compound.aturan_pakai &&
+            compound.details.length > 0
+          ));
+
+        if (!validCompounds.length) {
+          throw new Error('Lengkapi minimal satu racikan yang valid');
+        }
+
+        const referenceDate = validCompounds[0].tanggal;
+        const hasDifferentDate = validCompounds.some((compound) => compound.tanggal !== referenceDate);
+        if (hasDifferentDate) {
+          throw new Error('Tanggal resep racikan harus sama dalam satu kali simpan');
+        }
+
+        const response = await fetch(API_URLS.PRESCRIPTION_DATA, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'create_prescription',
+            no_rawat: formattedNoRawat,
+            kd_dokter: user.username,
+            prescription_date: referenceDate,
+            prescription_status: statusRawat === 'Ranap' ? 'Ranap' : 'Ralan',
+            medicines: [],
+            compounds: validCompounds
+          })
+        });
+
+        const responseJson = await response.json().catch(() => null);
+
+        if (!response.ok || !responseJson?.success) {
+          throw new Error(
+            responseJson?.details ||
+            responseJson?.error ||
+            `HTTP error! status: ${response.status}`
+          );
+        }
+
+        toast({
+          title: "Berhasil",
+          description: responseJson?.reused_existing
+            ? `Racikan berhasil ditambahkan ke resep aktif ${responseJson?.no_resep}`
+            : `Racikan berhasil disimpan dengan nomor resep ${responseJson?.no_resep}`,
+        });
+
+        resetCompoundForm();
+        setActiveTab('medications');
         await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
       } else if (type === 'Resep') {
         if (!formattedNoRawat) {
@@ -4924,8 +5311,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     alamat: "",
     telepon: "",
     golongan_darah: "",
-    alergi: ""
+    alergi: "",
+    prb: "",
+    prb_program: ""
   };
+
+  const prbInfoList = [currentPatient.prb, currentPatient.prb_program]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .flatMap((value) => value.split(',').map((item) => item.trim()).filter(Boolean));
+  const prbInfoText = prbInfoList.join(', ');
 
   const dummySearchResults = [
     {
@@ -5009,7 +5404,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <User className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Nama</p>
-                  <p className="font-medium">{currentPatient.nama}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{currentPatient.nama}</p>
+                    {defaultExaminationStatusRawat === 'Ralan' && prbInfoText ? (
+                      <p
+                        className="text-xs text-amber-700"
+                        title={prbInfoText}
+                      >
+                        (PRB : {prbInfoText})
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               </div>
               <div className="flex items-start space-x-4">
@@ -5046,7 +5451,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <Phone className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Telepon</p>
-                  <p className="font-medium">{currentPatient.telepon}</p>
+                  <a
+                    href="#"
+                    className="font-medium text-green-600 hover:text-green-700 hover:underline"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setWhatsappNumber(String(medicalData?.patient?.telepon || '').trim());
+                      setIsWhatsappModalOpen(true);
+                    }}
+                  >
+                    {currentPatient.telepon || 'Input nomor WhatsApp'}
+                  </a>
                 </div>
               </div>
               <div className="flex items-start space-x-4">
@@ -5265,14 +5680,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                         <div>
                                           <span className="font-medium">P (Planning):</span>
                                           <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(exam.p)}</p>
-                                        </div>
-                                        <div>
-                                          <span className="font-medium">I (Implementation):</span>
-                                          <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(exam.i)}</p>
-                                        </div>
-                                        <div>
-                                          <span className="font-medium">E (Evaluation):</span>
-                                          <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(exam.e)}</p>
                                         </div>
                                       </div>
                                     </div>
@@ -6144,6 +6551,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       <SelectContent>
                         <SelectItem value="Ralan">Rawat Jalan</SelectItem>
                         <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                        <SelectItem value="IGD">IGD</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -6272,7 +6680,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               {/* Data Existing */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Data Tindakan</h3>
-                <Tabs defaultValue="outpatient" className="mt-2">
+                <Tabs key={`procedures-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                   <TabsList className="mb-4">
                     <TabsTrigger value="outpatient">
                       <User className="mr-2 h-4 w-4" />
@@ -6614,7 +7022,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                          </Button>
                        )}
                      </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2 xl:grid-cols-3">
                        <div>
                          <Label htmlFor={`racikan-date-${compoundIndex}`}>Tanggal Resep</Label>
                         <Popover>
@@ -6654,6 +7062,67 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                            onChange={(e) => {
                              const newPrescriptions = [...compoundPrescriptions];
                              newPrescriptions[compoundIndex].nama_racikan = e.target.value;
+                             setCompoundPrescriptions(newPrescriptions);
+                           }}
+                         />
+                       </div>
+                       <div>
+                         <Label htmlFor={`racikan-jml-${compoundIndex}`}>Jumlah Racikan</Label>
+                         <Input
+                           id={`racikan-jml-${compoundIndex}`}
+                           placeholder="10"
+                           value={compound.jumlah}
+                           onChange={(e) => {
+                             const newPrescriptions = [...compoundPrescriptions];
+                             newPrescriptions[compoundIndex].jumlah = e.target.value;
+                             setCompoundPrescriptions(newPrescriptions);
+                           }}
+                         />
+                       </div>
+                       <div>
+                         <Label htmlFor={`racikan-metode-${compoundIndex}`}>Metode Racik</Label>
+                         <Select
+                           value={compound.kd_racik}
+                           onValueChange={(value) => {
+                             const newPrescriptions = [...compoundPrescriptions];
+                             newPrescriptions[compoundIndex].kd_racik = value;
+                             setCompoundPrescriptions(newPrescriptions);
+                           }}
+                         >
+                           <SelectTrigger id={`racikan-metode-${compoundIndex}`}>
+                             <SelectValue placeholder="Pilih metode racik" />
+                           </SelectTrigger>
+                           <SelectContent>
+                             {compoundMethods.map((method) => (
+                               <SelectItem key={method.kd_racik} value={method.kd_racik}>
+                                 {method.nm_racik}
+                               </SelectItem>
+                             ))}
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       <div>
+                         <Label htmlFor={`racikan-aturan-${compoundIndex}`}>Aturan Pakai</Label>
+                         <Input
+                           id={`racikan-aturan-${compoundIndex}`}
+                           placeholder="3x1"
+                           value={compound.aturan_pakai}
+                           onChange={(e) => {
+                             const newPrescriptions = [...compoundPrescriptions];
+                             newPrescriptions[compoundIndex].aturan_pakai = e.target.value;
+                             setCompoundPrescriptions(newPrescriptions);
+                           }}
+                         />
+                       </div>
+                       <div className="md:col-span-2 xl:col-span-3">
+                         <Label htmlFor={`racikan-keterangan-${compoundIndex}`}>Keterangan</Label>
+                         <Input
+                           id={`racikan-keterangan-${compoundIndex}`}
+                           placeholder="Keterangan racikan"
+                           value={compound.keterangan}
+                           onChange={(e) => {
+                             const newPrescriptions = [...compoundPrescriptions];
+                             newPrescriptions[compoundIndex].keterangan = e.target.value;
                              setCompoundPrescriptions(newPrescriptions);
                            }}
                          />
@@ -6759,10 +7228,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         ) : null}
                        </div>
                        <div>
-                         <Label htmlFor={`racikan-jumlah-${compoundIndex}-${racikanIndex}`}>Jumlah/Dosis</Label>
+                         <Label htmlFor={`racikan-jumlah-${compoundIndex}-${racikanIndex}`}>Kandungan</Label>
                          <Input 
                            id={`racikan-jumlah-${compoundIndex}-${racikanIndex}`}
-                           placeholder="mg/ml"
+                           placeholder="500 / 1/2 / 250mg"
                            value={racikan.jumlah}
                           onChange={(e) => updateCompoundMedicineItem(compoundIndex, racikanIndex, { jumlah: e.target.value })}
                          />
@@ -6965,7 +7434,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Resep Obat</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`medications-current-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -6994,7 +7463,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Pemberian Obat</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`medications-history-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -7085,6 +7554,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div className="mb-4">
+                  <Label htmlFor="lab-klinis">Klinis</Label>
+                  <Input
+                    id="lab-klinis"
+                    value={labKlinis}
+                    onChange={(event) => setLabKlinis(event.target.value)}
+                    placeholder="Masukkan keterangan klinis"
+                  />
                 </div>
 
                 <div className="space-y-4">
@@ -7380,7 +7858,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Data Permintaan Laboratorium</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`laboratory-current-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -7409,7 +7887,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Pemeriksaan Laboratorium (Draggable)</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`laboratory-history-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -7494,9 +7972,19 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <SelectContent>
                             <SelectItem value="Ralan">Rawat Jalan</SelectItem>
                             <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                            <SelectItem value="IGD">IGD</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+                    <div className="mb-4">
+                      <Label htmlFor="rad-klinis">Klinis</Label>
+                      <Input
+                        id="rad-klinis"
+                        value={radiologyKlinis}
+                        onChange={(event) => setRadiologyKlinis(event.target.value)}
+                        placeholder="Masukkan keterangan klinis"
+                      />
                     </div>
 
                     {radiologies.map((radiology, index) => (
@@ -7701,7 +8189,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Data Permintaan Radiologi</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`radiology-current-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -7729,7 +8217,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Radiologi (Draggable)</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`radiology-history-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -8209,6 +8697,74 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </div>
             </div>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isWhatsappModalOpen}
+        onOpenChange={(open) => {
+          setIsWhatsappModalOpen(open);
+          if (open) {
+            setWhatsappNumber(String(medicalData?.patient?.telepon || '').trim());
+            setWhatsappMessage('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>WhatsApp</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="patient-whatsapp">Nomor WhatsApp</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="patient-whatsapp"
+                  placeholder="Contoh: 08123456789"
+                  value={whatsappNumber}
+                  onChange={(event) => setWhatsappNumber(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  onClick={() => void handleSaveWhatsapp()}
+                  disabled={savingWhatsapp || sendingWhatsappMessage}
+                >
+                  {savingWhatsapp ? 'Menyimpan...' : 'Ubah'}
+                </Button>
+              </div>
+            </div>
+            <div className="border-t pt-4 space-y-3">
+              <div>
+                <Label htmlFor="patient-whatsapp-message">Kirim Pesan</Label>
+                <Textarea
+                  id="patient-whatsapp-message"
+                  placeholder="Tulis pesan WhatsApp untuk pasien"
+                  value={whatsappMessage}
+                  onChange={(event) => setWhatsappMessage(event.target.value)}
+                  rows={5}
+                />
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleSendWhatsappMessage()}
+                  disabled={sendingWhatsappMessage}
+                >
+                  {sendingWhatsappMessage ? 'Mengirim...' : 'Kirim Pesan'}
+                </Button>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsWhatsappModalOpen(false)}
+                disabled={savingWhatsapp || sendingWhatsappMessage}
+              >
+                Batal
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       
