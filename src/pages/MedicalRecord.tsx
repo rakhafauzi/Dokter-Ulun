@@ -10,7 +10,8 @@ import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, ArrowLeft,
-  Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Maximize2, Pause, Pencil, Play
+  Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play,
+  BadgeAlert
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,6 +52,21 @@ interface MedicineOption {
   satuan?: string;
   harga?: number;
   stok?: number;
+}
+
+type AllergyCategory = 'Lingkungan' | 'Makanan' | 'Obat';
+
+interface AllergyOption {
+  id: string;
+  text: string;
+}
+
+interface AllergyHistoryItem {
+  id: string | number;
+  created_at?: string;
+  kode_brng?: string;
+  kategori: string;
+  nama: string;
 }
 
 interface RacikanMedicine {
@@ -586,6 +602,27 @@ const MedicalRecord = () => {
   const [compoundMedicineSearchQuery, setCompoundMedicineSearchQuery] = useState<Record<string, string>>({});
   const [compoundMedicineSearchLoading, setCompoundMedicineSearchLoading] = useState<Record<string, boolean>>({});
 
+  const [packageSearchOpen, setPackageSearchOpen] = useState(false);
+  const [packageSearchQuery, setPackageSearchQuery] = useState('');
+  const [packageSearchLoading, setPackageSearchLoading] = useState(false);
+  const [packageOptions, setPackageOptions] = useState<Array<{ id: string; kd_paket: string; nama_paket: string; text: string }>>([]);
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('');
+  const [selectedPackageText, setSelectedPackageText] = useState<string>('');
+  const [packageItemsLoading, setPackageItemsLoading] = useState(false);
+  const [packageItems, setPackageItems] = useState<Array<{ kode_brng: string; nama_brng: string; satuan: string; jumlah: any; aturan_pakai: string; stok: number }>>([]);
+  const [isAllergyModalOpen, setIsAllergyModalOpen] = useState(false);
+  const [allergyCategory, setAllergyCategory] = useState<AllergyCategory | ''>('');
+  const [allergySearchOpen, setAllergySearchOpen] = useState(false);
+  const [allergySearchQuery, setAllergySearchQuery] = useState('');
+  const [allergySearchLoading, setAllergySearchLoading] = useState(false);
+  const [allergyOptions, setAllergyOptions] = useState<AllergyOption[]>([]);
+  const [selectedAllergyOption, setSelectedAllergyOption] = useState<AllergyOption | null>(null);
+  const [manualFoodAllergy, setManualFoodAllergy] = useState('');
+  const [manualEnvironmentAllergy, setManualEnvironmentAllergy] = useState('');
+  const [allergyHistory, setAllergyHistory] = useState<AllergyHistoryItem[]>([]);
+  const [allergyHistoryLoading, setAllergyHistoryLoading] = useState(false);
+  const [savingAllergy, setSavingAllergy] = useState(false);
+
   const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
   const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
   const [labServiceSearchOpen, setLabServiceSearchOpen] = useState<Record<number, boolean>>({});
@@ -634,6 +671,7 @@ const MedicalRecord = () => {
   const [isProcedureFormOpen, setIsProcedureFormOpen] = useState(false);
   const [isMedicationFormOpen, setIsMedicationFormOpen] = useState(false);
   const [isCompoundFormOpen, setIsCompoundFormOpen] = useState(false);
+  const [isPackageFormOpen, setIsPackageFormOpen] = useState(false);
   const [isLabFormOpen, setIsLabFormOpen] = useState(false);
   const [isRadiologyFormOpen, setIsRadiologyFormOpen] = useState(false);
   const [pacsPreviewModal, setPacsPreviewModal] = useState<{
@@ -2683,7 +2721,7 @@ const MedicalRecord = () => {
       obat: med.obat.map((o: any) => ({
         kode_brng: o.kode_brng || '',
         nama: o.nama,
-        jumlah: o.jumlah,
+        jumlah: String(o.jumlah ?? ''),
         aturan_pakai: o.aturan_pakai,
         satuan: o.satuan || '',
         stok: Number(o.stok) || 0
@@ -2988,6 +3026,10 @@ const MedicalRecord = () => {
         limit: '20'
       });
 
+      if (formattedNoRawat) {
+        params.set('no_rawat', formattedNoRawat);
+      }
+
       const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
       const responseJson = await response.json().catch(() => null);
 
@@ -3007,7 +3049,7 @@ const MedicalRecord = () => {
     } finally {
       setMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
-  }, []);
+  }, [formattedNoRawat]);
 
   const fetchCompoundMedicineOptions = useCallback(async (compoundIndex: number, racikanIndex: number, searchText = '') => {
     const key = getCompoundMedicineFieldKey(compoundIndex, racikanIndex);
@@ -3020,6 +3062,10 @@ const MedicalRecord = () => {
         search: searchText,
         limit: '20'
       });
+
+      if (formattedNoRawat) {
+        params.set('no_rawat', formattedNoRawat);
+      }
 
       const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
       const responseJson = await response.json().catch(() => null);
@@ -3040,7 +3086,278 @@ const MedicalRecord = () => {
     } finally {
       setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
+  }, [formattedNoRawat]);
+
+  const resetAllergyForm = useCallback(() => {
+    setAllergyCategory('');
+    setAllergySearchOpen(false);
+    setAllergySearchQuery('');
+    setAllergySearchLoading(false);
+    setAllergyOptions([]);
+    setSelectedAllergyOption(null);
+    setManualFoodAllergy('');
+    setManualEnvironmentAllergy('');
   }, []);
+
+  const fetchAllergyHistory = useCallback(async () => {
+    if (!no_rkm_medis) {
+      setAllergyHistory([]);
+      return;
+    }
+
+    try {
+      setAllergyHistoryLoading(true);
+      const params = new URLSearchParams({
+        action: 'list',
+        no_rkm_medis
+      });
+
+      const response = await fetch(`${API_URLS.ALLERGY_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setAllergyHistory(Array.isArray(responseJson.data) ? responseJson.data : []);
+    } catch (error) {
+      console.error('Error fetching allergy history:', error);
+      setAllergyHistory([]);
+    } finally {
+      setAllergyHistoryLoading(false);
+    }
+  }, [no_rkm_medis]);
+
+  const fetchAllergyOptions = useCallback(async (category: AllergyCategory, searchText = '') => {
+    try {
+      setAllergySearchLoading(true);
+      const params = new URLSearchParams({
+        action: 'search_options',
+        category,
+        search: searchText,
+        limit: '20'
+      });
+
+      const response = await fetch(`${API_URLS.ALLERGY_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setAllergyOptions(Array.isArray(responseJson.data) ? responseJson.data : []);
+    } catch (error) {
+      console.error('Error fetching allergy options:', error);
+      setAllergyOptions([]);
+    } finally {
+      setAllergySearchLoading(false);
+    }
+  }, []);
+
+  const handleSaveAllergy = useCallback(async () => {
+    if (!no_rkm_medis) {
+      toast({
+        title: "Error",
+        description: "Nomor rekam medis pasien tidak ditemukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!allergyCategory) {
+      toast({
+        title: "Error",
+        description: "Pilih kategori alergi terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSavingAllergy(true);
+      const response = await fetch(API_URLS.ALLERGY_DATA, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rkm_medis,
+          kategori: allergyCategory,
+          kode_alergi: selectedAllergyOption?.id || '',
+          makanan_manual: manualFoodAllergy,
+          lingkungan_manual: manualEnvironmentAllergy,
+          username: user?.username || ''
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Alergi berhasil disimpan'
+      });
+
+      await Promise.all([
+        fetchAllergyHistory(),
+        fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 })
+      ]);
+      resetAllergyForm();
+    } catch (error) {
+      console.error('Error saving allergy:', error);
+      const message = error instanceof Error ? error.message : 'Gagal menyimpan alergi';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSavingAllergy(false);
+    }
+  }, [
+    allergyCategory,
+    fetchAllergyHistory,
+    fetchMedicalRecord,
+    manualEnvironmentAllergy,
+    manualFoodAllergy,
+    no_rkm_medis,
+    resetAllergyForm,
+    selectedAllergyOption,
+    toast,
+    user?.username
+  ]);
+
+  const fetchPackageOptions = useCallback(async (searchText = '') => {
+    try {
+      setPackageSearchLoading(true);
+
+      const params = new URLSearchParams({
+        action: 'search_packages',
+        search: searchText,
+        limit: '20'
+      });
+
+      const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setPackageOptions(Array.isArray(responseJson.data) ? responseJson.data : []);
+    } catch (error) {
+      console.error('Error fetching package options:', error);
+      setPackageOptions([]);
+    } finally {
+      setPackageSearchLoading(false);
+    }
+  }, []);
+
+  const loadPackageItems = useCallback(async () => {
+    if (!formattedNoRawat) {
+      toast({
+        title: "Error",
+        description: "Pilih kunjungan pasien terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!selectedPackageId) {
+      toast({
+        title: "Error",
+        description: "Pilih paket obat terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setPackageItemsLoading(true);
+
+      const params = new URLSearchParams({
+        action: 'get_package_items',
+        package_id: selectedPackageId,
+        no_rawat: formattedNoRawat
+      });
+
+      const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setPackageItems(Array.isArray(responseJson.data) ? responseJson.data : []);
+    } catch (error) {
+      console.error('Error fetching package items:', error);
+      const message = error instanceof Error ? error.message : 'Gagal memuat item paket';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+      setPackageItems([]);
+    } finally {
+      setPackageItemsLoading(false);
+    }
+  }, [formattedNoRawat, selectedPackageId, toast]);
+
+  const applyPackageItemsToMedicationForm = useCallback(() => {
+    if (!packageItems.length) {
+      toast({
+        title: "Error",
+        description: "Item paket masih kosong",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const obatItems = packageItems.map((item) => ({
+      kode_brng: String(item.kode_brng || '').trim(),
+      nama: String(item.nama_brng || '').trim(),
+      jumlah: String(item.jumlah ?? ''),
+      aturan_pakai: String(item.aturan_pakai || '').trim(),
+      satuan: String(item.satuan || '').trim(),
+      stok: Number(item.stok) || 0
+    }));
+
+    setMedications((previous) => {
+      const next = [...previous];
+      const targetIndex = 0;
+      const target = next[targetIndex] || getDefaultMedicationForm('Ralan')[0];
+
+      const isTargetEmpty = target.obat.length === 1 && !String(target.obat[0].nama || '').trim();
+      const mergedObat = isTargetEmpty ? obatItems : [...target.obat, ...obatItems];
+
+      next[targetIndex] = {
+        ...target,
+        status: 'Ralan',
+        obat: mergedObat
+      };
+
+      return next;
+    });
+
+    setIsMedicationFormOpen(true);
+
+    toast({
+      title: "Berhasil",
+      description: "Item paket berhasil dimasukkan ke form resep obat"
+    });
+  }, [packageItems, toast]);
 
   const fetchProcedureOptions = useCallback(async (index: number, searchText = '') => {
     if (!formattedNoRawat) {
@@ -4440,10 +4757,10 @@ const MedicalRecord = () => {
             status: medication.status,
             medicines: medication.obat
               .map((obat) => ({
-                kode_brng: obat.kode_brng?.trim() || '',
-                nama: obat.nama?.trim() || '',
-                jml: obat.jumlah?.trim() || '',
-                aturan_pakai: obat.aturan_pakai?.trim() || ''
+                kode_brng: String(obat.kode_brng ?? '').trim(),
+                nama: String(obat.nama ?? '').trim(),
+                jml: String(obat.jumlah ?? '').trim(),
+                aturan_pakai: String(obat.aturan_pakai ?? '').trim()
               }))
               .filter((obat) => obat.kode_brng && obat.nama && obat.jml)
           }))
@@ -4689,9 +5006,28 @@ const MedicalRecord = () => {
                 <Heart className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Golongan Darah</p>
-                  <p className="font-medium">{currentPatient.golongan_darah}</p>
+                  <p className="font-medium">{currentPatient.golongan_darah || '-'}</p>
                 </div>
               </div>
+              <div className="flex items-start space-x-4">
+                <Activity className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-muted-foreground">Alergi</p>
+                    <Button
+                      className="h-6 px-2 text-xs bg-red-600 hover:bg-red-700 text-white flex items-center gap-1"
+                      onClick={() => {
+                        setIsAllergyModalOpen(true);
+                        void fetchAllergyHistory();
+                      }}
+                    >
+                      <BadgeAlert className="h-3 w-3" />
+                      Input Alergi
+                    </Button>
+                  </div>
+                  <p className="font-medium">{currentPatient.alergi || '-'}</p>
+                </div>
+              </div>          
             </div>
           </div>
         </CardContent>
@@ -6414,6 +6750,159 @@ const MedicalRecord = () => {
                 </div>
               </Collapsible>
 
+              {statusRawat === 'Ralan' || statusRawat === 'Ranap' ? (
+                <Collapsible open={isPackageFormOpen} onOpenChange={setIsPackageFormOpen}>
+                  <div className="border rounded-lg p-4 mb-6 bg-emerald-50/40">
+                    <CollapsibleTrigger asChild>
+                      <button className="w-full flex items-center justify-between text-lg font-semibold mb-4 hover:text-emerald-700 transition-colors text-emerald-800">
+                        <div className="flex items-center">
+                          <Plus className="h-5 w-5 mr-2" />
+                          Form Paket Obat & BHP
+                        </div>
+                        {isPackageFormOpen ? (
+                          <ChevronUp className="h-5 w-5 transition-transform duration-200" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5 transition-transform duration-200" />
+                        )}
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent
+                      className="space-y-4 animate-accordion-down"
+                      style={{
+                        overflow: 'hidden',
+                        transition: 'height 0.2s ease-out, opacity 0.2s ease-out'
+                      }}
+                    >
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:items-end">
+                        <div className="md:col-span-2">
+                          <Label htmlFor="package-select">Nama Paket Obat & BHP</Label>
+                          <Popover
+                            open={packageSearchOpen}
+                            onOpenChange={(open) => {
+                              setPackageSearchOpen(open);
+                              if (open) {
+                                void fetchPackageOptions(packageSearchQuery);
+                              }
+                            }}
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                id="package-select"
+                                variant="outline"
+                                role="combobox"
+                                className="w-full justify-between"
+                                aria-expanded={packageSearchOpen}
+                                disabled={!!editingPrescriptionNo}
+                              >
+                                <span className="truncate text-left">
+                                  {selectedPackageId
+                                    ? (selectedPackageText || selectedPackageId)
+                                    : 'Cari dan pilih paket'}
+                                </span>
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[350px] p-0 md:w-[500px]" align="start">
+                              <Command shouldFilter={false}>
+                                <CommandInput
+                                  placeholder="Cari kode atau nama paket..."
+                                  value={packageSearchQuery}
+                                  onValueChange={(value) => {
+                                    setPackageSearchQuery(value);
+                                    void fetchPackageOptions(value);
+                                  }}
+                                />
+                                <CommandList>
+                                  <CommandEmpty>
+                                    {packageSearchLoading ? 'Mencari paket...' : 'Tidak ada paket ditemukan.'}
+                                  </CommandEmpty>
+                                  <CommandGroup>
+                                    {packageOptions.map((option) => (
+                                      <CommandItem
+                                        key={option.id}
+                                        value={option.text}
+                                        onSelect={() => {
+                                          setSelectedPackageId(String(option.id));
+                                          setSelectedPackageText(option.text);
+                                          setPackageItems([]);
+                                          setPackageSearchOpen(false);
+                                        }}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            selectedPackageId === String(option.id) ? "opacity-100" : "opacity-0"
+                                          )}
+                                        />
+                                        <div className="flex flex-col">
+                                          <span>{option.text}</span>
+                                          <span className="text-xs text-muted-foreground">{option.id}</span>
+                                        </div>
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => void loadPackageItems()}
+                            disabled={!selectedPackageId || packageItemsLoading || !!editingPrescriptionNo}
+                          >
+                            {packageItemsLoading ? 'Loading...' : 'Pilih Paket'}
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={applyPackageItemsToMedicationForm}
+                            disabled={!packageItems.length || !!editingPrescriptionNo}
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            Masukkan ke Resep
+                          </Button>
+                        </div>
+                      </div>
+
+                      {packageItems.length ? (
+                        <div className="overflow-x-auto border rounded bg-background">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/40">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Nama</th>
+                                <th className="px-3 py-2 text-left font-medium">Jumlah</th>
+                                <th className="px-3 py-2 text-left font-medium">Aturan</th>
+                                <th className="px-3 py-2 text-left font-medium">Stok</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {packageItems.map((item, index) => (
+                                <tr key={`${item.kode_brng}-${index}`} className="border-t">
+                                  <td className="px-3 py-2">
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">{item.nama_brng}</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {item.kode_brng}
+                                        {item.satuan ? ` • ${item.satuan}` : ''}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2">{String(item.jumlah ?? '')}</td>
+                                  <td className="px-3 py-2">{item.aturan_pakai || '-'}</td>
+                                  <td className="px-3 py-2">{typeof item.stok === 'number' ? item.stok : '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              ) : null}
+
               {/* Data Existing */}
               <Tabs defaultValue="current" className="space-y-4">
                 <TabsList>
@@ -7475,6 +7964,200 @@ const MedicalRecord = () => {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isAllergyModalOpen}
+        onOpenChange={(open) => {
+          setIsAllergyModalOpen(open);
+          if (open) {
+            void fetchAllergyHistory();
+          }
+          if (!open) {
+            resetAllergyForm();
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle>Input Alergi</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[70vh] pr-4">
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="allergy-category">Kategori</Label>
+                  <Select
+                    value={allergyCategory}
+                    onValueChange={(value: AllergyCategory) => {
+                      setAllergyCategory(value);
+                      setSelectedAllergyOption(null);
+                      setAllergySearchQuery('');
+                      setAllergyOptions([]);
+                      setManualFoodAllergy('');
+                      setManualEnvironmentAllergy('');
+                    }}
+                  >
+                    <SelectTrigger id="allergy-category">
+                      <SelectValue placeholder="Pilih kategori alergi" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Lingkungan">Lingkungan</SelectItem>
+                      <SelectItem value="Makanan">Makanan</SelectItem>
+                      <SelectItem value="Obat">Obat</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="allergy-selected">Pilihan Alergi</Label>
+                  <Popover
+                    open={allergySearchOpen}
+                    onOpenChange={(open) => {
+                      setAllergySearchOpen(open);
+                      if (open && allergyCategory) {
+                        void fetchAllergyOptions(allergyCategory, allergySearchQuery);
+                      }
+                    }}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="allergy-selected"
+                        variant="outline"
+                        role="combobox"
+                        className="w-full justify-between"
+                        aria-expanded={allergySearchOpen}
+                        disabled={!allergyCategory}
+                      >
+                        <span className="truncate text-left">
+                          {selectedAllergyOption?.text || 'Cari dan pilih alergi'}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[350px] p-0 md:w-[500px]" align="start">
+                      <Command shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Cari data alergi..."
+                          value={allergySearchQuery}
+                          onValueChange={(value) => {
+                            setAllergySearchQuery(value);
+                            if (allergyCategory) {
+                              void fetchAllergyOptions(allergyCategory, value);
+                            }
+                          }}
+                        />
+                        <CommandList>
+                          <CommandEmpty>
+                            {allergySearchLoading ? 'Mencari alergi...' : 'Tidak ada data ditemukan.'}
+                          </CommandEmpty>
+                          <CommandGroup>
+                            {allergyOptions.map((option) => (
+                              <CommandItem
+                                key={`${option.id}-${option.text}`}
+                                value={`${option.id} ${option.text}`}
+                                onSelect={() => {
+                                  setSelectedAllergyOption(option);
+                                  setAllergySearchOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedAllergyOption?.id === option.id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                <div className="flex flex-col">
+                                  <span>{option.text}</span>
+                                  <span className="text-xs text-muted-foreground">{option.id}</span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {allergyCategory === 'Makanan' ? (
+                <div>
+                  <Label htmlFor="manual-food-allergy">Atau tulis alergi makanan</Label>
+                  <Input
+                    id="manual-food-allergy"
+                    placeholder="Contoh: Telur, Kacang, Susu"
+                    value={manualFoodAllergy}
+                    onChange={(e) => setManualFoodAllergy(e.target.value)}
+                  />
+                </div>
+              ) : null}
+
+              {allergyCategory === 'Lingkungan' ? (
+                <div>
+                  <Label htmlFor="manual-environment-allergy">Atau tulis alergi lingkungan</Label>
+                  <Input
+                    id="manual-environment-allergy"
+                    placeholder="Contoh: Debu, Dingin, Bulu kucing"
+                    value={manualEnvironmentAllergy}
+                    onChange={(e) => setManualEnvironmentAllergy(e.target.value)}
+                  />
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    resetAllergyForm();
+                    setIsAllergyModalOpen(false);
+                  }}
+                >
+                  Tutup
+                </Button>
+                <Button onClick={() => void handleSaveAllergy()} disabled={savingAllergy}>
+                  {savingAllergy ? 'Menyimpan...' : 'Simpan'}
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium">Riwayat Alergi</h4>
+                  <span className="text-sm text-muted-foreground">
+                    {allergyHistory.length} data
+                  </span>
+                </div>
+
+                {allergyHistoryLoading ? (
+                  <div className="text-sm text-muted-foreground">Memuat riwayat alergi...</div>
+                ) : allergyHistory.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Belum ada data alergi.</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/40">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium">Tgl / Jam</th>
+                          <th className="px-3 py-2 text-left font-medium">Alergi</th>
+                          <th className="px-3 py-2 text-left font-medium">Kategori</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allergyHistory.map((item) => (
+                          <tr key={String(item.id)} className="border-t">
+                            <td className="px-3 py-2">{item.created_at || '-'}</td>
+                            <td className="px-3 py-2">{item.nama || '-'}</td>
+                            <td className="px-3 py-2">{item.kategori || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
       

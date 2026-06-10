@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { AuthService } from './services/authService.js';
 import { DashboardService } from './services/dashboardService.js';
 import { AttendanceService } from './services/attendanceService.js';
+import AllergyDataService from './services/allergyDataService.js';
 import { BookingOperasiService } from './services/bookingOperasiService.js';
 import { BookingRegistrasiService } from './services/bookingRegistrasiService.js';
 import RawatJalanPatientsService from './services/rawatJalanPatientsService.js';
@@ -1164,7 +1165,7 @@ app.post('/api/medical-scribe', async (req, res) => {
 // Prescription Data endpoints
 app.get('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, no_resep, search, limit } = req.query;
+    const { action, no_rawat, no_resep, search, limit, package_id } = req.query;
     
     let result;
     
@@ -1194,7 +1195,27 @@ app.get('/api/prescription-data', async (req, res) => {
         break;
 
       case 'search_medicines':
-        result = await PrescriptionDataService.searchMedicines(search, limit);
+        result = await PrescriptionDataService.searchMedicines(search, limit, no_rawat);
+        break;
+
+      case 'search_packages':
+        result = await PrescriptionDataService.searchPackages(search, limit);
+        break;
+
+      case 'get_package_items':
+        if (!package_id) {
+          return res.status(400).json({
+            success: false,
+            error: 'package_id is required for get_package_items'
+          });
+        }
+        if (!no_rawat) {
+          return res.status(400).json({
+            success: false,
+            error: 'no_rawat is required for get_package_items'
+          });
+        }
+        result = await PrescriptionDataService.getPackageItems(package_id, no_rawat);
         break;
         
       case 'get_compound_methods':
@@ -1211,6 +1232,61 @@ app.get('/api/prescription-data', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Prescription data error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/allergy-data', async (req, res) => {
+  try {
+    const { action, no_rkm_medis, category, search, limit } = req.query;
+
+    let result;
+
+    switch (action) {
+      case 'list':
+        if (!no_rkm_medis) {
+          return res.status(400).json({
+            success: false,
+            error: 'no_rkm_medis is required for list'
+          });
+        }
+        result = await AllergyDataService.listAllergies(no_rkm_medis);
+        break;
+      case 'search_options':
+        if (!category) {
+          return res.status(400).json({
+            success: false,
+            error: 'category is required for search_options'
+          });
+        }
+        result = await AllergyDataService.searchOptions(category, search, limit);
+        break;
+      default:
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid action. Supported actions: list, search_options'
+        });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Allergy data error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/allergy-data', async (req, res) => {
+  try {
+    const result = await AllergyDataService.saveAllergy(req.body || {});
+    res.json(result);
+  } catch (error) {
+    console.error('Allergy save error:', error);
     res.status(500).json({
       success: false,
       error: error.message

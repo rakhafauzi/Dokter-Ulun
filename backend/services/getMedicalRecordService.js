@@ -1071,6 +1071,7 @@ class GetMedicalRecordService {
 
       const [
         patientRows,
+        patientAllergyRows,
         latestVisitRows,
         outpatientPageResult,
         inpatientPageResult,
@@ -1096,6 +1097,34 @@ class GetMedicalRecordService {
       ] = await Promise.all([
         db.execute(
           "SELECT * FROM pasien WHERE no_rkm_medis = ?",
+          [no_rm]
+        ),
+        db.execute(
+          `
+            SELECT GROUP_CONCAT(
+              DISTINCT TRIM(
+                CASE
+                  WHEN ma.kategori = 'Obat' THEN COALESCE(db.nama_brng, '')
+                  ELSE COALESCE(masterAlergi.nama, '')
+                END
+              )
+              ORDER BY
+                CASE
+                  WHEN ma.kategori = 'Obat' THEN COALESCE(db.nama_brng, '')
+                  ELSE COALESCE(masterAlergi.nama, '')
+                END ASC
+              SEPARATOR ', '
+            ) AS alergi
+            FROM mlite_alergi ma
+            LEFT JOIN databarang db
+              ON ma.kategori = 'Obat'
+              AND ma.kode_brng = db.kode_brng
+            LEFT JOIN master_alergi masterAlergi
+              ON ma.kategori <> 'Obat'
+              AND ma.kode_brng = masterAlergi.id
+            WHERE ma.no_rkm_medis = ?
+              AND COALESCE(ma.status, '1') = '1'
+          `,
           [no_rm]
         ),
         db.execute(
@@ -1136,6 +1165,7 @@ class GetMedicalRecordService {
       ]);
 
       const patientList = patientRows[0];
+      const patientAllergies = patientAllergyRows[0];
       const latestVisits = latestVisitRows[0];
 
       if (patientList.length === 0) {
@@ -1143,6 +1173,7 @@ class GetMedicalRecordService {
       }
 
       const patient = patientList[0];
+      const allergySummary = String(patientAllergies?.[0]?.alergi || '').trim();
       const outpatientVisits = outpatientPageResult?.rows || [];
       const inpatientVisitRefs = inpatientPageResult?.rows || [];
 
@@ -1191,7 +1222,7 @@ class GetMedicalRecordService {
           alamat: patient.alamat || '',
           telepon: patient.no_tlp || '',
           golongan_darah: patient.gol_darah || '',
-          alergi: '', // Would need additional field in patient table
+          alergi: allergySummary,
           status_lanjut: latestVisits[0]?.status_lanjut || 'Ralan'
         },
         outpatient_visits: finalOutpatientVisits,
