@@ -146,8 +146,8 @@ interface ProcedureOption {
 }
 
 type ProcedureStatusRawat = 'Ralan' | 'Ranap';
-type LabStatusRawat = 'Ralan' | 'Ranap';
-type RadiologyStatusRawat = 'Ralan' | 'Ranap';
+type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
+type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 
 interface MedicalRecordData {
   patient: {
@@ -345,7 +345,15 @@ const getDefaultRadiologyRequestForm = (): RadiologyFormItem[] => ([{
 }]);
 
 const mapStatusLanjutToStatusRawat = (statusLanjut?: string | null) => {
-  return statusLanjut === 'Ranap' || statusLanjut === 'Dirawat' ? 'Ranap' : 'Ralan';
+  if (statusLanjut === 'Ranap' || statusLanjut === 'Dirawat') {
+    return 'Ranap';
+  }
+
+  if (statusLanjut === 'IGD') {
+    return 'IGD';
+  }
+
+  return 'Ralan';
 };
 
 const mapPrescriptionSourceToStatus = (source?: string | null): PrescriptionStatus => {
@@ -361,8 +369,18 @@ const mapPrescriptionSourceToStatus = (source?: string | null): PrescriptionStat
   }
 };
 
-const mapRequestSourceToStatusRawat = (source?: string | null): ProcedureStatusRawat => {
-  return String(source || '').trim().toLowerCase() === 'rawat inap' ? 'Ranap' : 'Ralan';
+const mapRequestSourceToStatusRawat = (source?: string | null): LabStatusRawat => {
+  const normalizedSource = String(source || '').trim().toLowerCase();
+
+  if (normalizedSource === 'rawat inap') {
+    return 'Ranap';
+  }
+
+  if (normalizedSource === 'igd' || normalizedSource === 'gawat darurat' || normalizedSource === 'instalasi gawat darurat') {
+    return 'IGD';
+  }
+
+  return 'Ralan';
 };
 
 const getPrescriptionDateOnly = (value?: string | null) => {
@@ -2485,11 +2503,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [statusRawat]);
 
   useEffect(() => {
-    setLabStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setLabStatusRawat(
+      statusRawat === 'Ranap' ? 'Ranap' : statusRawat === 'IGD' ? 'IGD' : 'Ralan'
+    );
   }, [statusRawat]);
 
   useEffect(() => {
-    setRadiologyStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setRadiologyStatusRawat(
+      statusRawat === 'Ranap' ? 'Ranap' : statusRawat === 'IGD' ? 'IGD' : 'Ralan'
+    );
   }, [statusRawat]);
 
   useEffect(() => {
@@ -6466,6 +6488,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       <SelectContent>
                         <SelectItem value="Ralan">Rawat Jalan</SelectItem>
                         <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                        <SelectItem value="IGD">IGD</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -7886,6 +7909,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <SelectContent>
                             <SelectItem value="Ralan">Rawat Jalan</SelectItem>
                             <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                            <SelectItem value="IGD">IGD</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

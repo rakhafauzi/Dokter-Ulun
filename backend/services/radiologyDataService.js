@@ -26,11 +26,23 @@ class RadiologyDataService {
       return 'ranap';
     }
 
+    if (
+      normalizedValue === 'igd' ||
+      normalizedValue === 'gawat darurat' ||
+      normalizedValue === 'instalasi gawat darurat'
+    ) {
+      return 'ralan';
+    }
+
     if (normalizedValue === 'ralan' || normalizedValue === 'rawat jalan') {
       return 'ralan';
     }
 
     return null;
+  }
+
+  normalizeKlinis(value) {
+    return String(value ?? '').trim();
   }
 
   async getRadiologyRequests(no_rawat) {
@@ -61,9 +73,21 @@ class RadiologyDataService {
         WHERE ppr.noorder = ?
         ORDER BY jpr.nm_perawatan
       `;
+      const klinisQuery = `
+        SELECT klinis
+        FROM diagnosa_pasien_klinis
+        WHERE noorder = ?
+        LIMIT 1
+      `;
 
-      const [rows] = await connection.execute(query, [noorder]);
-      return { examinations: rows };
+      const [[rows], [klinisRows]] = await Promise.all([
+        connection.execute(query, [noorder]),
+        connection.execute(klinisQuery, [noorder])
+      ]);
+      return {
+        examinations: rows,
+        klinis: klinisRows?.[0]?.klinis || ''
+      };
     } finally {
       await connection.end();
     }
@@ -87,12 +111,13 @@ class RadiologyDataService {
     }
   }
 
-  async createRadiologyRequest(no_rawat, dokter_perujuk, examinations, status_rawat) {
+  async createRadiologyRequest(no_rawat, dokter_perujuk, examinations, status_rawat, klinis = '') {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
 
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat) || 'ralan';
+      const normalizedKlinis = this.normalizeKlinis(klinis);
       const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const [sequenceRows] = await connection.execute(
         `
@@ -131,6 +156,16 @@ class RadiologyDataService {
         normalizedStatusRawat
       ]);
 
+      if (normalizedKlinis) {
+        await connection.execute(
+          `
+            INSERT INTO diagnosa_pasien_klinis (noorder, klinis)
+            VALUES (?, ?)
+          `,
+          [noorder, normalizedKlinis]
+        );
+      }
+
       if (Array.isArray(examinations) && examinations.length > 0) {
         for (const examination of examinations) {
           const insertDetailQuery = `
@@ -152,13 +187,14 @@ class RadiologyDataService {
     }
   }
 
-  async updateRadiologyRequest(noorder, examinations, status_rawat, username = '') {
+  async updateRadiologyRequest(noorder, examinations, status_rawat, username = '', klinis = '') {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
       const normalizedUsername = String(username || '').trim();
 
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat);
+      const normalizedKlinis = this.normalizeKlinis(klinis);
 
       if (normalizedUsername) {
         const [rows] = await connection.execute(
@@ -175,10 +211,21 @@ class RadiologyDataService {
         }
       }
 
+      await connection.execute('DELETE FROM diagnosa_pasien_klinis WHERE noorder = ?', [noorder]);
       if (normalizedStatusRawat) {
         await connection.execute(
           'UPDATE permintaan_radiologi SET status = ? WHERE noorder = ?',
           [normalizedStatusRawat, noorder]
+        );
+      }
+
+      if (normalizedKlinis) {
+        await connection.execute(
+          `
+            INSERT INTO diagnosa_pasien_klinis (noorder, klinis)
+            VALUES (?, ?)
+          `,
+          [noorder, normalizedKlinis]
         );
       }
 
@@ -225,6 +272,7 @@ class RadiologyDataService {
         }
       }
 
+      await connection.execute('DELETE FROM diagnosa_pasien_klinis WHERE noorder = ?', [noorder]);
       await connection.execute('DELETE FROM permintaan_radiologi WHERE noorder = ?', [noorder]);
       return { success: true };
     } finally {

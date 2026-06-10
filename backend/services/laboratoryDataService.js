@@ -26,6 +26,14 @@ class LaboratoryDataService {
       return 'ranap';
     }
 
+    if (
+      normalizedValue === 'igd' ||
+      normalizedValue === 'gawat darurat' ||
+      normalizedValue === 'instalasi gawat darurat'
+    ) {
+      return 'ralan';
+    }
+
     if (normalizedValue === 'ralan' || normalizedValue === 'rawat jalan') {
       return 'ralan';
     }
