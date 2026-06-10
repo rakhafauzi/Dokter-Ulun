@@ -224,6 +224,7 @@ interface ExaminationHistoryItem {
 const PAGE_SIZE = 5;
 type VisitHistoryTabValue = 'outpatient' | 'inpatient';
 type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
+type CareSectionTabValue = 'outpatient' | 'inpatient';
 type MedicalRecordFetchOptions = {
   reset?: boolean;
   outpatientPage?: number;
@@ -635,6 +636,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     medicalData?.outpatient_visits,
     medicalData?.patient?.status_lanjut
   ]);
+  const preferredCareSectionTab = useMemo<CareSectionTabValue>(
+    () => (defaultExaminationStatusRawat === 'Ranap' ? 'inpatient' : 'outpatient'),
+    [defaultExaminationStatusRawat]
+  );
 
   // Form states
   const [medications, setMedications] = useState<Medication[]>(() => getDefaultMedicationForm('Ralan'));
@@ -1236,6 +1241,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       setStatusRawat(defaultExaminationStatusRawat);
     }
   }, [defaultExaminationStatusRawat, editingExamination]);
+
+  useEffect(() => {
+    setVisitHistoryTab(preferredCareSectionTab);
+    setExaminationHistoryTab(preferredCareSectionTab);
+  }, [preferredCareSectionTab]);
 
   useEffect(() => {
     setProcedureStatusRawat(defaultExaminationStatusRawat as ProcedureStatusRawat);
@@ -6562,7 +6572,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               {/* Data Existing */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Data Tindakan</h3>
-                <Tabs defaultValue="outpatient" className="mt-2">
+                <Tabs key={`procedures-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                   <TabsList className="mb-4">
                     <TabsTrigger value="outpatient">
                       <User className="mr-2 h-4 w-4" />
@@ -7316,7 +7326,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Resep Obat</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`medications-current-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -7345,7 +7355,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Pemberian Obat</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`medications-history-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -7731,7 +7741,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Data Permintaan Laboratorium</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`laboratory-current-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -7760,7 +7770,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Pemeriksaan Laboratorium (Draggable)</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`laboratory-history-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -8052,7 +8062,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Data Permintaan Radiologi</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`radiology-current-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -8080,7 +8090,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="history">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Radiologi (Draggable)</h3>
-                    <Tabs defaultValue="outpatient" className="mt-2">
+                    <Tabs key={`radiology-history-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />

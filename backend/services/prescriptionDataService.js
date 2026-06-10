@@ -6,9 +6,19 @@ class PrescriptionDataService {
     if (!upper) {
       return '';
     }
+
+    const aliasKeys = {
+      STOK_RESEP_RAJAL: ['STOK_RESEP_RALAN']
+    };
+
+    const aliases = Array.isArray(aliasKeys[upper]) ? aliasKeys[upper] : [];
     return (
       String(process.env[upper] || '').trim() ||
-      String(process.env[upper.toLowerCase()] || '').trim()
+      String(process.env[upper.toLowerCase()] || '').trim() ||
+      aliases
+        .map((alias) => String(process.env[alias] || '').trim() || String(process.env[alias.toLowerCase()] || '').trim())
+        .find(Boolean) ||
+      ''
     );
   }
 
@@ -221,7 +231,7 @@ class PrescriptionDataService {
 
     const kdPoli = String(rows?.[0]?.kd_poli || '').trim();
 
-    if (kdPoli === 'B0054') {
+    if (['B0054', 'IGDK', 'IGD01'].includes(kdPoli)) {
       const value = this.getEnvValue('STOK_RESEP_IGD');
       if (!value) {
         throw new Error('Konfigurasi STOK_RESEP_IGD belum diisi');
@@ -408,12 +418,57 @@ class PrescriptionDataService {
     }
 
     try {
+      const headerQuery = `
+        SELECT no_rawat, status
+        FROM resep_obat
+        WHERE no_resep = ?
+        LIMIT 1
+      `;
+      const headerRows = await executeQuery(headerQuery, [no_resep]);
+      const prescriptionHeader = Array.isArray(headerRows) ? headerRows[0] : null;
+
+      if (!prescriptionHeader?.no_rawat) {
+        throw new Error('Header resep tidak ditemukan');
+      }
+
+      const connection = await getConnection();
+
+      let stockBangsalCode = '';
+      try {
+        const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(
+          connection,
+          prescriptionHeader.no_rawat,
+          prescriptionHeader.status
+        );
+        stockBangsalCode = await this.resolveStockBangsalCode(
+          connection,
+          prescriptionHeader.no_rawat,
+          resolvedPrescriptionStatus
+        );
+      } finally {
+        connection.release();
+      }
+
       // Get prescription medicines
       const medicineQuery = `
-        SELECT rd.*, db.nama_brng, db.kode_sat AS satuan, db.kelas1 AS harga
+        SELECT
+          rd.*,
+          db.nama_brng,
+          db.kode_sat AS satuan,
+          db.kelas1 AS harga,
+          COALESCE(SUM(gb.stok), 0) AS stok
         FROM resep_dokter rd
         LEFT JOIN databarang db ON rd.kode_brng = db.kode_brng
+        LEFT JOIN gudangbarang gb ON gb.kode_brng = rd.kode_brng AND gb.kd_bangsal = ?
         WHERE rd.no_resep = ?
+        GROUP BY
+          rd.no_resep,
+          rd.kode_brng,
+          rd.jml,
+          rd.aturan_pakai,
+          db.nama_brng,
+          db.kode_sat,
+          db.kelas1
       `;
       
       // Get prescription compounds
@@ -426,7 +481,7 @@ class PrescriptionDataService {
       `;
       
       const [medicines, compounds] = await Promise.all([
-        executeQuery(medicineQuery, [no_resep]),
+        executeQuery(medicineQuery, [stockBangsalCode, no_resep]),
         executeQuery(compoundQuery, [no_resep])
       ]);
       
@@ -440,13 +495,21 @@ class PrescriptionDataService {
                 rdrd.kandungan,
                 rdrd.jml,
                 db.nama_brng,
-                db.kode_sat AS satuan
+                db.kode_sat AS satuan,
+                COALESCE(SUM(gb.stok), 0) AS stok
               FROM resep_dokter_racikan_detail rdrd
               LEFT JOIN databarang db ON db.kode_brng = rdrd.kode_brng
+              LEFT JOIN gudangbarang gb ON gb.kode_brng = rdrd.kode_brng AND gb.kd_bangsal = ?
               WHERE rdrd.no_resep = ? AND rdrd.no_racik = ?
+              GROUP BY
+                rdrd.kode_brng,
+                rdrd.kandungan,
+                rdrd.jml,
+                db.nama_brng,
+                db.kode_sat
               ORDER BY db.nama_brng ASC
             `,
-            [no_resep, compound.no_racik]
+            [stockBangsalCode, no_resep, compound.no_racik]
           );
 
           return {

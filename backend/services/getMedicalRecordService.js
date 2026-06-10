@@ -3,6 +3,27 @@ import db from '../config/database.js';
 class GetMedicalRecordService {
   static DEFAULT_LIMIT = 5;
 
+  static getEnvValue(key) {
+    const upper = String(key || '').trim();
+    if (!upper) {
+      return '';
+    }
+
+    const aliasKeys = {
+      STOK_RESEP_RAJAL: ['STOK_RESEP_RALAN']
+    };
+
+    const aliases = Array.isArray(aliasKeys[upper]) ? aliasKeys[upper] : [];
+    return (
+      String(process.env[upper] || '').trim() ||
+      String(process.env[upper.toLowerCase()] || '').trim() ||
+      aliases
+        .map((alias) => String(process.env[alias] || '').trim() || String(process.env[alias.toLowerCase()] || '').trim())
+        .find(Boolean) ||
+      ''
+    );
+  }
+
   // Utility function to format date only (no time conversion)
   static formatDateOnly(dateStr) {
     if (!dateStr) return '';
@@ -45,6 +66,35 @@ class GetMedicalRecordService {
     }
 
     return this.formatDateOnly(rawValue);
+  }
+
+  static async resolveMedicationStockBangsalCode(noRawat, status) {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+
+    if (normalizedStatus === 'ranap') {
+      return this.getEnvValue('STOK_RESEP_RANAP');
+    }
+
+    if (normalizedStatus === 'pulang' || normalizedStatus === 'ibs' || normalizedStatus === 'ralan') {
+      const [rows] = await db.execute(
+        `
+          SELECT kd_poli
+          FROM reg_periksa
+          WHERE no_rawat = ?
+          LIMIT 1
+        `,
+        [noRawat]
+      );
+
+      const kdPoli = String(rows?.[0]?.kd_poli || '').trim();
+      if (['B0054', 'IGDK', 'IGD01'].includes(kdPoli)) {
+        return this.getEnvValue('STOK_RESEP_IGD');
+      }
+
+      return this.getEnvValue('STOK_RESEP_RAJAL');
+    }
+
+    return '';
   }
 
   static async getOrthancConfig() {
@@ -441,6 +491,8 @@ class GetMedicalRecordService {
 
   // Helper function to fetch medications request using 2-step approach
   static async fetchMedicationsRequest(noRawat, status) {
+    const stockBangsalCode = await this.resolveMedicationStockBangsalCode(noRawat, status);
+
     // Step 1: Get list of unique prescriptions
     const prescRequestQuery = `
       SELECT DISTINCT no_resep, tgl_peresepan, jam_peresepan, kd_dokter
@@ -459,10 +511,18 @@ class GetMedicalRecordService {
       }
       
       const detailRequestQuery = `
-        SELECT dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng
+        SELECT
+          dro.kode_brng,
+          dro.jml,
+          dro.aturan_pakai,
+          ob.nama_brng,
+          ob.kode_sat AS satuan,
+          COALESCE(SUM(gb.stok), 0) AS stok
         FROM resep_dokter dro
         LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
+        LEFT JOIN gudangbarang gb ON gb.kode_brng = dro.kode_brng AND gb.kd_bangsal = ?
         WHERE dro.no_resep = ?
+        GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat
         ORDER BY ob.nama_brng
       `;
       const compoundQuery = `
@@ -480,7 +540,7 @@ class GetMedicalRecordService {
         ORDER BY rdr.no_racik ASC
       `;
       const [detailRequestRows, compoundRows] = await Promise.all([
-        db.execute(detailRequestQuery, [prescRequestRow.no_resep]).then(([rows]) => rows),
+        db.execute(detailRequestQuery, [stockBangsalCode, prescRequestRow.no_resep]).then(([rows]) => rows),
         db.execute(compoundQuery, [prescRequestRow.no_resep]).then(([rows]) => rows)
       ]);
       
@@ -488,7 +548,9 @@ class GetMedicalRecordService {
         kode_brng: row.kode_brng || '',
         nama: row.nama_brng || '-',
         jumlah: row.jml || '-',
-        aturan_pakai: row.aturan_pakai || '-'
+        aturan_pakai: row.aturan_pakai || '-',
+        satuan: row.satuan || '',
+        stok: Number(row.stok) || 0
       }));
 
       const compounds = [];
@@ -500,13 +562,16 @@ class GetMedicalRecordService {
               rdrd.kandungan,
               rdrd.jml,
               db.nama_brng,
-              db.kode_sat AS satuan
+              db.kode_sat AS satuan,
+              COALESCE(SUM(gb.stok), 0) AS stok
             FROM resep_dokter_racikan_detail rdrd
             LEFT JOIN databarang db ON db.kode_brng = rdrd.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = rdrd.kode_brng AND gb.kd_bangsal = ?
             WHERE rdrd.no_resep = ? AND rdrd.no_racik = ?
+            GROUP BY rdrd.kode_brng, rdrd.kandungan, rdrd.jml, db.nama_brng, db.kode_sat
             ORDER BY db.nama_brng ASC
           `,
-          [prescRequestRow.no_resep, compoundRow.no_racik]
+          [stockBangsalCode, prescRequestRow.no_resep, compoundRow.no_racik]
         );
 
         compounds.push({
@@ -522,7 +587,8 @@ class GetMedicalRecordService {
             nama_brng: detailRow.nama_brng || '-',
             kandungan: detailRow.kandungan || '',
             jml: detailRow.jml || '',
-            satuan: detailRow.satuan || ''
+            satuan: detailRow.satuan || '',
+            stok: Number(detailRow.stok) || 0
           }))
         });
       }
