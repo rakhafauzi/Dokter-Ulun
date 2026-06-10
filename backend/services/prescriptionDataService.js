@@ -1,6 +1,124 @@
 import { executeQuery, getConnection } from '../config/database.js';
 
 class PrescriptionDataService {
+  getEnvValue(key) {
+    const upper = String(key || '').trim();
+    if (!upper) {
+      return '';
+    }
+    return (
+      String(process.env[upper] || '').trim() ||
+      String(process.env[upper.toLowerCase()] || '').trim()
+    );
+  }
+
+  parseMedicineQty(value) {
+    const parsed = Number(String(value ?? '').replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 0;
+    }
+    return parsed;
+  }
+
+  async resolveStockBangsalCode(connection, no_rawat, resolvedPrescriptionStatus) {
+    const normalizedStatus = String(resolvedPrescriptionStatus || '').trim().toLowerCase();
+
+    if (normalizedStatus === 'ranap') {
+      const value = this.getEnvValue('STOK_RESEP_RANAP');
+      if (!value) {
+        throw new Error('Konfigurasi STOK_RESEP_RANAP belum diisi');
+      }
+      return value;
+    }
+
+    const [rows] = await connection.execute(
+      `
+        SELECT kd_poli
+        FROM reg_periksa
+        WHERE no_rawat = ?
+        LIMIT 1
+      `,
+      [no_rawat]
+    );
+
+    const kdPoli = String(rows?.[0]?.kd_poli || '').trim();
+
+    if (kdPoli === 'IGDK') {
+      const value = this.getEnvValue('STOK_RESEP_IGD');
+      if (!value) {
+        throw new Error('Konfigurasi STOK_RESEP_IGD belum diisi');
+      }
+      return value;
+    }
+
+    const value = this.getEnvValue('STOK_RESEP_RAJAL');
+    if (!value) {
+      throw new Error('Konfigurasi STOK_RESEP_RAJAL belum diisi');
+    }
+    return value;
+  }
+
+  async validateMedicineStock(connection, kdBangsal, medicines) {
+    if (!kdBangsal) {
+      throw new Error('Kode bangsal stok resep tidak ditemukan');
+    }
+
+    const requestedByCode = new Map();
+    for (const item of Array.isArray(medicines) ? medicines : []) {
+      const code = String(item?.kode_brng || '').trim();
+      if (!code) {
+        continue;
+      }
+      const qty = this.parseMedicineQty(item?.jml);
+      if (!qty) {
+        continue;
+      }
+      requestedByCode.set(code, (requestedByCode.get(code) || 0) + qty);
+    }
+
+    const codes = Array.from(requestedByCode.keys());
+    if (!codes.length) {
+      return;
+    }
+
+    const placeholders = codes.map(() => '?').join(', ');
+    const [rows] = await connection.execute(
+      `
+        SELECT
+          gb.kode_brng,
+          COALESCE(db.nama_brng, '') AS nama_brng,
+          SUM(COALESCE(gb.stok, 0)) AS stok
+        FROM gudangbarang gb
+        LEFT JOIN databarang db ON db.kode_brng = gb.kode_brng
+        WHERE gb.kd_bangsal = ?
+          AND gb.kode_brng IN (${placeholders})
+        GROUP BY gb.kode_brng, db.nama_brng
+      `,
+      [kdBangsal, ...codes]
+    );
+
+    const stockByCode = new Map();
+    for (const row of rows) {
+      const code = String(row?.kode_brng || '').trim();
+      const stok = Number(row?.stok) || 0;
+      stockByCode.set(code, stok);
+    }
+
+    const shortages = [];
+    for (const code of codes) {
+      const requested = requestedByCode.get(code) || 0;
+      const available = stockByCode.get(code) || 0;
+      if (requested > available) {
+        const name = String(rows.find((r) => String(r?.kode_brng || '').trim() === code)?.nama_brng || '').trim();
+        shortages.push(`${code}${name ? ` (${name})` : ''} butuh ${requested}, stok ${available}`);
+      }
+    }
+
+    if (shortages.length) {
+      throw new Error(`Stok tidak mencukupi di bangsal ${kdBangsal}: ${shortages.join('; ')}`);
+    }
+  }
+
   normalizePrescriptionStatus(value) {
     const normalizedValue = String(value || '').trim().toLowerCase();
 
@@ -166,34 +284,91 @@ class PrescriptionDataService {
     }
   }
 
-  async searchMedicines(search = '', limit = 20) {
+  async searchMedicines(search = '', limit = 20, no_rawat = '') {
+    const keyword = String(search || '').trim();
+    const effectiveLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
+    const normalizedNoRawat = String(no_rawat || '').trim();
+
+    const connection = await getConnection();
+
+    try {
+      let stockBangsalCode = '';
+
+      if (normalizedNoRawat) {
+        const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, normalizedNoRawat, null);
+        stockBangsalCode = await this.resolveStockBangsalCode(connection, normalizedNoRawat, resolvedPrescriptionStatus);
+      }
+
+      const query = `
+        SELECT
+          db.kode_brng,
+          db.nama_brng,
+          db.kode_sat AS satuan,
+          db.kelas1 AS harga,
+          SUM(COALESCE(gb.stok, 0)) AS stok
+        FROM gudangbarang gb
+        INNER JOIN databarang db ON db.kode_brng = gb.kode_brng
+        WHERE db.status = '1'
+          ${stockBangsalCode ? 'AND gb.kd_bangsal = ?' : ''}
+          AND (
+            ? = ''
+            OR db.kode_brng LIKE ?
+            OR db.nama_brng LIKE ?
+          )
+        GROUP BY db.kode_brng, db.nama_brng, db.kode_sat, db.kelas1
+        HAVING stok > 0
+        ORDER BY
+          CASE
+            WHEN db.kode_brng = ? THEN 0
+            WHEN db.kode_brng LIKE ? THEN 1
+            WHEN db.nama_brng LIKE ? THEN 2
+            ELSE 3
+          END,
+          db.nama_brng ASC
+        LIMIT ?
+      `;
+
+      const params = [];
+      if (stockBangsalCode) {
+        params.push(stockBangsalCode);
+      }
+      params.push(
+        keyword,
+        `%${keyword}%`,
+        `%${keyword}%`,
+        keyword,
+        `${keyword}%`,
+        `${keyword}%`,
+        effectiveLimit
+      );
+
+      const [rows] = await connection.execute(query, params);
+
+      return {
+        success: true,
+        data: rows
+      };
+    } catch (error) {
+      console.error('Error searching medicines from gudangbarang:', error);
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  async searchPackages(search = '', limit = 20) {
     const keyword = String(search || '').trim();
     const effectiveLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
     const query = `
-      SELECT
-        db.kode_brng,
-        db.nama_brng,
-        db.kode_sat AS satuan,
-        db.kelas1 AS harga,
-        SUM(COALESCE(gb.stok, 0)) AS stok
-      FROM gudangbarang gb
-      INNER JOIN databarang db ON db.kode_brng = gb.kode_brng
-      WHERE db.status = '1'
+      SELECT id, kd_paket, nama_paket
+      FROM eresep_paket_operasi
+      WHERE status = '1'
         AND (
           ? = ''
-          OR db.kode_brng LIKE ?
-          OR db.nama_brng LIKE ?
+          OR kd_paket LIKE ?
+          OR nama_paket LIKE ?
         )
-      GROUP BY db.kode_brng, db.nama_brng, db.kode_sat, db.kelas1
-      HAVING stok > 0
-      ORDER BY
-        CASE
-          WHEN db.kode_brng = ? THEN 0
-          WHEN db.kode_brng LIKE ? THEN 1
-          WHEN db.nama_brng LIKE ? THEN 2
-          ELSE 3
-        END,
-        db.nama_brng ASC
+      ORDER BY nama_paket ASC
       LIMIT ?
     `;
 
@@ -202,19 +377,78 @@ class PrescriptionDataService {
         keyword,
         `%${keyword}%`,
         `%${keyword}%`,
-        keyword,
-        `${keyword}%`,
-        `${keyword}%`,
         effectiveLimit
       ]);
 
       return {
         success: true,
-        data: result
+        data: result.map((row) => ({
+          id: row.id,
+          kd_paket: row.kd_paket,
+          nama_paket: row.nama_paket,
+          text: `${row.kd_paket} - ${row.nama_paket}`
+        }))
       };
     } catch (error) {
-      console.error('Error searching medicines from gudangbarang:', error);
+      console.error('Error searching packages:', error);
       throw error;
+    }
+  }
+
+  async getPackageItems(packageId, no_rawat) {
+    const normalizedPackageId = String(packageId || '').trim();
+    const normalizedNoRawat = String(no_rawat || '').trim();
+
+    if (!normalizedPackageId) {
+      throw new Error('package_id is required');
+    }
+
+    if (!normalizedNoRawat) {
+      throw new Error('no_rawat is required');
+    }
+
+    const connection = await getConnection();
+
+    try {
+      const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, normalizedNoRawat, null);
+      const stockBangsalCode = await this.resolveStockBangsalCode(connection, normalizedNoRawat, resolvedPrescriptionStatus);
+
+      const [rows] = await connection.execute(
+        `
+          SELECT
+            ept.kd_obat AS kode_brng,
+            db.nama_brng,
+            db.kode_sat AS satuan,
+            ept.jumlah,
+            ept.aturan_pakai,
+            SUM(COALESCE(gb.stok, 0)) AS stok
+          FROM eresep_paket_operasi_template ept
+          LEFT JOIN databarang db ON db.kode_brng = ept.kd_obat
+          LEFT JOIN gudangbarang gb ON gb.kode_brng = ept.kd_obat AND gb.kd_bangsal = ?
+          WHERE ept.id_paket = ?
+          GROUP BY ept.kd_obat, db.nama_brng, db.kode_sat, ept.jumlah, ept.aturan_pakai
+          ORDER BY db.nama_brng ASC
+        `,
+        [stockBangsalCode, normalizedPackageId]
+      );
+
+      return {
+        success: true,
+        kd_bangsal: stockBangsalCode,
+        data: rows.map((row) => ({
+          kode_brng: row.kode_brng,
+          nama_brng: row.nama_brng,
+          satuan: row.satuan,
+          jumlah: row.jumlah,
+          aturan_pakai: row.aturan_pakai,
+          stok: Number(row.stok) || 0
+        }))
+      };
+    } catch (error) {
+      console.error('Error getting package items:', error);
+      throw error;
+    } finally {
+      connection.release();
     }
   }
 
@@ -246,6 +480,8 @@ class PrescriptionDataService {
       await connection.beginTransaction();
       const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate) || new Date().toISOString().slice(0, 10);
       const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, no_rawat, prescriptionStatus);
+      const stockBangsalCode = await this.resolveStockBangsalCode(connection, no_rawat, resolvedPrescriptionStatus);
+      await this.validateMedicineStock(connection, stockBangsalCode, medicines);
       
       // Generate no_resep dengan format YYYYMMDD + 5 digit urutan harian.
       const datePrefix = normalizedPrescriptionDate.replace(/-/g, '');
@@ -342,6 +578,25 @@ class PrescriptionDataService {
 
       const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate);
       const normalizedPrescriptionStatus = this.normalizePrescriptionStatus(prescriptionStatus);
+
+      const [headerRows] = await connection.execute(
+        `
+          SELECT no_rawat, status
+          FROM resep_obat
+          WHERE no_resep = ?
+          LIMIT 1
+        `,
+        [no_resep]
+      );
+
+      if (!headerRows.length) {
+        throw new Error('Resep tidak ditemukan atau sudah dihapus');
+      }
+
+      const noRawatHeader = String(headerRows[0].no_rawat || '').trim();
+      const resolvedStatus = normalizedPrescriptionStatus || (await this.resolvePrescriptionStatus(connection, noRawatHeader, headerRows[0].status));
+      const stockBangsalCode = await this.resolveStockBangsalCode(connection, noRawatHeader, resolvedStatus);
+      await this.validateMedicineStock(connection, stockBangsalCode, medicines);
 
       const headerUpdates = [];
       const headerParams = [];
