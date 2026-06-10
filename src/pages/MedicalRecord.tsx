@@ -589,6 +589,25 @@ const MedicalRecord = () => {
   const { toast } = useToast();
   const { user } = useAuth();
 
+  const defaultExaminationStatusRawat = useMemo(() => {
+    const allVisits = [
+      ...(medicalData?.outpatient_visits || []),
+      ...(medicalData?.inpatient_visits || [])
+    ];
+    const focusedVisit = formattedNoRawat
+      ? allVisits.find((visit: any) => visit.no_rawat === formattedNoRawat)
+      : null;
+
+    return mapStatusLanjutToStatusRawat(
+      focusedVisit?.status_lanjut || medicalData?.patient?.status_lanjut
+    );
+  }, [
+    formattedNoRawat,
+    medicalData?.inpatient_visits,
+    medicalData?.outpatient_visits,
+    medicalData?.patient?.status_lanjut
+  ]);
+
   // Form states
   const [medications, setMedications] = useState<Medication[]>(() => getDefaultMedicationForm('Ralan'));
   const [medicineOptions, setMedicineOptions] = useState<Record<string, MedicineOption[]>>({});
@@ -1180,6 +1199,27 @@ const MedicalRecord = () => {
     medicalData?.focused_radiology_request !== undefined && medicalData?.focused_radiology !== undefined
   );
   const currentUsername = String(user?.username || '').trim();
+  useEffect(() => {
+    if (!editingExamination) {
+      setStatusRawat(defaultExaminationStatusRawat);
+    }
+  }, [defaultExaminationStatusRawat, editingExamination]);
+
+  useEffect(() => {
+    setProcedureStatusRawat(defaultExaminationStatusRawat as ProcedureStatusRawat);
+
+    if (!editingLabRequestNo) {
+      setLabStatusRawat(defaultExaminationStatusRawat as LabStatusRawat);
+    }
+
+    if (!editingRadiologyRequestNo) {
+      setRadiologyStatusRawat(defaultExaminationStatusRawat as RadiologyStatusRawat);
+    }
+  }, [
+    defaultExaminationStatusRawat,
+    editingLabRequestNo,
+    editingRadiologyRequestNo
+  ]);
   const matchesCurrentUser = (...values: Array<string | null | undefined>) =>
     Boolean(
       currentUsername &&
@@ -2946,7 +2986,7 @@ const MedicalRecord = () => {
     setLabServiceSearchQuery({});
     setLabTemplatesByIndex({});
     setLabTemplateLoadingByIndex({});
-    setLabStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setLabStatusRawat(defaultExaminationStatusRawat as LabStatusRawat);
     setEditingLabRequestNo(null);
     setLabFormNoRawat('');
   };
@@ -3002,7 +3042,7 @@ const MedicalRecord = () => {
     setProcedureSearchOpen({});
     setProcedureSearchQuery({});
     setProcedureSearchLoading({});
-    setProcedureStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setProcedureStatusRawat(defaultExaminationStatusRawat as ProcedureStatusRawat);
   };
 
   const handleProcedureStatusRawatChange = (value: ProcedureStatusRawat) => {
@@ -3497,7 +3537,7 @@ const MedicalRecord = () => {
     setRadiologies(getDefaultRadiologyRequestForm());
     setRadiologySearchOpen({});
     setRadiologySearchQuery({});
-    setRadiologyStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    setRadiologyStatusRawat(defaultExaminationStatusRawat as RadiologyStatusRawat);
     setEditingRadiologyRequestNo(null);
     setRadiologyFormNoRawat('');
   };
@@ -4561,6 +4601,7 @@ const MedicalRecord = () => {
         // Reset form and editing state
         setEditingExamination(null);
         setExaminationForm(getDefaultExaminationForm());
+        setStatusRawat(defaultExaminationStatusRawat);
 
         // Refresh medical record data
         fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
@@ -5983,7 +6024,10 @@ const MedicalRecord = () => {
                  <div className="flex justify-end space-x-2">
                    <Button 
                      variant="outline" 
-                    onClick={() => setExaminationForm(getDefaultExaminationForm())}
+                    onClick={() => {
+                      setExaminationForm(getDefaultExaminationForm());
+                      setStatusRawat(defaultExaminationStatusRawat);
+                    }}
                    >
                      Reset
                    </Button>
@@ -5996,6 +6040,7 @@ const MedicalRecord = () => {
                         onClick={() => {
                           setEditingExamination(null);
                           setExaminationForm(getDefaultExaminationForm());
+                          setStatusRawat(defaultExaminationStatusRawat);
                         }}
                       >
                         Batal Edit
