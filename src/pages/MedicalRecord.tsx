@@ -696,6 +696,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [isWhatsappModalOpen, setIsWhatsappModalOpen] = useState(false);
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [savingWhatsapp, setSavingWhatsapp] = useState(false);
+  const [whatsappMessage, setWhatsappMessage] = useState('');
+  const [sendingWhatsappMessage, setSendingWhatsappMessage] = useState(false);
 
   const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
   const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
@@ -3522,6 +3524,67 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     fetchMedicalRecord,
     no_rkm_medis,
     toast,
+    whatsappNumber
+  ]);
+
+  const handleSendWhatsappMessage = useCallback(async () => {
+    if (!whatsappNumber.trim()) {
+      toast({
+        title: "Error",
+        description: "Nomor WhatsApp wajib diisi",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!whatsappMessage.trim()) {
+      toast({
+        title: "Error",
+        description: "Pesan WhatsApp wajib diisi",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSendingWhatsappMessage(true);
+      const response = await fetch(API_URLS.PATIENT_CONTACT_MESSAGE, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_tlp: whatsappNumber.trim(),
+          message: whatsappMessage.trim()
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Pesan WhatsApp berhasil dikirim'
+      });
+      setWhatsappMessage('');
+    } catch (error) {
+      console.error('Error sending patient whatsapp message:', error);
+      const message = error instanceof Error ? error.message : 'Gagal mengirim pesan WhatsApp';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSendingWhatsappMessage(false);
+    }
+  }, [
+    toast,
+    whatsappMessage,
     whatsappNumber
   ]);
 
@@ -8643,33 +8706,62 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           setIsWhatsappModalOpen(open);
           if (open) {
             setWhatsappNumber(String(medicalData?.patient?.telepon || '').trim());
+            setWhatsappMessage('');
           }
         }}
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Update No WhatsApp</DialogTitle>
+            <DialogTitle>WhatsApp</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="patient-whatsapp">Nomor WhatsApp</Label>
-              <Input
-                id="patient-whatsapp"
-                placeholder="Contoh: 08123456789"
-                value={whatsappNumber}
-                onChange={(event) => setWhatsappNumber(event.target.value)}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="patient-whatsapp"
+                  placeholder="Contoh: 08123456789"
+                  value={whatsappNumber}
+                  onChange={(event) => setWhatsappNumber(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  onClick={() => void handleSaveWhatsapp()}
+                  disabled={savingWhatsapp || sendingWhatsappMessage}
+                >
+                  {savingWhatsapp ? 'Menyimpan...' : 'Ubah'}
+                </Button>
+              </div>
+            </div>
+            <div className="border-t pt-4 space-y-3">
+              <div>
+                <Label htmlFor="patient-whatsapp-message">Kirim Pesan</Label>
+                <Textarea
+                  id="patient-whatsapp-message"
+                  placeholder="Tulis pesan WhatsApp untuk pasien"
+                  value={whatsappMessage}
+                  onChange={(event) => setWhatsappMessage(event.target.value)}
+                  rows={5}
+                />
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleSendWhatsappMessage()}
+                  disabled={sendingWhatsappMessage}
+                >
+                  {sendingWhatsappMessage ? 'Mengirim...' : 'Kirim Pesan'}
+                </Button>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
                 onClick={() => setIsWhatsappModalOpen(false)}
-                disabled={savingWhatsapp}
+                disabled={savingWhatsapp || sendingWhatsappMessage}
               >
                 Batal
-              </Button>
-              <Button onClick={() => void handleSaveWhatsapp()} disabled={savingWhatsapp}>
-                {savingWhatsapp ? 'Menyimpan...' : 'Simpan'}
               </Button>
             </div>
           </div>

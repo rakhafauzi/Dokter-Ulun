@@ -767,6 +767,19 @@ app.put('/api/patient-contact', async (req, res) => {
   }
 });
 
+app.post('/api/patient-contact/message', async (req, res) => {
+  try {
+    const result = await PatientContactService.sendWhatsappMessage(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-contact message POST endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/internal-referrals/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
