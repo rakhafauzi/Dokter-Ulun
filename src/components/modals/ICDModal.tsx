@@ -55,24 +55,30 @@ interface SnomedOption {
   istilah: string;
 }
 
-const createEmptyIcd10Entry = (): ICD10Data => ({
+type ServiceStatus = 'Ralan' | 'Ranap';
+
+const normalizeServiceStatus = (value?: string | null, fallback: ServiceStatus = 'Ralan'): ServiceStatus => (
+  value === 'Ranap' ? 'Ranap' : value === 'Ralan' ? 'Ralan' : fallback
+);
+
+const createEmptyIcd10Entry = (defaultStatusLayanan: ServiceStatus = 'Ralan'): ICD10Data => ({
   kd_penyakit: '',
   nm_penyakit: '',
   ciri_ciri: '',
   keterangan: '',
   status: 'Tidak Menular',
   prioritas: 'Utama',
-  status_layanan: 'Ralan',
+  status_layanan: defaultStatusLayanan,
   snomed_concept_id: '',
   snomed_term: ''
 });
 
-const createEmptyIcd9Entry = (): ICD9Data => ({
+const createEmptyIcd9Entry = (defaultStatusLayanan: ServiceStatus = 'Ralan'): ICD9Data => ({
   kode: '',
   deskripsi_panjang: '',
   deskripsi_pendek: '',
   prioritas: 'Utama',
-  status_layanan: 'Ralan',
+  status_layanan: defaultStatusLayanan,
   snomed_concept_id: '',
   snomed_term: ''
 });
@@ -81,6 +87,7 @@ interface ICDModalProps {
   isOpen: boolean;
   onClose: () => void;
   noRawat: string;
+  defaultStatusLayanan?: ServiceStatus;
 }
 
 type TabType = 'icd10' | 'icd9';
@@ -98,15 +105,21 @@ const formatIcd9ProcedureCode = (value: string) => {
   return `${normalizedValue.slice(0, 2)}.${normalizedValue.slice(2)}`;
 };
 
-export const ICDModal: React.FC<ICDModalProps> = ({ isOpen, onClose, noRawat }) => {
+export const ICDModal: React.FC<ICDModalProps> = ({
+  isOpen,
+  onClose,
+  noRawat,
+  defaultStatusLayanan = 'Ralan'
+}) => {
+  const fallbackStatusLayanan = normalizeServiceStatus(defaultStatusLayanan);
   const [activeTab, setActiveTab] = useState('icd10');
   const [icd10Data, setIcd10Data] = useState<ICD10Data[]>([]);
   const [icd9Data, setIcd9Data] = useState<ICD9Data[]>([]);
   const [showTariffModal, setShowTariffModal] = useState(false);
   const [loadingSavedData, setLoadingSavedData] = useState(false);
   const [savingData, setSavingData] = useState(false);
-  const [icd10Drafts, setIcd10Drafts] = useState<ICD10Data[]>([createEmptyIcd10Entry()]);
-  const [icd9Drafts, setIcd9Drafts] = useState<ICD9Data[]>([createEmptyIcd9Entry()]);
+  const [icd10Drafts, setIcd10Drafts] = useState<ICD10Data[]>([createEmptyIcd10Entry(fallbackStatusLayanan)]);
+  const [icd9Drafts, setIcd9Drafts] = useState<ICD9Data[]>([createEmptyIcd9Entry(fallbackStatusLayanan)]);
   const [icdSearchOpenByKey, setIcdSearchOpenByKey] = useState<Record<string, boolean>>({});
   const [icdSearchQueryByKey, setIcdSearchQueryByKey] = useState<Record<string, string>>({});
   const [icdSearchResultsByKey, setIcdSearchResultsByKey] = useState<Record<string, any[]>>({});
@@ -130,13 +143,23 @@ export const ICDModal: React.FC<ICDModalProps> = ({ isOpen, onClose, noRawat }) 
   };
 
   const applyLoadedData = (data?: { icd10?: ICD10Data[]; icd9?: ICD9Data[] }) => {
-    const nextIcd10 = Array.isArray(data?.icd10) ? data.icd10 : [];
-    const nextIcd9 = Array.isArray(data?.icd9) ? data.icd9 : [];
+    const nextIcd10 = Array.isArray(data?.icd10)
+      ? data.icd10.map((item) => ({
+          ...item,
+          status_layanan: normalizeServiceStatus(item.status_layanan, fallbackStatusLayanan)
+        }))
+      : [];
+    const nextIcd9 = Array.isArray(data?.icd9)
+      ? data.icd9.map((item) => ({
+          ...item,
+          status_layanan: normalizeServiceStatus(item.status_layanan, fallbackStatusLayanan)
+        }))
+      : [];
 
     setIcd10Data(nextIcd10);
     setIcd9Data(nextIcd9);
-    setIcd10Drafts(nextIcd10.length ? nextIcd10.map((item) => ({ ...item })) : [createEmptyIcd10Entry()]);
-    setIcd9Drafts(nextIcd9.length ? nextIcd9.map((item) => ({ ...item })) : [createEmptyIcd9Entry()]);
+    setIcd10Drafts(nextIcd10.length ? nextIcd10.map((item) => ({ ...item })) : [createEmptyIcd10Entry(fallbackStatusLayanan)]);
+    setIcd9Drafts(nextIcd9.length ? nextIcd9.map((item) => ({ ...item })) : [createEmptyIcd9Entry(fallbackStatusLayanan)]);
     resetSearchState();
   };
 
@@ -172,7 +195,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({ isOpen, onClose, noRawat }) 
     if (isOpen) {
       void loadSavedData();
     }
-  }, [isOpen, noRawat]);
+  }, [fallbackStatusLayanan, isOpen, noRawat]);
 
   const getFieldKey = (tab: TabType, index: number) => `${tab}-${index}`;
 
@@ -250,10 +273,10 @@ export const ICDModal: React.FC<ICDModalProps> = ({ isOpen, onClose, noRawat }) 
 
   const addDraftRow = (tab: TabType) => {
     if (tab === 'icd10') {
-      setIcd10Drafts((prev) => [...prev, createEmptyIcd10Entry()]);
+      setIcd10Drafts((prev) => [...prev, createEmptyIcd10Entry(fallbackStatusLayanan)]);
       return;
     }
-    setIcd9Drafts((prev) => [...prev, createEmptyIcd9Entry()]);
+    setIcd9Drafts((prev) => [...prev, createEmptyIcd9Entry(fallbackStatusLayanan)]);
   };
 
   const removeDraftRow = (tab: TabType, index: number) => {
@@ -876,6 +899,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({ isOpen, onClose, noRawat }) 
         open={showTariffModal}
         onOpenChange={setShowTariffModal}
         noRawat={noRawat}
+        defaultStatusRawat={fallbackStatusLayanan}
       />
     </>
   );

@@ -76,10 +76,12 @@ interface InacbgTariffSimulationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   noRawat?: string;
+  defaultStatusRawat?: 'Ralan' | 'Ranap';
 }
 
 interface InacbgTariffSimulationContentProps {
   noRawat?: string;
+  defaultStatusRawat?: 'Ralan' | 'Ranap';
 }
 
 const EMPTY_DEFAULTS: SimulationDefaults = {
@@ -125,7 +127,8 @@ const EMPTY_DEFAULTS: SimulationDefaults = {
 export const InacbgTariffSimulationDialog: React.FC<InacbgTariffSimulationDialogProps> = ({
   open,
   onOpenChange,
-  noRawat
+  noRawat,
+  defaultStatusRawat = 'Ralan'
 }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -133,7 +136,7 @@ export const InacbgTariffSimulationDialog: React.FC<InacbgTariffSimulationDialog
         <DialogHeader>
           <DialogTitle>Simulasi Tarif INACBG's</DialogTitle>
         </DialogHeader>
-        {open ? <InacbgTariffSimulationContent noRawat={noRawat} /> : null}
+        {open ? <InacbgTariffSimulationContent noRawat={noRawat} defaultStatusRawat={defaultStatusRawat} /> : null}
       </DialogContent>
     </Dialog>
   );
@@ -253,10 +256,19 @@ const formatProcedureCodeForPayload = (value: string) => {
   return formatProcedureCodeDisplay(value);
 };
 
+const mapStatusRawatToJenisRawat = (statusRawat?: 'Ralan' | 'Ranap') => (
+  statusRawat === 'Ranap' ? '1' : '2'
+);
+
 export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationContentProps> = ({
-  noRawat
+  noRawat,
+  defaultStatusRawat = 'Ralan'
 }) => {
-  const { toast } = useToast();
+  noRawat
+  const fallbackJenisRawat = useMemo(
+    () => mapStatusRawatToJenisRawat(defaultStatusRawat),
+    [defaultStatusRawat]
+  );
   const [defaults, setDefaults] = useState<SimulationDefaults>(EMPTY_DEFAULTS);
   const [loadingDefaults, setLoadingDefaults] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -338,6 +350,7 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
       ...data.patient,
       nomor_sep: data.patient?.nomor_sep || '',
       tgl_lahir: formatDateInput(data.patient?.tgl_lahir || '') || getCurrentDateString(),
+      jenis_rawat: data.patient?.jenis_rawat || fallbackJenisRawat,
       tgl_masuk: data.patient?.tgl_masuk || currentDateTime,
       tgl_pulang: data.patient?.tgl_pulang || currentDateTime
     };
@@ -380,7 +393,7 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
 
   useEffect(() => {
     void loadDefaults();
-  }, [noRawat]);
+  }, [fallbackJenisRawat, noRawat]);
 
   const apiCall = async (method: string, data: Record<string, unknown> = {}) => {
     const response = await fetch(`${API_URLS.INACBG_SIMULATION}/api-call`, {

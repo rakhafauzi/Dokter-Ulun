@@ -20,9 +20,13 @@ import { OperationReportModal } from './modals/OperationReportModal';
 
 interface FloatingButtonsModalProps {
   noRawat: string;
+  defaultStatusRawat?: 'Ralan' | 'Ranap';
 }
 
-export const FloatingButtonsModal: React.FC<FloatingButtonsModalProps> = ({ noRawat }) => {
+export const FloatingButtonsModal: React.FC<FloatingButtonsModalProps> = ({
+  noRawat,
+  defaultStatusRawat = 'Ralan'
+}) => {
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -125,6 +129,7 @@ export const FloatingButtonsModal: React.FC<FloatingButtonsModalProps> = ({ noRa
         isOpen={activeModal === 'icd'} 
         onClose={closeModal}
         noRawat={noRawat}
+        defaultStatusLayanan={defaultStatusRawat}
       />
       <PatientNotesModal 
         isOpen={activeModal === 'notes'} 

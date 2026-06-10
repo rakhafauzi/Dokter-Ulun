@@ -3365,6 +3365,7 @@ const MedicalRecord = () => {
       return;
     }
 
+    const currentPrescriptionStatus: PrescriptionStatus = statusRawat === 'Ranap' ? 'Ranap' : 'Ralan';
     const obatItems = packageItems.map((item) => ({
       kode_brng: String(item.kode_brng || '').trim(),
       nama: String(item.nama_brng || '').trim(),
@@ -3377,14 +3378,14 @@ const MedicalRecord = () => {
     setMedications((previous) => {
       const next = [...previous];
       const targetIndex = 0;
-      const target = next[targetIndex] || getDefaultMedicationForm('Ralan')[0];
+      const target = next[targetIndex] || getDefaultMedicationForm(currentPrescriptionStatus)[0];
 
       const isTargetEmpty = target.obat.length === 1 && !String(target.obat[0].nama || '').trim();
       const mergedObat = isTargetEmpty ? obatItems : [...target.obat, ...obatItems];
 
       next[targetIndex] = {
         ...target,
-        status: 'Ralan',
+        status: currentPrescriptionStatus,
         obat: mergedObat
       };
 
@@ -3397,7 +3398,7 @@ const MedicalRecord = () => {
       title: "Berhasil",
       description: "Item paket berhasil dimasukkan ke form resep obat"
     });
-  }, [packageItems, toast]);
+  }, [packageItems, statusRawat, toast]);
 
   const fetchProcedureOptions = useCallback(async (index: number, searchText = '') => {
     if (!formattedNoRawat) {
@@ -8253,7 +8254,10 @@ const MedicalRecord = () => {
 
       {/* Floating Buttons for CRUD Operations */}
       {formattedNoRawat && (
-        <FloatingButtonsModal noRawat={formattedNoRawat} />
+        <FloatingButtonsModal
+          noRawat={formattedNoRawat}
+          defaultStatusRawat={defaultExaminationStatusRawat as 'Ralan' | 'Ranap'}
+        />
       )}
     </div>
   );
