@@ -1387,11 +1387,19 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <Button
               size="sm"
               variant="secondary"
+              onClick={() => handleCopyExaminationAll(exam, rawatType)}
+            >
+              <Copy className="h-4 w-4 mr-1" />
+              Copy All
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               onClick={() => handleCopyExaminationTTV(exam)}
             >
               <Copy className="h-4 w-4 mr-1" />
               Copy TTV
-            </Button>
+            </Button>  
             <Button
               size="sm"
               variant="secondary"
@@ -4453,6 +4461,40 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     toast({
       title: "Data Disalin",
       description: "TTV berhasil disalin ke form tambah pemeriksaan",
+    });
+  };
+
+  const handleCopyExaminationAll = (examination: any, rawatType: 'Ralan' | 'Ranap') => {
+    setActiveTab('examinations');
+    setIsExaminationFormOpen(true);
+
+    const shouldCopyIE = rawatType === 'Ranap';
+
+    setExaminationForm((prev) => ({
+      ...getDefaultExaminationForm(),
+      suhu: examination.suhu_tubuh || examination.suhu || '',
+      tensi: examination.tensi || examination.tekanan_darah || '',
+      nadi: examination.nadi || '',
+      respirasi: examination.respirasi || '',
+      tinggi: examination.tinggi || '',
+      berat: examination.berat || '',
+      spo2: examination.spo2 || '',
+      gcs: examination.gcs || '',
+      kesadaran: examination.kesadaran || '',
+      keluhan: examination.keluhan || examination.s || '',
+      pemeriksaan: examination.pemeriksaan || examination.o || '',
+      rtl: examination.rtl || examination.p || '',
+      penilaian: examination.penilaian || examination.a || '',
+      instruksi: shouldCopyIE ? (examination.instruksi || examination.i || '') : '',
+      evaluasi: shouldCopyIE ? (examination.evaluasi || examination.e || '') : '',
+      nip: examination.nip || examination.pegawai || prev.nip || ''
+    }));
+
+    setEditingExamination(null);
+
+    toast({
+      title: "Data Disalin",
+      description: "TTV dan SOAPIE berhasil disalin ke form tambah pemeriksaan",
     });
   };
 
