@@ -4414,8 +4414,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const handleCopyExaminationTTV = (examination: any) => {
     setActiveTab('examinations');
     setIsExaminationFormOpen(true);
-    setExaminationForm({
-      ...getDefaultExaminationForm(),
+    setExaminationForm((prev) => ({
+      ...prev,
+      ...getCurrentExaminationDateTime(),
       suhu: examination.suhu_tubuh || examination.suhu || '',
       tensi: examination.tensi || examination.tekanan_darah || '',
       nadi: examination.nadi || '',
@@ -4425,8 +4426,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       spo2: examination.spo2 || '',
       gcs: examination.gcs || '',
       kesadaran: examination.kesadaran || '',
-      nip: examination.nip || examination.pegawai || ''
-    });
+      nip: examination.nip || examination.pegawai || prev.nip || ''
+    }));
     
     setEditingExamination(null);
     
@@ -4442,16 +4443,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     const shouldCopyIE = rawatType === 'Ranap';
 
-    setExaminationForm({
-      ...getDefaultExaminationForm(),
+    setExaminationForm((prev) => ({
+      ...prev,
+      ...getCurrentExaminationDateTime(),
       keluhan: examination.keluhan || examination.s || '',
       pemeriksaan: examination.pemeriksaan || examination.o || '',
       rtl: examination.rtl || examination.p || '',
       penilaian: examination.penilaian || examination.a || '',
-      instruksi: shouldCopyIE ? (examination.instruksi || examination.i || '') : '',
-      evaluasi: shouldCopyIE ? (examination.evaluasi || examination.e || '') : '',
-      nip: examination.nip || examination.pegawai || ''
-    });
+      instruksi: shouldCopyIE ? (examination.instruksi || examination.i || '') : prev.instruksi || '',
+      evaluasi: shouldCopyIE ? (examination.evaluasi || examination.e || '') : prev.evaluasi || '',
+      nip: examination.nip || examination.pegawai || prev.nip || ''
+    }));
 
     setEditingExamination(null);
 
