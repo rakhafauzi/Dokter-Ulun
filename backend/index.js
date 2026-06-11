@@ -921,7 +921,7 @@ app.post('/api/icd-data', async (req, res) => {
 
 app.get('/api/icd-management/:no_rawat', async (req, res) => {
   try {
-    const data = await IcdDataService.getPatientIcdData(req.params.no_rawat);
+    const data = await IcdDataService.getPatientIcdData(req.params.no_rawat, req.query.status_layanan);
     res.json(data);
   } catch (error) {
     console.error('ICD management load error:', error);

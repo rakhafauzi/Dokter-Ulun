@@ -147,13 +147,13 @@ export const ICDModal: React.FC<ICDModalProps> = ({
       ? data.icd10.map((item) => ({
           ...item,
           status_layanan: normalizeServiceStatus(item.status_layanan, fallbackStatusLayanan)
-        }))
+        })).filter((item) => item.status_layanan === fallbackStatusLayanan)
       : [];
     const nextIcd9 = Array.isArray(data?.icd9)
       ? data.icd9.map((item) => ({
           ...item,
           status_layanan: normalizeServiceStatus(item.status_layanan, fallbackStatusLayanan)
-        }))
+        })).filter((item) => item.status_layanan === fallbackStatusLayanan)
       : [];
 
     setIcd10Data(nextIcd10);
@@ -171,7 +171,9 @@ export const ICDModal: React.FC<ICDModalProps> = ({
 
     setLoadingSavedData(true);
     try {
-      const response = await fetch(`${API_URLS.ICD_MANAGEMENT}/${encodeURIComponent(noRawat)}`);
+      const response = await fetch(
+        `${API_URLS.ICD_MANAGEMENT}/${encodeURIComponent(noRawat)}?status_layanan=${encodeURIComponent(fallbackStatusLayanan)}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -434,7 +436,8 @@ export const ICDModal: React.FC<ICDModalProps> = ({
 
       if (activeTab === 'icd10') {
         const validItems = icd10Drafts
-          .filter((item) => item.kd_penyakit && item.nm_penyakit);
+          .filter((item) => item.kd_penyakit && item.nm_penyakit)
+          .map((item) => ({ ...item, status_layanan: fallbackStatusLayanan }));
 
         const response = await fetch(API_URLS.ICD_MANAGEMENT, {
           method: 'POST',
@@ -442,6 +445,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({
           body: JSON.stringify({
             no_rawat: noRawat,
             icdType: 'icd10',
+            status_layanan: fallbackStatusLayanan,
             items: validItems
           })
         });
@@ -455,7 +459,8 @@ export const ICDModal: React.FC<ICDModalProps> = ({
         toast({ title: "Berhasil", description: "Data ICD-10 dan SNOMED-CT berhasil disimpan" });
       } else {
         const validItems = icd9Drafts
-          .filter((item) => item.kode && item.deskripsi_pendek);
+          .filter((item) => item.kode && item.deskripsi_pendek)
+          .map((item) => ({ ...item, status_layanan: fallbackStatusLayanan }));
 
         const response = await fetch(API_URLS.ICD_MANAGEMENT, {
           method: 'POST',
@@ -463,6 +468,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({
           body: JSON.stringify({
             no_rawat: noRawat,
             icdType: 'icd9',
+            status_layanan: fallbackStatusLayanan,
             items: validItems
           })
         });
@@ -541,10 +547,13 @@ export const ICDModal: React.FC<ICDModalProps> = ({
       const selectedSnomedLabel = getSnomedTriggerLabel(tab, draft, fieldKey);
 
       return (
-        <div key={fieldKey} className="rounded-lg border p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)_160px_110px] gap-4 items-end">
+        <div
+          key={fieldKey}
+          className="grid grid-cols-1 gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.7fr)_150px_minmax(0,1.7fr)_140px_140px] md:items-end"
+        >
+          <div className="space-y-2">
+            <Label className="md:hidden">{tab === 'icd10' ? 'Cari ICD-10' : 'Cari ICD-9-CM'}</Label>
             <div className="space-y-2">
-              <Label>{tab === 'icd10' ? 'Cari ICD-10' : 'Cari ICD-9-CM'}</Label>
               <Popover
                 open={!!icdSearchOpenByKey[fieldKey]}
                 onOpenChange={(open) => {
@@ -619,26 +628,28 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                 </PopoverContent>
               </Popover>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="md:hidden">Prioritas</Label>
+            <select
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={tab === 'icd10' ? (draft as ICD10Data).prioritas : (draft as ICD9Data).prioritas}
+              onChange={(e) => {
+                const value = e.target.value as 'Utama' | 'Sekunder';
+                if (tab === 'icd10') {
+                  updateIcd10Draft(index, (item) => ({ ...item, prioritas: value }));
+                  return;
+                }
+                updateIcd9Draft(index, (item) => ({ ...item, prioritas: value }));
+              }}
+            >
+              <option value="Utama">Utama</option>
+              <option value="Sekunder">Sekunder</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label className="md:hidden">Cari SNOMED-CT</Label>
             <div className="space-y-2">
-              <Label>Prioritas</Label>
-              <select
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={tab === 'icd10' ? (draft as ICD10Data).prioritas : (draft as ICD9Data).prioritas}
-                onChange={(e) => {
-                  const value = e.target.value as 'Utama' | 'Sekunder';
-                  if (tab === 'icd10') {
-                    updateIcd10Draft(index, (item) => ({ ...item, prioritas: value }));
-                    return;
-                  }
-                  updateIcd9Draft(index, (item) => ({ ...item, prioritas: value }));
-                }}
-              >
-                <option value="Utama">Utama</option>
-                <option value="Sekunder">Sekunder</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>Cari SNOMED-CT</Label>
               <Popover
                 open={!!snomedSearchOpenByKey[fieldKey]}
                 onOpenChange={(open) => {
@@ -706,32 +717,29 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                 </PopoverContent>
               </Popover>
             </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <select
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={tab === 'icd10' ? (draft as ICD10Data).status_layanan : (draft as ICD9Data).status_layanan}
-                onChange={(e) => {
-                  const value = e.target.value as 'Ralan' | 'Ranap';
-                  if (tab === 'icd10') {
-                    updateIcd10Draft(index, (item) => ({ ...item, status_layanan: value }));
-                    return;
-                  }
-                  updateIcd9Draft(index, (item) => ({ ...item, status_layanan: value }));
-                }}
-              >
-                <option value="Ralan">Ralan</option>
-                <option value="Ranap">Ranap</option>
-              </select>
-            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="md:hidden">Status</Label>
+            <select
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={tab === 'icd10' ? (draft as ICD10Data).status_layanan : (draft as ICD9Data).status_layanan}
+              onChange={() => undefined}
+              disabled
+            >
+              <option value={fallbackStatusLayanan}>{fallbackStatusLayanan}</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label className="md:hidden">Aksi</Label>
             <Button
               type="button"
               variant="destructive"
               onClick={() => removeDraftRow(tab, index)}
               disabled={drafts.length === 1}
+              className="w-full"
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              Delete
+              Hapus
             </Button>
           </div>
         </div>
@@ -783,8 +791,17 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                 {loadingSavedData && (
                   <div className="text-sm text-muted-foreground">Memuat data ICD-10...</div>
                 )}
-                <div className="space-y-4">
-                  {renderIcdDraftRows('icd10')}
+                <div className="rounded-lg border bg-background p-4">
+                  <div className="mb-3 hidden border-b pb-3 text-sm font-medium text-muted-foreground md:grid md:grid-cols-[minmax(0,1.7fr)_150px_minmax(0,1.7fr)_140px_140px] md:gap-3">
+                    <div>Cari ICD-10</div>
+                    <div>Prioritas</div>
+                    <div>Cari SNOMED-CT</div>
+                    <div>Status</div>
+                    <div>Aksi</div>
+                  </div>
+                  <div className="space-y-3">
+                    {renderIcdDraftRows('icd10')}
+                  </div>
                 </div>
 
                 <div className="border rounded-lg">
@@ -840,8 +857,17 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                 {loadingSavedData && (
                   <div className="text-sm text-muted-foreground">Memuat data ICD-9...</div>
                 )}
-                <div className="space-y-4">
-                  {renderIcdDraftRows('icd9')}
+                <div className="rounded-lg border bg-background p-4">
+                  <div className="mb-3 hidden border-b pb-3 text-sm font-medium text-muted-foreground md:grid md:grid-cols-[minmax(0,1.7fr)_150px_minmax(0,1.7fr)_140px_140px] md:gap-3">
+                    <div>Cari ICD-9-CM</div>
+                    <div>Prioritas</div>
+                    <div>Cari SNOMED-CT</div>
+                    <div>Status</div>
+                    <div>Aksi</div>
+                  </div>
+                  <div className="space-y-3">
+                    {renderIcdDraftRows('icd9')}
+                  </div>
                 </div>
 
                 <div className="border rounded-lg">

@@ -264,6 +264,7 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
   defaultStatusRawat = 'Ralan'
 }) => {
   noRawat
+  const automaticSourceStatus = defaultStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan';
   const fallbackJenisRawat = useMemo(
     () => mapStatusRawatToJenisRawat(defaultStatusRawat),
     [defaultStatusRawat]
@@ -1290,6 +1291,9 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
 
               <div className="space-y-4 rounded-lg border p-4">
                 <h3 className="font-semibold">2. iDRG Coding (ICD-10-IM & ICD-9CM-IM)</h3>
+                <div className="text-xs text-muted-foreground">
+                  Sumber otomatis: {automaticSourceStatus}
+                </div>
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   {renderCodeTable(idrgDiagnosa, setIdrgDiagnosa, 'idrg_diagnosa')}
                   {renderCodeTable(idrgProsedur, setIdrgProsedur, 'idrg_prosedur')}

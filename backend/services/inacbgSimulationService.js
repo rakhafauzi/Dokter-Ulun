@@ -66,6 +66,10 @@ class InacbgSimulationService {
     return String(statusLanjut || '').trim().toLowerCase() === 'ranap' ? '1' : '2';
   }
 
+  static normalizeStatusLanjut(statusLanjut) {
+    return String(statusLanjut || '').trim().toLowerCase() === 'ranap' ? 'Ranap' : 'Ralan';
+  }
+
   static formatDateTime(dateValue, timeValue, fallbackTime = '00:00:00') {
     const date = String(dateValue || '').trim();
     if (!date) return '';
@@ -311,6 +315,7 @@ class InacbgSimulationService {
       FROM diagnosa_pasien dp
       LEFT JOIN penyakit p ON p.kd_penyakit = dp.kd_penyakit
       WHERE dp.no_rawat = ?
+        AND dp.status = ?
       ORDER BY dp.prioritas ASC, dp.kd_penyakit ASC
     `;
 
@@ -319,6 +324,7 @@ class InacbgSimulationService {
       FROM prosedur_pasien pp
       LEFT JOIN icd9 i9 ON i9.kode = pp.kode
       WHERE pp.no_rawat = ?
+        AND pp.status = ?
       ORDER BY pp.prioritas ASC, pp.kode ASC
     `;
 
@@ -328,10 +334,11 @@ class InacbgSimulationService {
     }
 
     const patient = patientRows[0];
-    const [icd10Rows] = await db.execute(icd10Sql, [normalizedNoRawat]);
-    const [icd9Rows] = await db.execute(icd9Sql, [normalizedNoRawat]);
+    const statusLanjut = this.normalizeStatusLanjut(patient.status_lanjut);
+    const [icd10Rows] = await db.execute(icd10Sql, [normalizedNoRawat, statusLanjut]);
+    const [icd9Rows] = await db.execute(icd9Sql, [normalizedNoRawat, statusLanjut]);
 
-    const jenisRawat = this.mapStatusLanjutToJenisRawat(patient.status_lanjut);
+    const jenisRawat = this.mapStatusLanjutToJenisRawat(statusLanjut);
     const currentDateTime = this.getCurrentDateTime();
 
     return {

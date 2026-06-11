@@ -376,9 +376,10 @@ class IcdDataService {
     }
   }
 
-  static async getPatientIcdData(noRawat) {
+  static async getPatientIcdData(noRawat, statusLayanan) {
     try {
       const normalizedNoRawat = String(noRawat || '').trim();
+      const normalizedStatusLayanan = statusLayanan ? this.normalizeStatusLayanan(statusLayanan) : '';
       if (!normalizedNoRawat) {
         throw new Error('no_rawat wajib diisi');
       }
@@ -408,6 +409,7 @@ class IcdDataService {
           ) latest ON latest.latest_id = m.id
         ) sm ON sm.no_rawat = dp.no_rawat AND sm.kd_penyakit = dp.kd_penyakit
         WHERE dp.no_rawat = ?
+        ${normalizedStatusLayanan ? 'AND dp.status = ?' : ''}
         ORDER BY dp.prioritas ASC, dp.kd_penyakit ASC
       `;
 
@@ -434,11 +436,19 @@ class IcdDataService {
           ) latest ON latest.latest_id = m.id
         ) sm9 ON sm9.no_rawat = pp.no_rawat AND sm9.kd_tindakan = pp.kode
         WHERE pp.no_rawat = ?
+        ${normalizedStatusLayanan ? 'AND pp.status = ?' : ''}
         ORDER BY pp.prioritas ASC, pp.kode ASC
       `;
 
-      const [icd10Rows] = await db.execute(icd10Query, [normalizedNoRawat, normalizedNoRawat]);
-      const [icd9Rows] = await db.execute(icd9Query, [normalizedNoRawat, normalizedNoRawat]);
+      const icd10Params = normalizedStatusLayanan
+        ? [normalizedNoRawat, normalizedNoRawat, normalizedStatusLayanan]
+        : [normalizedNoRawat, normalizedNoRawat];
+      const icd9Params = normalizedStatusLayanan
+        ? [normalizedNoRawat, normalizedNoRawat, normalizedStatusLayanan]
+        : [normalizedNoRawat, normalizedNoRawat];
+
+      const [icd10Rows] = await db.execute(icd10Query, icd10Params);
+      const [icd9Rows] = await db.execute(icd9Query, icd9Params);
 
       return {
         success: true,
@@ -481,6 +491,7 @@ class IcdDataService {
       const normalizedNoRawat = String(payload.no_rawat || '').trim();
       const normalizedIcdType = String(payload.icdType || 'icd10').trim().toLowerCase();
       const items = Array.isArray(payload.items) ? payload.items : [];
+      const contextStatusLayanan = this.normalizeStatusLayanan(payload.status_layanan);
 
       if (!normalizedNoRawat) {
         throw new Error('no_rawat wajib diisi');
@@ -493,14 +504,16 @@ class IcdDataService {
       await connection.beginTransaction();
 
       if (normalizedIcdType === 'icd10') {
-        await connection.execute('DELETE FROM mlite_mapping_snomed_icd WHERE no_rawat = ?', [normalizedNoRawat]);
-        await connection.execute('DELETE FROM diagnosa_pasien WHERE no_rawat = ?', [normalizedNoRawat]);
+        await connection.execute(
+          'DELETE FROM diagnosa_pasien WHERE no_rawat = ? AND status = ?',
+          [normalizedNoRawat, contextStatusLayanan]
+        );
 
         const validItems = items.filter((item) => String(item?.kd_penyakit || '').trim());
 
         for (const item of validItems) {
           const kdPenyakit = String(item.kd_penyakit || '').trim();
-          const statusLayanan = this.normalizeStatusLayanan(item.status_layanan);
+          const statusLayanan = contextStatusLayanan;
           const prioritas = this.normalizePrioritas(item.prioritas);
           const statusPenyakit = String(item.status_penyakit || 'Baru').trim() || 'Baru';
           const snomedConceptId = String(item.snomed_concept_id || '').trim();
@@ -521,14 +534,16 @@ class IcdDataService {
           }
         }
       } else {
-        await connection.execute('DELETE FROM mlite_mapping_snomed_icd9 WHERE no_rawat = ?', [normalizedNoRawat]);
-        await connection.execute('DELETE FROM prosedur_pasien WHERE no_rawat = ?', [normalizedNoRawat]);
+        await connection.execute(
+          'DELETE FROM prosedur_pasien WHERE no_rawat = ? AND status = ?',
+          [normalizedNoRawat, contextStatusLayanan]
+        );
 
         const validItems = items.filter((item) => String(item?.kode || '').trim());
 
         for (const item of validItems) {
           const kode = String(item.kode || '').trim();
-          const statusLayanan = this.normalizeStatusLayanan(item.status_layanan);
+          const statusLayanan = contextStatusLayanan;
           const prioritas = this.normalizePrioritas(item.prioritas);
           const snomedConceptId = String(item.snomed_concept_id || '').trim();
           const snomedTerm = String(item.snomed_term || '').trim();
@@ -551,7 +566,7 @@ class IcdDataService {
 
       await connection.commit();
       hasCommitted = true;
-      return await this.getPatientIcdData(normalizedNoRawat);
+      return await this.getPatientIcdData(normalizedNoRawat, contextStatusLayanan);
     } catch (error) {
       if (!hasCommitted) {
         await connection.rollback();
