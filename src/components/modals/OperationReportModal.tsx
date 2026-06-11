@@ -10,6 +10,9 @@ import { Plus, Edit, Trash2, Scissors, Calendar, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { DatePickerPopover } from "@/components/DatePickerPopover";
+import { format } from "date-fns";
+import { id as indonesianLocale } from "date-fns/locale";
 
 interface OperationReport {
   id?: number;
@@ -53,6 +56,53 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
     created_at: '',
   });
   const { toast } = useToast();
+
+  const getTanggalOperasiDate = (value: string) => {
+    if (!value) return undefined;
+
+    const normalized = value.includes('T') ? value : `${value.replace(' ', 'T').slice(0, 16)}`;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  };
+
+  const getTanggalOperasiTime = (value: string) => {
+    if (!value) return '00:00';
+
+    const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+    const timePart = normalized.split('T')[1] || '';
+    const matched = timePart.match(/^(\d{2}:\d{2})/);
+    return matched?.[1] || '00:00';
+  };
+
+  const buildTanggalOperasiValue = (date: Date, timeValue: string) => {
+    const safeTime = /^\d{2}:\d{2}$/.test(timeValue) ? timeValue : '00:00';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}T${safeTime}`;
+  };
+
+  const handleTanggalOperasiSelect = (selectedDate?: Date) => {
+    if (!selectedDate) return;
+
+    const nextDate = new Date(selectedDate);
+    const currentTime = getTanggalOperasiTime(formData.tanggal_op);
+
+    setFormData((prev) => ({
+      ...prev,
+      tanggal_op: buildTanggalOperasiValue(nextDate, currentTime)
+    }));
+  };
+
+  const handleTanggalOperasiTimeChange = (timeValue: string) => {
+    const currentDate = getTanggalOperasiDate(formData.tanggal_op) || new Date();
+
+    setFormData((prev) => ({
+      ...prev,
+      tanggal_op: buildTanggalOperasiValue(currentDate, timeValue)
+    }));
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -246,12 +296,26 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="tanggal_operasi">Tanggal Operasi</Label>
-                    <Input
-                      type="datetime-local"
-                      id="tanggal_operasi"
-                      value={formData.tanggal_op}
-                      onChange={(e) => setFormData(prev => ({ ...prev, tanggal_op: e.target.value }))}
-                    />
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_140px]">
+                      <DatePickerPopover
+                        triggerId="tanggal_operasi"
+                        mode="single"
+                        selected={getTanggalOperasiDate(formData.tanggal_op)}
+                        onSelect={handleTanggalOperasiSelect}
+                        defaultMonth={getTanggalOperasiDate(formData.tanggal_op)}
+                        locale={indonesianLocale}
+                        placeholder="Pilih tanggal operasi"
+                        displayValue={getTanggalOperasiDate(formData.tanggal_op)
+                          ? format(getTanggalOperasiDate(formData.tanggal_op) as Date, 'dd/MM/yyyy', { locale: indonesianLocale })
+                          : undefined}
+                      />
+                      <Input
+                        type="time"
+                        id="jam_operasi"
+                        value={getTanggalOperasiTime(formData.tanggal_op)}
+                        onChange={(e) => handleTanggalOperasiTimeChange(e.target.value)}
+                      />
+                    </div>
                   </div>
                   <div>
                     <Label htmlFor="nm_op">Nama Operasi</Label>
@@ -299,7 +363,7 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                       id="hasil_operasi"
                       value={formData.hasil_op}
                       onChange={(e) => setFormData(prev => ({ ...prev, hasil_op: e.target.value }))}
-                      rows={4}
+                      rows={3}
                     />
                   </div>
                 </div>
