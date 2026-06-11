@@ -122,6 +122,25 @@ interface LabData {
   pemeriksaan: LabTest[];
 }
 
+interface BalanceCairanEntry {
+  id: number;
+  no_rawat: string;
+  user: string;
+  tanggal: string;
+  bc_ke: string;
+  minum: number;
+  makan: number;
+  infus: number;
+  muntah: number;
+  urine: number;
+  bab: number;
+  total_in: number;
+  total_out: number;
+  balance: number;
+  created_at?: string;
+  is_intake_reference?: boolean;
+}
+
 interface RadiologyFormItem {
   kode: string;
   pemeriksaan: string;
@@ -148,6 +167,7 @@ interface ProcedureOption {
 type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
+type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan';
 
 interface MedicalRecordData {
   patient: {
@@ -698,6 +718,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [savingWhatsapp, setSavingWhatsapp] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState('');
   const [sendingWhatsappMessage, setSendingWhatsappMessage] = useState(false);
+  const [inpatientExaminationSectionTab, setInpatientExaminationSectionTab] = useState<InpatientExaminationSectionTabValue>('examinations');
+  const [balanceCairanEntries, setBalanceCairanEntries] = useState<BalanceCairanEntry[]>([]);
+  const [balanceCairanLoading, setBalanceCairanLoading] = useState(false);
+  const [selectedBalanceCairanId, setSelectedBalanceCairanId] = useState<number | null>(null);
+  const [balanceCairanForm, setBalanceCairanForm] = useState({
+    muntah: '',
+    urine: '',
+    bab: ''
+  });
+  const [savingBalanceCairan, setSavingBalanceCairan] = useState(false);
 
   const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
   const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
@@ -1245,6 +1275,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       'Rawat Inap'
     );
   }, [formattedNoRawat, medicalData?.focused_radiology?.ranap, scopedInpatientVisits]);
+  const selectedBalanceCairanEntry = useMemo(
+    () => balanceCairanEntries.find((entry) => Number(entry.id) === Number(selectedBalanceCairanId)) || null,
+    [balanceCairanEntries, selectedBalanceCairanId]
+  );
   const activeVitalSeries = vitalChartSeries.filter((series) => visibleVitalSeries[series.key]);
   const isFocusedExaminationsLoaded = !formattedNoRawat || medicalData?.focused_examinations !== undefined;
   const isFocusedProceduresLoaded = !formattedNoRawat || medicalData?.focused_procedures !== undefined;
@@ -3587,6 +3621,128 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     whatsappMessage,
     whatsappNumber
   ]);
+
+  const fetchBalanceCairan = useCallback(async () => {
+    if (!formattedNoRawat) {
+      setBalanceCairanEntries([]);
+      setSelectedBalanceCairanId(null);
+      return;
+    }
+
+    try {
+      setBalanceCairanLoading(true);
+      const response = await fetch(`${API_URLS.BALANCE_CAIRAN}/${encodeURIComponent(formattedNoRawat)}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      const entries = Array.isArray(responseJson.data) ? responseJson.data : [];
+      setBalanceCairanEntries(entries);
+      setSelectedBalanceCairanId((previous) => (
+        previous && entries.some((entry) => Number(entry.id) === Number(previous))
+          ? previous
+          : null
+      ));
+    } catch (error) {
+      console.error('Error fetching balance cairan:', error);
+      setBalanceCairanEntries([]);
+      setSelectedBalanceCairanId(null);
+    } finally {
+      setBalanceCairanLoading(false);
+    }
+  }, [formattedNoRawat]);
+
+  const handleSaveBalanceCairan = useCallback(async () => {
+    if (!formattedNoRawat) {
+      toast({
+        title: "Error",
+        description: "Pilih kunjungan rawat inap terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!selectedBalanceCairanId) {
+      toast({
+        title: "Error",
+        description: "Pilih intake balance cairan terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSavingBalanceCairan(true);
+      const response = await fetch(API_URLS.BALANCE_CAIRAN, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: selectedBalanceCairanId,
+          no_rawat: formattedNoRawat,
+          user: String(user?.name || currentUsername || '').trim(),
+          muntah: balanceCairanForm.muntah,
+          urine: balanceCairanForm.urine,
+          bab: balanceCairanForm.bab
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Balance cairan berhasil disimpan'
+      });
+
+      setBalanceCairanForm({
+        muntah: '',
+        urine: '',
+        bab: ''
+      });
+      setSelectedBalanceCairanId(null);
+      await fetchBalanceCairan();
+    } catch (error) {
+      console.error('Error saving balance cairan:', error);
+      const message = error instanceof Error ? error.message : 'Gagal menyimpan balance cairan';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSavingBalanceCairan(false);
+    }
+  }, [
+    balanceCairanForm.bab,
+    balanceCairanForm.muntah,
+    balanceCairanForm.urine,
+    currentUsername,
+    fetchBalanceCairan,
+    formattedNoRawat,
+    selectedBalanceCairanId,
+    toast,
+    user?.name
+  ]);
+
+  useEffect(() => {
+    if (formattedNoRawat) {
+      void fetchBalanceCairan();
+      return;
+    }
+
+    setBalanceCairanEntries([]);
+    setSelectedBalanceCairanId(null);
+  }, [fetchBalanceCairan, formattedNoRawat]);
 
   const fetchPackageOptions = useCallback(async (searchText = '') => {
     try {
@@ -6481,9 +6637,197 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                   <TabsContent value="inpatient">
                     {isFocusedExaminationsLoaded ? (
-                      <div className="space-y-4">
-                        {renderExaminationCards(inpatientExaminationHistory)}
-                      </div>
+                      <Tabs
+                        value={inpatientExaminationSectionTab}
+                        onValueChange={(value) => setInpatientExaminationSectionTab(value as InpatientExaminationSectionTabValue)}
+                        className="space-y-4"
+                      >
+                        <TabsList>
+                          <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
+                          <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="examinations" className="space-y-4">
+                          {renderExaminationCards(inpatientExaminationHistory)}
+                        </TabsContent>
+
+                        <TabsContent value="balance-cairan" className="space-y-4">
+                          {!formattedNoRawat ? (
+                            <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+                              Pilih kunjungan rawat inap terlebih dahulu untuk melihat balance cairan.
+                            </div>
+                          ) : (
+                            <>
+                              <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <h4 className="font-medium">Form Balance Cairan</h4>
+                                    <p className="text-sm text-muted-foreground">
+                                      Pilih data intake pada tabel, lalu isi outtake pasien.
+                                    </p>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void fetchBalanceCairan()}
+                                    disabled={balanceCairanLoading}
+                                  >
+                                    {balanceCairanLoading ? 'Memuat...' : 'Refresh'}
+                                  </Button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <Label htmlFor="bc-no-rawat">No. Rawat</Label>
+                                    <Input id="bc-no-rawat" value={formattedNoRawat} readOnly className="bg-muted" />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="bc-selected-intake">Intake Terpilih</Label>
+                                    <Input
+                                      id="bc-selected-intake"
+                                      value={selectedBalanceCairanEntry ? `${selectedBalanceCairanEntry.tanggal} ${selectedBalanceCairanEntry.bc_ke}` : 'Belum dipilih'}
+                                      readOnly
+                                      className="bg-muted"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div>
+                                    <Label htmlFor="bc-muntah">Muntah</Label>
+                                    <Input
+                                      id="bc-muntah"
+                                      type="number"
+                                      min="0"
+                                      placeholder="0"
+                                      value={balanceCairanForm.muntah}
+                                      onChange={(event) => setBalanceCairanForm((previous) => ({
+                                        ...previous,
+                                        muntah: event.target.value
+                                      }))}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="bc-urine">Urine</Label>
+                                    <Input
+                                      id="bc-urine"
+                                      type="number"
+                                      min="0"
+                                      placeholder="0"
+                                      value={balanceCairanForm.urine}
+                                      onChange={(event) => setBalanceCairanForm((previous) => ({
+                                        ...previous,
+                                        urine: event.target.value
+                                      }))}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="bc-bab">BAB</Label>
+                                    <Input
+                                      id="bc-bab"
+                                      type="number"
+                                      min="0"
+                                      placeholder="0"
+                                      value={balanceCairanForm.bab}
+                                      onChange={(event) => setBalanceCairanForm((previous) => ({
+                                        ...previous,
+                                        bab: event.target.value
+                                      }))}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedBalanceCairanId(null);
+                                      setBalanceCairanForm({
+                                        muntah: '',
+                                        urine: '',
+                                        bab: ''
+                                      });
+                                    }}
+                                    disabled={savingBalanceCairan}
+                                  >
+                                    Reset
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={() => void handleSaveBalanceCairan()}
+                                    disabled={savingBalanceCairan || !selectedBalanceCairanId}
+                                  >
+                                    {savingBalanceCairan ? 'Menyimpan...' : 'Simpan Balance Cairan'}
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <div className="border rounded-lg">
+                                <div className="border-b p-4">
+                                  <h4 className="font-medium">Riwayat Balance Cairan</h4>
+                                </div>
+                                {balanceCairanLoading ? (
+                                  <div className="p-6 text-sm text-muted-foreground">Memuat data balance cairan...</div>
+                                ) : balanceCairanEntries.length === 0 ? (
+                                  <div className="p-6 text-sm text-muted-foreground">Belum ada data balance cairan untuk nomor rawat ini.</div>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                      <thead className="bg-muted/40">
+                                        <tr className="text-left">
+                                          <th className="px-3 py-2 font-medium">Tanggal</th>
+                                          <th className="px-3 py-2 font-medium">Jam</th>
+                                          <th className="px-3 py-2 font-medium">Minum</th>
+                                          <th className="px-3 py-2 font-medium">Makan</th>
+                                          <th className="px-3 py-2 font-medium">Infus</th>
+                                          <th className="px-3 py-2 font-medium">Total In</th>
+                                          <th className="px-3 py-2 font-medium">Muntah</th>
+                                          <th className="px-3 py-2 font-medium">Urine</th>
+                                          <th className="px-3 py-2 font-medium">BAB</th>
+                                          <th className="px-3 py-2 font-medium">Total Out</th>
+                                          <th className="px-3 py-2 font-medium">BC</th>
+                                          <th className="px-3 py-2 font-medium">Petugas</th>
+                                          <th className="px-3 py-2 font-medium">Aksi</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {balanceCairanEntries.map((entry) => (
+                                          <tr key={entry.id} className="border-t">
+                                            <td className="px-3 py-2">{entry.tanggal || '-'}</td>
+                                            <td className="px-3 py-2">{entry.bc_ke || '-'}</td>
+                                            <td className="px-3 py-2">{entry.minum ?? 0}</td>
+                                            <td className="px-3 py-2">{entry.makan ?? 0}</td>
+                                            <td className="px-3 py-2">{entry.infus ?? 0}</td>
+                                            <td className="px-3 py-2">{entry.total_in ?? 0}</td>
+                                            <td className="px-3 py-2">{entry.muntah ?? 0}</td>
+                                            <td className="px-3 py-2">{entry.urine ?? 0}</td>
+                                            <td className="px-3 py-2">{entry.bab ?? 0}</td>
+                                            <td className="px-3 py-2">{entry.total_out ?? 0}</td>
+                                            <td className="px-3 py-2 font-medium">{entry.balance ?? 0}</td>
+                                            <td className="px-3 py-2">{entry.user || '-'}</td>
+                                            <td className="px-3 py-2">
+                                              <Button
+                                                type="button"
+                                                size="sm"
+                                                variant={selectedBalanceCairanId === entry.id ? 'default' : 'outline'}
+                                                onClick={() => setSelectedBalanceCairanId(entry.id)}
+                                              >
+                                                {selectedBalanceCairanId === entry.id ? 'Dipilih' : 'Pilih'}
+                                              </Button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </TabsContent>
+                      </Tabs>
                     ) : renderDeferredTabState('pemeriksaan')}
                   </TabsContent>
                 </Tabs>
