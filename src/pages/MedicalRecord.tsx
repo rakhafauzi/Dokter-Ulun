@@ -1275,6 +1275,25 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       'Rawat Inap'
     );
   }, [formattedNoRawat, medicalData?.focused_radiology?.ranap, scopedInpatientVisits]);
+  const inpatientRadiologyHistoryAll = useMemo(() => {
+    const combined = [...outpatientRadiologyHistory, ...inpatientRadiologyHistory];
+
+    return combined.sort((a, b) => {
+      const leftTimestamp = Number((a as any)?.__timestamp || 0);
+      const rightTimestamp = Number((b as any)?.__timestamp || 0);
+
+      if (rightTimestamp !== leftTimestamp) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      const leftIndex = Number((a as any)?.__index || 0);
+      const rightIndex = Number((b as any)?.__index || 0);
+
+      return leftIndex - rightIndex;
+    });
+  }, [inpatientRadiologyHistory, outpatientRadiologyHistory]);
+  const radiologyHistoryInpatientView =
+    defaultExaminationStatusRawat === 'Ranap' ? inpatientRadiologyHistoryAll : inpatientRadiologyHistory;
   const selectedBalanceCairanEntry = useMemo(
     () => balanceCairanEntries.find((entry) => Number(entry.id) === Number(selectedBalanceCairanId)) || null,
     [balanceCairanEntries, selectedBalanceCairanId]
@@ -8568,7 +8587,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedRadiologyLoaded ? (
-                          <div className="space-y-4">{renderRadiologyHistoryCards(inpatientRadiologyHistory)}</div>
+                          <div className="space-y-4">{renderRadiologyHistoryCards(radiologyHistoryInpatientView)}</div>
                         ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                     </Tabs>
