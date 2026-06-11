@@ -26,6 +26,7 @@ import MedicalScribeService from './services/medicalScribeService.js';
 import OperationReportService from './services/operationReportService.js';
 import PatientNotesService from './services/patientNotesService.js';
 import PatientContactService from './services/patientContactService.js';
+import BalanceCairanService from './services/balanceCairanService.js';
 import ProcedureService from './services/procedureService.js';
 import PrescriptionDataService from './services/prescriptionDataService.js';
 import RadiologyDataService from './services/radiologyDataService.js';
@@ -773,6 +774,35 @@ app.post('/api/patient-contact/message', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error in patient-contact message POST endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/balance-cairan/:no_rawat', async (req, res) => {
+  try {
+    const result = await BalanceCairanService.listByNoRawat(req.params.no_rawat);
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error in balance-cairan GET endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/balance-cairan', async (req, res) => {
+  try {
+    const result = await BalanceCairanService.createOuttake(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in balance-cairan POST endpoint:', error);
     res.status(400).json({
       success: false,
       error: error.message
