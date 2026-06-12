@@ -68,6 +68,72 @@ class GetMedicalRecordService {
     return this.formatDateOnly(rawValue);
   }
 
+  static formatIcd10DiagnosesSummary(rows = []) {
+    const items = Array.isArray(rows) ? rows : [];
+    const formatted = items
+      .filter(Boolean)
+      .map((row) => {
+        const code = String(row?.code || '').trim();
+        const description = String(row?.description || '').trim();
+        if (!code && !description) {
+          return '';
+        }
+        if (!description) {
+          return code;
+        }
+        if (!code) {
+          return description;
+        }
+        return `${code} - ${description}`;
+      })
+      .filter(Boolean);
+
+    return formatted.slice(0, 3).join(', ');
+  }
+
+  static async fetchIcd10DiagnosesMap(noRawats = [], statusLanjut) {
+    if (!Array.isArray(noRawats) || noRawats.length === 0) {
+      return new Map();
+    }
+
+    const normalizedStatus = String(statusLanjut || '').trim() === 'Ranap' ? 'Ranap' : 'Ralan';
+    const placeholders = noRawats.map(() => '?').join(',');
+
+    const [rows] = await db.execute(
+      `
+        SELECT
+          dp.no_rawat,
+          dp.kd_penyakit AS code,
+          COALESCE(p.nm_penyakit, '') AS description,
+          dp.prioritas
+        FROM diagnosa_pasien dp
+        LEFT JOIN penyakit p ON p.kd_penyakit = dp.kd_penyakit
+        WHERE dp.no_rawat IN (${placeholders})
+          AND dp.status = ?
+        ORDER BY dp.no_rawat ASC, dp.prioritas ASC, dp.kd_penyakit ASC
+      `,
+      [...noRawats, normalizedStatus]
+    );
+
+    const map = new Map();
+    rows.forEach((row) => {
+      const key = String(row?.no_rawat || '').trim();
+      if (!key) {
+        return;
+      }
+      const existing = map.get(key) || [];
+      existing.push(row);
+      map.set(key, existing);
+    });
+
+    const summaryMap = new Map();
+    map.forEach((value, key) => {
+      summaryMap.set(key, this.formatIcd10DiagnosesSummary(value));
+    });
+
+    return summaryMap;
+  }
+
   static async resolveMedicationStockBangsalCode(noRawat, status) {
     const normalizedStatus = String(status || '').trim().toLowerCase();
 
@@ -331,7 +397,21 @@ class GetMedicalRecordService {
   // Helper function to fetch examinations
   static async fetchExaminations(noRawat, type) {
     const table = type === 'ralan' ? 'pemeriksaan_ralan' : 'pemeriksaan_ranap';
-    const examQuery = `SELECT p1.*, p2.nama FROM ${table} p1 LEFT JOIN pegawai p2 ON p2.nik = p1.nip WHERE p1.no_rawat = ? ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC`;
+    const examQuery = `
+      SELECT
+        p1.*,
+        p2.nama,
+        CASE
+          WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
+          WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
+          ELSE ''
+        END AS role
+      FROM ${table} p1
+      LEFT JOIN pegawai p2 ON p2.nik = p1.nip
+      LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
+      WHERE p1.no_rawat = ?
+      ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
+    `;
     const [rows] = await db.execute(examQuery, [noRawat]);
     
     return rows.map(row => ({
@@ -339,6 +419,7 @@ class GetMedicalRecordService {
       tgl_perawatan: this.formatDateOnly(row.tgl_perawatan),
       jam_rawat: row.jam_rawat,
       nip: row.nip || '',
+      role: row.role || '',
       tekanan_darah: row.tensi || '',
       nadi: row.nadi || '',
       respirasi: row.respirasi || '',
@@ -962,6 +1043,7 @@ class GetMedicalRecordService {
       tanggal_keluar: inpatientDetail?.tgl_keluar ? this.formatDateOnly(inpatientDetail.tgl_keluar) + ' ' + inpatientDetail.jam_keluar : '',
       ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
       kamar: inpatientDetail?.kd_kamar || '',
+      poliklinik: visit.nm_poli || '',
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ranap',
@@ -980,7 +1062,8 @@ class GetMedicalRecordService {
       laboratory,
       laboratoryRequest,
       radiology,
-      radiologyRequest
+      radiologyRequest,
+      icd10Map
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ralan'),
       this.fetchProcedures(visit.no_rawat, 'ralan'),
@@ -989,13 +1072,15 @@ class GetMedicalRecordService {
       this.fetchLaboratory(visit.no_rawat),
       this.fetchLaboratoryRequest(visit.no_rawat, 'ralan'),
       this.fetchRadiology(visit.no_rawat),
-      this.fetchRadiologyRequest(visit.no_rawat, 'ralan')
+      this.fetchRadiologyRequest(visit.no_rawat, 'ralan'),
+      this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ralan')
     ]);
 
     return {
       no_rawat: visit.no_rawat,
       tanggal: this.formatDateOnly(visit.tgl_registrasi) + ' ' + visit.jam_reg,
       poliklinik: visit.nm_poli || '',
+      diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ralan',
@@ -1023,7 +1108,8 @@ class GetMedicalRecordService {
       laboratoryRequest,
       radiology,
       radiologyRequest,
-      operationReports
+      operationReports,
+      icd10Map
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ranap'),
       this.fetchProcedures(visit.no_rawat, 'ranap'),
@@ -1035,7 +1121,8 @@ class GetMedicalRecordService {
       this.fetchLaboratoryRequest(visit.no_rawat, 'ranap'),
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ranap'),
-      this.fetchOperationReports(visit.no_rawat)
+      this.fetchOperationReports(visit.no_rawat),
+      this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ranap')
     ]);
 
     return {
@@ -1044,6 +1131,8 @@ class GetMedicalRecordService {
       tanggal_keluar: inpatientDetail?.tgl_keluar ? this.formatDateOnly(inpatientDetail.tgl_keluar) + ' ' + inpatientDetail.jam_keluar : '',
       ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
       kamar: inpatientDetail?.kd_kamar || '',
+      poliklinik: visit.nm_poli || '',
+      diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ranap',
@@ -1114,11 +1203,17 @@ class GetMedicalRecordService {
         SELECT
           p1.*,
           p2.nama,
+          CASE
+            WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
+            WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
+            ELSE ''
+          END AS role,
           r.no_rawat,
           r.status_lanjut
         FROM ${table} p1
         INNER JOIN reg_periksa r ON r.no_rawat = p1.no_rawat
         LEFT JOIN pegawai p2 ON p2.nik = p1.nip
+        LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
         WHERE r.no_rkm_medis = ? AND r.status_lanjut = ? ${focusFilter}
         ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
         LIMIT ? OFFSET ?
@@ -1332,6 +1427,10 @@ class GetMedicalRecordService {
       const prbProgram = String(patientPrbProgram?.[0]?.nm_program || '').trim();
       const outpatientVisits = outpatientPageResult?.rows || [];
       const inpatientVisitRefs = inpatientPageResult?.rows || [];
+      const [outpatientIcd10Map, inpatientIcd10Map] = await Promise.all([
+        outpatientVisits.length ? this.fetchIcd10DiagnosesMap(outpatientVisits.map((visit) => visit.no_rawat), 'Ralan') : Promise.resolve(new Map()),
+        inpatientVisitRefs.length ? this.fetchIcd10DiagnosesMap(inpatientVisitRefs.map((visit) => visit.no_rawat), 'Ranap') : Promise.resolve(new Map())
+      ]);
 
       let inpatientDetails = [];
       if (inpatientVisitRefs.length > 0) {
@@ -1355,7 +1454,12 @@ class GetMedicalRecordService {
       const [finalOutpatientVisits, finalInpatientVisits] = await Promise.all([
         includeVisitDetails
           ? Promise.all(outpatientVisits.map((visit) => this.buildOutpatientVisit(visit)))
-          : Promise.resolve(outpatientVisits.map((visit) => this.buildOutpatientVisitSummary(visit))),
+          : Promise.resolve(
+              outpatientVisits.map((visit) => ({
+                ...this.buildOutpatientVisitSummary(visit),
+                diagnosa_icd10: String(outpatientIcd10Map.get(visit.no_rawat) || '')
+              }))
+            ),
         includeVisitDetails
           ? Promise.all(
               inpatientVisitRefs.map((visit) =>
@@ -1364,7 +1468,10 @@ class GetMedicalRecordService {
             )
           : Promise.resolve(
               inpatientVisitRefs.map((visit) =>
-                this.buildInpatientVisitSummary(visit, inpatientDetailsMap.get(visit.no_rawat))
+                ({
+                  ...this.buildInpatientVisitSummary(visit, inpatientDetailsMap.get(visit.no_rawat)),
+                  diagnosa_icd10: String(inpatientIcd10Map.get(visit.no_rawat) || '')
+                })
               )
             )
       ]);

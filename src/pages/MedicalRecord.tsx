@@ -245,6 +245,8 @@ const PAGE_SIZE = 5;
 type VisitHistoryTabValue = 'outpatient' | 'inpatient';
 type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
 type CareSectionTabValue = 'outpatient' | 'inpatient';
+type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi';
+type ExaminationRoleValue = Exclude<ExaminationRoleFilterValue, 'all'>;
 type MedicalRecordFetchOptions = {
   reset?: boolean;
   outpatientPage?: number;
@@ -285,6 +287,87 @@ const DEFAULT_PAGINATION_META: PaginationMeta = {
   limit: PAGE_SIZE,
   total: 0,
   hasMore: false
+};
+
+const EXAMINATION_ROLE_OPTIONS: Array<{ value: ExaminationRoleFilterValue; label: string }> = [
+  { value: 'all', label: 'Semua' },
+  { value: 'medis', label: 'Dokter' },
+  { value: 'paramedis', label: 'Perawat' },
+  { value: 'apoteker', label: 'Farmasi' },
+  { value: 'gizi', label: 'Gizi' }
+];
+
+const resolveExaminationRole = (...values: Array<string | null | undefined>): ExaminationRoleValue | '' => {
+  const normalizedValues = values
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  const explicitRole = normalizedValues.find(
+    (value) => value === 'medis' || value === 'paramedis' || value === 'apoteker' || value === 'gizi'
+  );
+
+  if (explicitRole === 'medis' || explicitRole === 'paramedis' || explicitRole === 'apoteker' || explicitRole === 'gizi') {
+    return explicitRole;
+  }
+
+  if (normalizedValues.some((value) => value.includes('dr.'))) {
+    return 'medis';
+  }
+
+  return '';
+};
+
+const normalizeExaminationRole = (value?: string | null): ExaminationRoleValue | '' => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'medis' || normalized === 'paramedis' || normalized === 'apoteker' || normalized === 'gizi') {
+    return normalized;
+  }
+  return '';
+};
+
+const getExaminationRoleLabel = (value?: string | null) => {
+  switch (normalizeExaminationRole(value)) {
+    case 'medis':
+      return 'Dokter';
+    case 'paramedis':
+      return 'Perawat';
+    case 'apoteker':
+      return 'Farmasi';
+    case 'gizi':
+      return 'Gizi';
+    default:
+      return 'Tanpa Role';
+  }
+};
+
+const getExaminationRoleStyles = (value?: string | null) => {
+  switch (normalizeExaminationRole(value)) {
+    case 'medis':
+      return {
+        badge: 'border-violet-200 bg-violet-100 text-violet-700',
+        soap: 'border-violet-200 bg-violet-50/80'
+      };
+    case 'paramedis':
+      return {
+        badge: 'border-sky-200 bg-sky-100 text-sky-700',
+        soap: 'border-sky-200 bg-sky-50/80'
+      };
+    case 'apoteker':
+      return {
+        badge: 'border-emerald-200 bg-emerald-100 text-emerald-700',
+        soap: 'border-emerald-200 bg-emerald-50/80'
+      };
+    case 'gizi':
+      return {
+        badge: 'border-amber-200 bg-amber-100 text-amber-700',
+        soap: 'border-amber-200 bg-amber-50/80'
+      };
+    default:
+      return {
+        badge: 'border-slate-200 bg-slate-100 text-slate-700',
+        soap: 'border-slate-200 bg-slate-50/80'
+      };
+  }
 };
 
 const getCurrentExaminationDateTime = () => ({
@@ -719,6 +802,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [whatsappMessage, setWhatsappMessage] = useState('');
   const [sendingWhatsappMessage, setSendingWhatsappMessage] = useState(false);
   const [inpatientExaminationSectionTab, setInpatientExaminationSectionTab] = useState<InpatientExaminationSectionTabValue>('examinations');
+  const [examinationRoleFilter, setExaminationRoleFilter] = useState<ExaminationRoleFilterValue>('all');
   const [balanceCairanEntries, setBalanceCairanEntries] = useState<BalanceCairanEntry[]>([]);
   const [balanceCairanLoading, setBalanceCairanLoading] = useState(false);
   const [selectedBalanceCairanId, setSelectedBalanceCairanId] = useState<number | null>(null);
@@ -1016,6 +1100,38 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return examinationHistoryData.inpatient;
   }, [examinationHistoryData.inpatient, formattedNoRawat, medicalData?.focused_examinations?.ranap]);
+  const filteredOutpatientExaminationHistory = useMemo(() => {
+    if (examinationRoleFilter === 'all') {
+      return outpatientExaminationHistory;
+    }
+
+    return outpatientExaminationHistory.filter(
+      (item) =>
+        resolveExaminationRole(
+          item?.exam?.role,
+          item?.exam?.pegawai,
+          item?.exam?.nama,
+          item?.visit?.dokter,
+          item?.visit?.nm_dokter
+        ) === examinationRoleFilter
+    );
+  }, [examinationRoleFilter, outpatientExaminationHistory]);
+  const filteredInpatientExaminationHistory = useMemo(() => {
+    if (examinationRoleFilter === 'all') {
+      return inpatientExaminationHistory;
+    }
+
+    return inpatientExaminationHistory.filter(
+      (item) =>
+        resolveExaminationRole(
+          item?.exam?.role,
+          item?.exam?.pegawai,
+          item?.exam?.nama,
+          item?.visit?.dokter,
+          item?.visit?.nm_dokter
+        ) === examinationRoleFilter
+    );
+  }, [examinationRoleFilter, inpatientExaminationHistory]);
   const outpatientProcedures = React.useMemo(() => {
     if (formattedNoRawat) {
       return buildFocusedItems(
@@ -1354,6 +1470,37 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const canEditPrescription = canDeletePrescription;
   const canEditLabRequest = canDeleteLabRequest;
   const canEditRadiologyRequest = canDeleteRadiologyRequest;
+  const renderExaminationRoleFilter = () => (
+    <div className="rounded-lg border bg-muted/20 p-3">
+      <div className="mb-2">
+        <p className="text-sm font-medium">Filter Role Pemeriksaan</p>
+        <p className="text-xs text-muted-foreground">Default menampilkan semua role. Klik salah satu role untuk memfilter.</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {EXAMINATION_ROLE_OPTIONS.map((option) => {
+          const isActive = examinationRoleFilter === option.value;
+          const roleStyles = getExaminationRoleStyles(option.value === 'all' ? '' : option.value);
+
+          return (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={isActive ? 'default' : 'outline'}
+              className={cn(
+                'transition-colors',
+                isActive && option.value !== 'all' && roleStyles.badge,
+                isActive && option.value === 'all' && 'bg-primary text-primary-foreground'
+              )}
+              onClick={() => setExaminationRoleFilter(option.value)}
+            >
+              {option.label}
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
   const renderExaminationCards = (history: Array<{ key: string; visit: any; exam: any; rawatType: 'Ralan' | 'Ranap' }>) => {
     if (history.length === 0) {
       return (
@@ -1365,6 +1512,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return history.map(({ key, visit, exam, rawatType }) => {
       const allowedToDelete = canDeleteExamination(exam);
+      const resolvedRole = resolveExaminationRole(exam?.role, exam?.pegawai, exam?.nama, visit?.dokter, visit?.nm_dokter);
+      const roleStyles = getExaminationRoleStyles(resolvedRole);
+      const roleLabel = getExaminationRoleLabel(resolvedRole);
 
       return (
       <div key={key} className="border rounded-lg p-4">
@@ -1427,7 +1577,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-lg border p-4">
             <h4 className="font-medium">Tanda Vital</h4>
             <p className="text-sm">Tekanan Darah: {exam.tekanan_darah || exam.tensi || '-'}</p>
             <p className="text-sm">Nadi: {exam.nadi || '-'}</p>
@@ -1438,8 +1588,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <p className="text-sm">Tinggi: {exam.tinggi || '-'} cm</p>
             <p className="text-sm">Berat: {exam.berat || '-'} kg</p>
           </div>
-          <div className="space-y-2">
-            <h4 className="font-medium">SOAPIE</h4>
+          <div className={cn('space-y-2 rounded-lg border p-4', roleStyles.soap)}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="font-medium">SOAPIE</h4>
+              <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium', roleStyles.badge)}>
+                {roleLabel}
+              </span>
+            </div>
             <div className="text-sm">
               <strong>S (Subjektif):</strong>
               <p className="whitespace-pre-line break-words">{formatMultilineText(exam.s || exam.keluhan || '-')}</p>
@@ -5807,16 +5962,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <div className="flex justify-between items-start">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                             <div>
-                              <p className="text-sm text-muted-foreground">No. Rawat</p>
-                              <p className="font-medium">{visit.no_rawat}</p>
-                            </div>
-                            <div>
                               <p className="text-sm text-muted-foreground">Tanggal</p>
                               <p className="font-medium">{formatDateSafe(visit.tanggal)}</p>
                             </div>
                             <div>
                               <p className="text-sm text-muted-foreground">Poliklinik</p>
                               <p className="font-medium">{visit.poliklinik}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-muted-foreground">Diagnosa (ICD 10)</p>
+                              <p className="font-medium">{visit.diagnosa_icd10 || '-'}</p>
                             </div>
                             <div>
                               <p className="text-sm text-muted-foreground">Dokter</p>
@@ -6052,16 +6207,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <div className="flex justify-between items-start">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                             <div>
-                              <p className="text-sm text-muted-foreground">No. Rawat</p>
-                              <p className="font-medium">{visit.no_rawat}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Tanggal Masuk</p>
+                              <p className="text-sm text-muted-foreground">Tanggal</p>
                               <p className="font-medium">{formatDateSafe(visit.tanggal_masuk)}</p>
                             </div>
                             <div>
-                              <p className="text-sm text-muted-foreground">Ruangan</p>
-                              <p className="font-medium">{visit.ruangan}</p>
+                              <p className="text-sm text-muted-foreground">Poliklinik</p>
+                              <p className="font-medium">{visit.poliklinik}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-muted-foreground">Diagnosa (ICD 10)</p>
+                              <p className="font-medium">{visit.diagnosa_icd10 || '-'}</p>
                             </div>
                             <div>
                               <p className="text-sm text-muted-foreground">Dokter</p>
@@ -6716,7 +6871,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   <TabsContent value="outpatient">
                     {isFocusedExaminationsLoaded ? (
                       <div className="space-y-4">
-                        {renderExaminationCards(outpatientExaminationHistory)}
+                        {renderExaminationRoleFilter()}
+                        {renderExaminationCards(filteredOutpatientExaminationHistory)}
                       </div>
                     ) : renderDeferredTabState('pemeriksaan')}
                   </TabsContent>
@@ -6734,7 +6890,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </TabsList>
 
                         <TabsContent value="examinations" className="space-y-4">
-                          {renderExaminationCards(inpatientExaminationHistory)}
+                          {renderExaminationRoleFilter()}
+                          {renderExaminationCards(filteredInpatientExaminationHistory)}
                         </TabsContent>
 
                         <TabsContent value="balance-cairan" className="space-y-4">
