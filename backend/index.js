@@ -8,6 +8,7 @@ import { AuthService } from './services/authService.js';
 import { DashboardService } from './services/dashboardService.js';
 import { AttendanceService } from './services/attendanceService.js';
 import AllergyDataService from './services/allergyDataService.js';
+import AssesmenRehabMedikService from './services/assesmenRehabMedikService.js';
 import { BookingOperasiService } from './services/bookingOperasiService.js';
 import { BookingRegistrasiService } from './services/bookingRegistrasiService.js';
 import RawatJalanPatientsService from './services/rawatJalanPatientsService.js';
@@ -690,6 +691,66 @@ app.delete('/api/operation-reports', async (req, res) => {
     res.status(400).json({
       success: false,
       error: error.message || 'Gagal menghapus laporan operasi'
+    });
+  }
+});
+
+app.get('/api/assesmen-rehab-medik/access/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    const result = await AssesmenRehabMedikService.getAccessInfo(username);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in assesmen-rehab-medik access endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/assesmen-rehab-medik/:no_rawat', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const username = String(req.query.username || '').trim();
+    const result = await AssesmenRehabMedikService.getAssessmentData(no_rawat, username);
+    res.json(result);
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 400;
+    console.error('Error in assesmen-rehab-medik GET endpoint:', error);
+    res.status(statusCode).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/assesmen-rehab-medik', async (req, res) => {
+  try {
+    const result = await AssesmenRehabMedikService.saveAssessment(req.body);
+    res.json(result);
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 400;
+    console.error('Error in assesmen-rehab-medik POST endpoint:', error);
+    res.status(statusCode).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.delete('/api/assesmen-rehab-medik/:no_rawat', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const username = String(req.query.username || '').trim();
+    const result = await AssesmenRehabMedikService.deleteAssessment(no_rawat, username);
+    res.json(result);
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 400;
+    console.error('Error in assesmen-rehab-medik DELETE endpoint:', error);
+    res.status(statusCode).json({
+      success: false,
+      error: error.message
     });
   }
 });
