@@ -10,6 +10,7 @@ interface HeaderProps {
   onMenuClick?: () => void;
   username?: string;
   onLogout?: () => void;
+  onMedicalRecordSearchClick?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -17,7 +18,8 @@ const Header: React.FC<HeaderProps> = ({
   isMobile = false, 
   onMenuClick,
   username,
-  onLogout 
+  onLogout,
+  onMedicalRecordSearchClick
 }) => {
   return (
     <header className="fixed top-0 left-0 right-0 bg-primary h-16 w-full shadow-md z-50">
@@ -45,12 +47,23 @@ const Header: React.FC<HeaderProps> = ({
             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
               <Search className="h-4 w-4 text-white/60" />
             </div>
-            <input
-              type="text"
-              placeholder="Cari..."
-              className="bg-white/10 text-white placeholder:text-white/60 border-none rounded-full py-1.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-white/20"
-            />
+            <button
+              type="button"
+              onClick={onMedicalRecordSearchClick}
+              className="w-72 bg-white/10 text-left text-white/70 hover:bg-white/15 border-none rounded-full py-1.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 transition-colors"
+            >
+              Cari rekam medis pasien...
+            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={onMedicalRecordSearchClick}
+            className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors md:hidden"
+            aria-label="Cari rekam medis pasien"
+          >
+            <Search className="h-5 w-5 text-white" />
+          </button>
           
           <button className="relative p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
             <Bell className="h-5 w-5 text-white" />

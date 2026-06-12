@@ -24,6 +24,7 @@ import InacbgSimulationService from './services/inacbgSimulationService.js';
 import InternalReferralService from './services/internalReferralService.js';
 import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
+import { MedicalService } from './services/medicalService.js';
 import OperationReportService from './services/operationReportService.js';
 import PatientNotesService from './services/patientNotesService.js';
 import PatientContactService from './services/patientContactService.js';
@@ -572,6 +573,32 @@ app.post('/api/get-medical-record-examinations', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error in get-medical-record-examinations endpoint:', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/search-medical-record-patients', async (req, res) => {
+  try {
+    const { q = '', page = 1, limit = 20 } = req.query;
+    const normalizedQuery = String(q || '').trim();
+
+    if (normalizedQuery.length < 2) {
+      return res.status(400).json({
+        error: 'Parameter q minimal 2 karakter'
+      });
+    }
+
+    const result = await MedicalService.searchMedicalRecordPatients(
+      normalizedQuery,
+      Number(page),
+      Number(limit)
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error in search-medical-record-patients endpoint:', error);
     res.status(500).json({
       error: error.message
     });

@@ -291,4 +291,91 @@ export class MedicalService {
       throw error;
     }
   }
+
+  static async searchMedicalRecordPatients(searchQuery, page = 1, limit = 20) {
+    try {
+      const normalizedPage = Math.max(parseInt(page, 10) || 1, 1);
+      const normalizedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
+      const offset = (normalizedPage - 1) * normalizedLimit;
+      const normalizedQuery = String(searchQuery || '').trim();
+      const searchPattern = `%${normalizedQuery}%`;
+
+      const countSql = `
+        SELECT COUNT(*) AS total
+        FROM pasien p
+        WHERE p.nm_pasien LIKE ?
+           OR p.no_rkm_medis LIKE ?
+           OR p.no_tlp LIKE ?
+           OR p.alamat LIKE ?
+      `;
+
+      const dataSql = `
+        SELECT
+          p.no_rkm_medis,
+          p.nm_pasien,
+          p.jk,
+          p.tgl_lahir,
+          TIMESTAMPDIFF(YEAR, p.tgl_lahir, CURDATE()) AS umur,
+          p.alamat,
+          p.no_tlp,
+          latest.no_rawat AS last_no_rawat,
+          latest.tgl_registrasi AS last_visit_date,
+          latest.jam_reg AS last_visit_time,
+          latest.status_lanjut AS last_status_lanjut,
+          pol.nm_poli AS last_nm_poli,
+          d.nm_dokter AS last_nm_dokter
+        FROM pasien p
+        LEFT JOIN reg_periksa latest
+          ON latest.no_rawat = (
+            SELECT rp2.no_rawat
+            FROM reg_periksa rp2
+            WHERE rp2.no_rkm_medis = p.no_rkm_medis
+            ORDER BY rp2.tgl_registrasi DESC, rp2.jam_reg DESC
+            LIMIT 1
+          )
+        LEFT JOIN poliklinik pol ON pol.kd_poli = latest.kd_poli
+        LEFT JOIN dokter d ON d.kd_dokter = latest.kd_dokter
+        WHERE p.nm_pasien LIKE ?
+           OR p.no_rkm_medis LIKE ?
+           OR p.no_tlp LIKE ?
+           OR p.alamat LIKE ?
+        ORDER BY
+          COALESCE(latest.tgl_registrasi, '1000-01-01') DESC,
+          COALESCE(latest.jam_reg, '00:00:00') DESC,
+          p.nm_pasien ASC
+        LIMIT ?
+        OFFSET ?
+      `;
+
+      const countRows = await executeQuery(countSql, [
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern
+      ]);
+      const total = Number(countRows?.[0]?.total || 0);
+
+      const rows = await executeQuery(dataSql, [
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        normalizedLimit,
+        offset
+      ]);
+
+      return {
+        data: rows,
+        pagination: {
+          page: normalizedPage,
+          limit: normalizedLimit,
+          total,
+          hasMore: offset + rows.length < total
+        }
+      };
+    } catch (error) {
+      console.error('Search medical record patients error:', error);
+      throw error;
+    }
+  }
 }

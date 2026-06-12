@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, type Location } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Patients from "./pages/Patients";
@@ -15,6 +15,7 @@ import MasterICD from "./pages/MasterICD";
 import Statistik from "./pages/Statistik";
 import Login from "./pages/Login";
 import MedicalRecord from "./pages/MedicalRecord";
+import MedicalRecordReadonly from "./pages/MedicalRecordReadonly";
 import ClinicalPathway from "./pages/ClinicalPathway";
 import StatisticsCare from "./pages/StatisticsCare";
 import AIAssistant from "./pages/AIAssistant";
@@ -30,10 +31,9 @@ export const unformatNoRawat = (noRawat: string) => {
   return noRawat.replace(/\//g, '');
 };
 import Header from "./components/Header";
-import { useIsMobile } from "./hooks/use-mobile";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import ProtectedRoute from "./components/ProtectedRoute";
+import MedicalRecordSearchModal from "./components/modals/MedicalRecordSearchModal";
 
 const queryClient = new QueryClient();
 
@@ -63,10 +63,14 @@ const useIsTabletOrMobile = () => {
 
 const AppContent = () => {
   const [loading, setLoading] = React.useState(true);
-  const isMobile = useIsMobile();
   const isTabletOrMobile = useIsTabletOrMobile();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [medicalRecordSearchOpen, setMedicalRecordSearchOpen] = React.useState(false);
   const { user, isAuthenticated, logout } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const routeState = location.state as { backgroundLocation?: Location } | null;
+  const backgroundLocation = routeState?.backgroundLocation;
 
   React.useEffect(() => {
     // Simulate loading delay for smooth transitions
@@ -103,6 +107,7 @@ const AppContent = () => {
         isMobile={isTabletOrMobile}
         username={user?.name}
         onLogout={logout}
+        onMedicalRecordSearchClick={() => setMedicalRecordSearchOpen(true)}
       />
       
       <div className="flex flex-1 w-full">
@@ -118,7 +123,7 @@ const AppContent = () => {
         )}
         
         <div className="flex-1 p-2 sm:p-4 overflow-auto">
-          <Routes>
+          <Routes location={backgroundLocation || location}>
             <Route path="/" element={<Index />} />
             <Route path="/pasien" element={<Patients />} />
             <Route path="/pasien/booking" element={<Patients />} />
@@ -141,7 +146,7 @@ const AppContent = () => {
             <Route path="/igd" element={<Index />} />
             <Route path="/ai-assistant" element={<AIAssistant />} />
             <Route path="/rekam-medik" element={<MedicalRecord />} />
-            <Route path="/rekam-medik/:no_rkm_medis" element={<MedicalRecord />} />
+            <Route path="/rekam-medik/:no_rkm_medis" element={<MedicalRecordReadonly />} />
             <Route path="/rekam-medik/:no_rkm_medis/:no_rawat" element={<MedicalRecord />} />
             <Route path="/clinical-pathway" element={<ClinicalPathway />} />
             <Route path="/clinical-pathway/:no_rkm_medis/:no_rawat" element={<ClinicalPathway />} />
@@ -162,7 +167,21 @@ const AppContent = () => {
             </SheetContent>
           </Sheet>
         )}
+
+        {backgroundLocation && (
+          <Routes>
+            <Route
+              path="/rekam-medik/:no_rkm_medis"
+              element={<MedicalRecordReadonly asModal onClose={() => navigate(-1)} />}
+            />
+          </Routes>
+        )}
       </div>
+
+      <MedicalRecordSearchModal
+        open={medicalRecordSearchOpen}
+        onOpenChange={setMedicalRecordSearchOpen}
+      />
     </div>
   );
 };
