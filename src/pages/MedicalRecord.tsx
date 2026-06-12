@@ -1591,13 +1591,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return history.map(({ key, visit, exam, rawatType }) => {
       const allowedToDelete = canDeleteExamination(exam);
+      const canEdit = canEditExamination(exam);
+      const editLabel = canEdit ? 'Edit' : 'Bukan Data Anda';
+      const deleteLabel = allowedToDelete ? 'Hapus' : 'Bukan Data Anda';
       const resolvedRole = resolveExaminationRole(exam?.role, exam?.pegawai, exam?.nama, visit?.dokter, visit?.nm_dokter);
       const roleStyles = getExaminationRoleStyles(resolvedRole);
       const roleLabel = getExaminationRoleLabel(resolvedRole);
 
       return (
       <div key={key} className="border rounded-lg p-4">
-        <div className="flex justify-between items-start mb-4">
+        <div className="mb-4 flex flex-col-reverse gap-3 md:flex-row md:items-start md:justify-between">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
             <div>
               <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
@@ -1612,46 +1615,63 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <p className="font-medium">{rawatType}</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-end gap-2 md:justify-end">
             <Button
               size="sm"
               variant="secondary"
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
               onClick={() => handleCopyExaminationAll(exam, rawatType)}
+              aria-label="Copy All"
+              title="Copy All"
             >
-              <Copy className="h-4 w-4 mr-1" />
-              Copy All
+              <Copy className="h-4 w-4 sm:mr-1" />
+              <span className="sr-only sm:not-sr-only">Copy All</span>
             </Button>
             <Button
               size="sm"
               variant="secondary"
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
               onClick={() => handleCopyExaminationTTV(exam)}
+              aria-label="Copy TTV"
+              title="Copy TTV"
             >
-              <Copy className="h-4 w-4 mr-1" />
-              Copy TTV
+              <Copy className="h-4 w-4 sm:mr-1" />
+              <span className="sr-only sm:not-sr-only">Copy TTV</span>
             </Button>  
             <Button
               size="sm"
               variant="secondary"
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
               onClick={() => handleCopyExaminationSOAPIE(exam, rawatType)}
+              aria-label="Copy SOAPIE"
+              title="Copy SOAPIE"
             >
-              <Copy className="h-4 w-4 mr-1" />
-              Copy SOAPIE
+              <Copy className="h-4 w-4 sm:mr-1" />
+              <span className="sr-only sm:not-sr-only">Copy SOAPIE</span>
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => handleEditExamination(exam, visit)}
-              disabled={!canEditExamination(exam)}
+              disabled={!canEdit}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label={editLabel}
+              title={editLabel}
             >
-              {canEditExamination(exam) ? 'Edit' : 'Bukan Data Anda'}
+              <Pencil className="h-4 w-4 sm:mr-1" />
+              <span className="sr-only sm:not-sr-only">{editLabel}</span>
             </Button>
             <Button
               size="sm"
               variant="destructive"
               onClick={() => handleDeleteExamination(exam, visit)}
               disabled={!allowedToDelete}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label={deleteLabel}
+              title={deleteLabel}
             >
-              {allowedToDelete ? 'Hapus' : 'Bukan Data Anda'}
+              <Trash2 className="h-4 w-4 sm:mr-1" />
+              <span className="sr-only sm:not-sr-only">{deleteLabel}</span>
             </Button>
           </div>
         </div>
@@ -2169,60 +2189,79 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const compoundItems = Array.isArray(med?.compounds) ? med.compounds : [];
       const hasCompoundItems = compoundItems.length > 0;
       const canEditThisPrescription = canEditPrescription(med) && !hasCompoundItems;
+      const editPrescriptionLabel = canEditPrescription(med)
+        ? (hasCompoundItems ? 'Ada Racikan' : 'Edit Resep')
+        : 'Bukan Data Anda';
+      const deletePrescriptionLabel = deletingPrescriptionNo === med.no_resep
+        ? 'Menghapus...'
+        : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
 
       return (
       <div key={`${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Nomor Resep</p>
-            <p className="font-medium">{med.no_resep || '-'}</p>
+        <div className="mb-4 flex flex-col-reverse gap-3 md:flex-col">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Nomor Resep</p>
+              <p className="font-medium">{med.no_resep || '-'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Tanggal</p>
+              <p className="font-medium">{formatDateSafe(med.tanggal)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">No. Rawat</p>
+              <p className="font-medium">{med.no_rawat}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Sumber</p>
+              <p className="font-medium">{med.source}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Tanggal</p>
-            <p className="font-medium">{formatDateSafe(med.tanggal)}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">No. Rawat</p>
-            <p className="font-medium">{med.no_rawat}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Sumber</p>
-            <p className="font-medium">{med.source}</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            {isRequestTab ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleEditResep(med)}
+                  disabled={!canEditThisPrescription}
+                  className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+                  aria-label={editPrescriptionLabel}
+                  title={editPrescriptionLabel}
+                >
+                  <Pencil className="h-4 w-4 sm:mr-2" />
+                  <span className="sr-only sm:not-sr-only">{editPrescriptionLabel}</span>
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDeleteResep(med)}
+                  disabled={!allowedToDelete || deletingPrescriptionNo === med.no_resep}
+                  className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+                  aria-label={deletePrescriptionLabel}
+                  title={deletePrescriptionLabel}
+                >
+                  <Trash2 className="h-4 w-4 sm:mr-2" />
+                  <span className="sr-only sm:not-sr-only">{deletePrescriptionLabel}</span>
+                </Button>
+              </>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleCopyResep(med)}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label="Copy Resep"
+              title="Copy Resep"
+            >
+              <Copy className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">Copy Resep</span>
+            </Button>
           </div>
         </div>
         <div className="space-y-2">
           <div className="flex justify-between items-center mb-2">
             <h4 className="font-medium">{(Array.isArray(med?.obat) ? med.obat.length : 0) > 0 ? 'Obat:' : 'Resep:'}</h4>
-            <div className="flex flex-wrap gap-2">
-              {isRequestTab ? (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEditResep(med)}
-                    disabled={!canEditThisPrescription}
-                  >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    {canEditPrescription(med)
-                      ? (hasCompoundItems ? 'Ada Racikan' : 'Edit Resep')
-                      : 'Bukan Data Anda'}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDeleteResep(med)}
-                    disabled={!allowedToDelete || deletingPrescriptionNo === med.no_resep}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {deletingPrescriptionNo === med.no_resep ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
-                  </Button>
-                </>
-              ) : null}
-              <Button variant="outline" size="sm" onClick={() => handleCopyResep(med)}>
-                <Copy className="h-4 w-4 mr-2" />
-                Copy Resep
-              </Button>
-            </div>
           </div>
           {(Array.isArray(med?.obat) ? med.obat : []).map((obat: any, i: number) => (
             <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
@@ -2299,50 +2338,70 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return items.map((lab, labIndex) => {
       const allowedToDelete = canDeleteLabRequest(lab);
+      const canEdit = canEditLabRequest(lab);
+      const editLabel = canEdit ? 'Edit' : 'Bukan Data Anda';
+      const deleteLabel = deletingLabRequestNo === lab.noorder
+        ? 'Menghapus...'
+        : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
 
       return (
       <div key={`${lab.no_rawat}-${lab.noorder}-${labIndex}`} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Tanggal</p>
-            <p className="font-medium">{formatDateSafe(lab.tanggal)}</p>
+        <div className="mb-4 flex flex-col-reverse gap-3 md:flex-col">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <p className="text-sm text-muted-foreground">Tanggal</p>
+              <p className="font-medium">{formatDateSafe(lab.tanggal)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">No. Rawat</p>
+              <p className="font-medium">{lab.no_rawat}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Sumber</p>
+              <p className="font-medium">{lab.source}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">No. Order</p>
+              <p className="font-medium">{lab.noorder || '-'}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">No. Rawat</p>
-            <p className="font-medium">{lab.no_rawat}</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleEditLabRequest(lab)}
+              disabled={!canEdit}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label={editLabel}
+              title={editLabel}
+            >
+              <Pencil className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">{editLabel}</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleCopyLabRequest(lab)}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label="Copy"
+              title="Copy"
+            >
+              <Copy className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">Copy</span>
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handleDeleteLabRequest(lab)}
+              disabled={!allowedToDelete || deletingLabRequestNo === lab.noorder}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label={deleteLabel}
+              title={deleteLabel}
+            >
+              <Trash2 className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">{deleteLabel}</span>
+            </Button>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Sumber</p>
-            <p className="font-medium">{lab.source}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">No. Order</p>
-            <p className="font-medium">{lab.noorder || '-'}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 mb-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleEditLabRequest(lab)}
-            disabled={!canEditLabRequest(lab)}
-          >
-            <Pencil className="h-4 w-4 mr-2" />
-            {canEditLabRequest(lab) ? 'Edit' : 'Bukan Data Anda'}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => handleCopyLabRequest(lab)}>
-            <Copy className="h-4 w-4 mr-2" />
-            Copy
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => handleDeleteLabRequest(lab)}
-            disabled={!allowedToDelete || deletingLabRequestNo === lab.noorder}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {deletingLabRequestNo === lab.noorder ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
-          </Button>
         </div>
         {lab.klinis ? (
           <div className="mb-4">
@@ -2462,7 +2521,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           e.dataTransfer.effectAllowed = 'move';
         }}
       >
-        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="mb-4 flex flex-col-reverse gap-3 md:flex-row md:items-start md:justify-between">
           <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-3">
             <div>
               <p className="text-sm text-muted-foreground">Tanggal</p>
@@ -2477,12 +2536,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <p className="font-medium">{labGroup.source}</p>
             </div>
           </div>
-          <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
+          <div className="flex flex-wrap justify-end gap-2 md:w-auto md:items-end">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="w-full md:w-auto"
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -2491,23 +2550,27 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   pemeriksaan: labGroup.pemeriksaan
                 });
               }}
+              aria-label="Tambah ke Canvas"
+              title="Tambah ke Canvas"
             >
-              <Plus className="mr-2 h-4 w-4" />
-              Tambah ke Canvas
+              <Plus className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">Tambah ke Canvas</span>
             </Button>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="w-full md:w-auto"
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 setFullscreenLabHistory(labGroup);
               }}
+              aria-label="Fullscreen"
+              title="Fullscreen"
             >
-              <Maximize2 className="mr-2 h-4 w-4" />
-              Fullscreen
+              <Maximize2 className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">Fullscreen</span>
             </Button>
           </div>
         </div>
@@ -2529,50 +2592,70 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return items.map((rad, radIndex) => {
       const allowedToDelete = canDeleteRadiologyRequest(rad);
+      const canEdit = canEditRadiologyRequest(rad);
+      const editLabel = canEdit ? 'Edit' : 'Bukan Data Anda';
+      const deleteLabel = deletingRadiologyRequestNo === rad.noorder
+        ? 'Menghapus...'
+        : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
 
       return (
       <div key={`${rad.no_rawat}-${rad.noorder}-${radIndex}`} className="border rounded-lg p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Tanggal</p>
-            <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
+        <div className="mb-4 flex flex-col-reverse gap-3 md:flex-col">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Tanggal</p>
+              <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">No. Rawat</p>
+              <p className="font-medium">{rad.no_rawat}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Sumber</p>
+              <p className="font-medium">{rad.source}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">No. Order</p>
+              <p className="font-medium">{rad.noorder || '-'}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">No. Rawat</p>
-            <p className="font-medium">{rad.no_rawat}</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleEditRadiologyRequest(rad)}
+              disabled={!canEdit}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label={editLabel}
+              title={editLabel}
+            >
+              <Pencil className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">{editLabel}</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleCopyRadiologyRequest(rad)}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label="Copy"
+              title="Copy"
+            >
+              <Copy className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">Copy</span>
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handleDeleteRadiologyRequest(rad)}
+              disabled={!allowedToDelete || deletingRadiologyRequestNo === rad.noorder}
+              className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+              aria-label={deleteLabel}
+              title={deleteLabel}
+            >
+              <Trash2 className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">{deleteLabel}</span>
+            </Button>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Sumber</p>
-            <p className="font-medium">{rad.source}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">No. Order</p>
-            <p className="font-medium">{rad.noorder || '-'}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 mb-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleEditRadiologyRequest(rad)}
-            disabled={!canEditRadiologyRequest(rad)}
-          >
-            <Pencil className="h-4 w-4 mr-2" />
-            {canEditRadiologyRequest(rad) ? 'Edit' : 'Bukan Data Anda'}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => handleCopyRadiologyRequest(rad)}>
-            <Copy className="h-4 w-4 mr-2" />
-            Copy
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => handleDeleteRadiologyRequest(rad)}
-            disabled={!allowedToDelete || deletingRadiologyRequestNo === rad.noorder}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {deletingRadiologyRequestNo === rad.noorder ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
-          </Button>
         </div>
         {rad.klinis ? (
           <div className="mb-4">
@@ -2618,7 +2701,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         }}
       >
         <div className="space-y-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex flex-col-reverse gap-3 md:flex-row md:items-start md:justify-between">
             <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-4">
               <div>
                 <p className="text-sm text-muted-foreground">Tanggal</p>
@@ -2644,15 +2727,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               type="button"
               variant="outline"
               size="sm"
-              className="w-full md:w-auto"
+              className="h-9 w-9 self-end p-0 sm:w-auto sm:self-auto sm:px-3"
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 addRadiologyResultToCanvas(rad);
               }}
+              aria-label="Tambah ke Canvas"
+              title="Tambah ke Canvas"
             >
-              <Plus className="mr-2 h-4 w-4" />
-              Tambah ke Canvas
+              <Plus className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">Tambah ke Canvas</span>
             </Button>
           </div>
           <div>
@@ -8653,7 +8738,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               ) : null}
 
               {/* Data Existing */}
-              <Tabs defaultValue="current" className="space-y-4">
+              <Tabs defaultValue="history" className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="current">Data Resep Obat</TabsTrigger>
                   <TabsTrigger value="history">Riwayat Pemberian Obat</TabsTrigger>
