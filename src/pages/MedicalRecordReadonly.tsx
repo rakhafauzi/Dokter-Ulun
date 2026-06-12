@@ -122,12 +122,36 @@ const formatDate = (value?: string) => {
   return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(parsedDate);
 };
 
-const getVisitDateLabel = (visit: any) => {
-  if (visit.tanggal_masuk) {
-    return formatDateTime(visit.tanggal_masuk);
+const formatLongDate = (value?: string) => {
+  const trimmedValue = String(value || '').trim();
+  if (!trimmedValue) {
+    return '-';
   }
 
-  return formatDateTime(visit.tanggal);
+  const normalizedValue = trimmedValue.includes('T')
+    ? trimmedValue
+    : trimmedValue.includes(' ')
+      ? trimmedValue.replace(' ', 'T')
+      : `${trimmedValue}T00:00:00`;
+  const parsedDate = new Date(normalizedValue);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return trimmedValue;
+  }
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).format(parsedDate);
+};
+
+const getVisitDateLabel = (visit: any) => {
+  if (visit.tanggal_masuk) {
+    return formatLongDate(visit.tanggal_masuk);
+  }
+
+  return formatLongDate(visit.tanggal);
 };
 
 const getVisitSubtitle = (visit: any, tab: VisitTab) => {

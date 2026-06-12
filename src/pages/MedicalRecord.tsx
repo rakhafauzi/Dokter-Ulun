@@ -5455,6 +5455,33 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   };
 
+  const formatLongDateSafe = (dateStr: string | null | undefined): string => {
+    if (!dateStr) return '-';
+
+    try {
+      const trimmedValue = String(dateStr).trim().replace(/Z$/, '');
+      const normalizedValue = trimmedValue.includes('T')
+        ? trimmedValue
+        : trimmedValue.includes(' ')
+          ? trimmedValue.replace(' ', 'T')
+          : `${trimmedValue}T00:00:00`;
+      const date = new Date(normalizedValue);
+
+      if (isNaN(date.getTime())) {
+        return '-';
+      }
+
+      return new Intl.DateTimeFormat('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }).format(date);
+    } catch (error) {
+      console.error('Error formatting long date:', dateStr, error);
+      return '-';
+    }
+  };
+
   const formatDateTimeToMinute = (dateStr: string | null | undefined): string => {
     if (!dateStr) return '-';
 
@@ -6579,7 +6606,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                             <div>
                               <p className="text-sm text-muted-foreground">Tanggal</p>
-                              <p className="font-medium">{formatDateSafe(visit.tanggal)}</p>
+                              <p className="font-medium">{formatLongDateSafe(visit.tanggal)}</p>
                             </div>
                             <div>
                               <p className="text-sm text-muted-foreground">Poliklinik</p>
@@ -6826,7 +6853,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                             <div>
                               <p className="text-sm text-muted-foreground">Tanggal</p>
-                              <p className="font-medium">{formatDateSafe(visit.tanggal_masuk)}</p>
+                              <p className="font-medium">{formatLongDateSafe(visit.tanggal_masuk)}</p>
                             </div>
                             <div>
                               <p className="text-sm text-muted-foreground">Poliklinik</p>
@@ -9050,7 +9077,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </div>
 
               {/* Data Existing - Draggable */}
-              <Tabs defaultValue="current" className="space-y-4">
+              <Tabs defaultValue="history" className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="current">Permintaan Laboratorium</TabsTrigger>
                   <TabsTrigger value="history">Hasil Laboratorium</TabsTrigger>
