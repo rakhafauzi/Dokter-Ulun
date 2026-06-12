@@ -9053,7 +9053,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <Tabs defaultValue="current" className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="current">Permintaan Laboratorium</TabsTrigger>
-                  <TabsTrigger value="history">Pemeriksaan Laboratorium</TabsTrigger>
+                  <TabsTrigger value="history">Hasil Laboratorium</TabsTrigger>
                 </TabsList>
 
                 {/* Tab Data Permintaan Lab */}
