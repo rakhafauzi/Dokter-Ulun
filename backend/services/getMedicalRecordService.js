@@ -68,6 +68,171 @@ class GetMedicalRecordService {
     return this.formatDateOnly(rawValue);
   }
 
+  static formatIcd10DiagnosesSummary(rows = []) {
+    const items = Array.isArray(rows) ? rows : [];
+    const normalizedItems = items
+      .filter(Boolean)
+      .map((row) => ({
+        code: String(row?.code || '').trim(),
+        description: String(row?.description || '').trim(),
+        prioritas: Number(row?.prioritas || 0)
+      }))
+      .filter((row) => row.code || row.description);
+
+    const primary = normalizedItems.find((row) => row.prioritas === 1) || normalizedItems[0];
+    if (!primary) {
+      return '';
+    }
+
+    if (!primary.description) {
+      return primary.code;
+    }
+    if (!primary.code) {
+      return primary.description;
+    }
+    return `${primary.code} - ${primary.description}`;
+  }
+
+  static async fetchIcdDetailsByNoRawat(noRawat, statusLanjut) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    if (!normalizedNoRawat) {
+      return { icd10: [], icd9: [], snomed: [] };
+    }
+
+    const normalizedStatus = String(statusLanjut || '').trim() === 'Ranap' ? 'Ranap' : 'Ralan';
+
+    const [icd10Rows, icd9Rows, snomedRows] = await Promise.all([
+      db.execute(
+        `
+          SELECT
+            dp.kd_penyakit,
+            COALESCE(p.nm_penyakit, '') AS nm_penyakit,
+            dp.prioritas,
+            COALESCE(dp.status_penyakit, '') AS status_penyakit,
+            COALESCE(msi.snomed_concept_id, '') AS snomed_concept_id,
+            COALESCE(msi.snomed_term, '') AS snomed_term
+          FROM diagnosa_pasien dp
+          LEFT JOIN penyakit p ON p.kd_penyakit = dp.kd_penyakit
+          LEFT JOIN mlite_mapping_snomed_icd msi
+            ON msi.no_rawat = dp.no_rawat
+            AND msi.kd_penyakit = dp.kd_penyakit
+          WHERE dp.no_rawat = ?
+            AND dp.status = ?
+          ORDER BY dp.prioritas ASC, dp.kd_penyakit ASC
+        `,
+        [normalizedNoRawat, normalizedStatus]
+      ),
+      db.execute(
+        `
+          SELECT
+            pp.kode,
+            COALESCE(i.deskripsi_panjang, '') AS deskripsi_panjang,
+            COALESCE(i.deskripsi_pendek, '') AS deskripsi_pendek,
+            pp.prioritas,
+            COALESCE(msi9.snomed_concept_id, '') AS snomed_concept_id,
+            COALESCE(msi9.snomed_term, '') AS snomed_term
+          FROM prosedur_pasien pp
+          LEFT JOIN icd9 i ON i.kode = pp.kode
+          LEFT JOIN mlite_mapping_snomed_icd9 msi9
+            ON msi9.no_rawat = pp.no_rawat
+            AND msi9.kd_tindakan = pp.kode
+          WHERE pp.no_rawat = ?
+            AND pp.status = ?
+          ORDER BY pp.prioritas ASC, pp.kode ASC
+        `,
+        [normalizedNoRawat, normalizedStatus]
+      ),
+      db.execute(
+        `
+          SELECT DISTINCT
+            x.snomed_concept_id,
+            x.snomed_term
+          FROM (
+            SELECT snomed_concept_id, snomed_term
+            FROM mlite_mapping_snomed_icd
+            WHERE no_rawat = ?
+            UNION ALL
+            SELECT snomed_concept_id, snomed_term
+            FROM mlite_mapping_snomed_icd9
+            WHERE no_rawat = ?
+          ) x
+          WHERE COALESCE(TRIM(x.snomed_concept_id), '') <> ''
+             OR COALESCE(TRIM(x.snomed_term), '') <> ''
+          ORDER BY COALESCE(x.snomed_term, ''), COALESCE(x.snomed_concept_id, '')
+        `,
+        [normalizedNoRawat, normalizedNoRawat]
+      )
+    ]);
+
+    const icd10 = (Array.isArray(icd10Rows?.[0]) ? icd10Rows[0] : []).map((row) => ({
+      kd_penyakit: String(row?.kd_penyakit || '').trim(),
+      nm_penyakit: String(row?.nm_penyakit || '').trim(),
+      prioritas: Number(row?.prioritas || 0),
+      status_penyakit: String(row?.status_penyakit || '').trim(),
+      snomed_concept_id: String(row?.snomed_concept_id || '').trim(),
+      snomed_term: String(row?.snomed_term || '').trim()
+    }));
+
+    const icd9 = (Array.isArray(icd9Rows?.[0]) ? icd9Rows[0] : []).map((row) => ({
+      kode: String(row?.kode || '').trim(),
+      deskripsi_panjang: String(row?.deskripsi_panjang || '').trim(),
+      deskripsi_pendek: String(row?.deskripsi_pendek || '').trim(),
+      prioritas: Number(row?.prioritas || 0),
+      snomed_concept_id: String(row?.snomed_concept_id || '').trim(),
+      snomed_term: String(row?.snomed_term || '').trim()
+    }));
+
+    const snomed = (Array.isArray(snomedRows?.[0]) ? snomedRows[0] : []).map((row) => ({
+      snomed_concept_id: String(row?.snomed_concept_id || '').trim(),
+      snomed_term: String(row?.snomed_term || '').trim()
+    }));
+
+    return { icd10, icd9, snomed };
+  }
+
+  static async fetchIcd10DiagnosesMap(noRawats = [], statusLanjut) {
+    if (!Array.isArray(noRawats) || noRawats.length === 0) {
+      return new Map();
+    }
+
+    const normalizedStatus = String(statusLanjut || '').trim() === 'Ranap' ? 'Ranap' : 'Ralan';
+    const placeholders = noRawats.map(() => '?').join(',');
+
+    const [rows] = await db.execute(
+      `
+        SELECT
+          dp.no_rawat,
+          dp.kd_penyakit AS code,
+          COALESCE(p.nm_penyakit, '') AS description,
+          dp.prioritas
+        FROM diagnosa_pasien dp
+        LEFT JOIN penyakit p ON p.kd_penyakit = dp.kd_penyakit
+        WHERE dp.no_rawat IN (${placeholders})
+          AND dp.status = ?
+        ORDER BY dp.no_rawat ASC, dp.prioritas ASC, dp.kd_penyakit ASC
+      `,
+      [...noRawats, normalizedStatus]
+    );
+
+    const map = new Map();
+    rows.forEach((row) => {
+      const key = String(row?.no_rawat || '').trim();
+      if (!key) {
+        return;
+      }
+      const existing = map.get(key) || [];
+      existing.push(row);
+      map.set(key, existing);
+    });
+
+    const summaryMap = new Map();
+    map.forEach((value, key) => {
+      summaryMap.set(key, this.formatIcd10DiagnosesSummary(value));
+    });
+
+    return summaryMap;
+  }
+
   static async resolveMedicationStockBangsalCode(noRawat, status) {
     const normalizedStatus = String(status || '').trim().toLowerCase();
 
@@ -331,7 +496,21 @@ class GetMedicalRecordService {
   // Helper function to fetch examinations
   static async fetchExaminations(noRawat, type) {
     const table = type === 'ralan' ? 'pemeriksaan_ralan' : 'pemeriksaan_ranap';
-    const examQuery = `SELECT p1.*, p2.nama FROM ${table} p1 LEFT JOIN pegawai p2 ON p2.nik = p1.nip WHERE p1.no_rawat = ? ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC`;
+    const examQuery = `
+      SELECT
+        p1.*,
+        p2.nama,
+        CASE
+          WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
+          WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
+          ELSE ''
+        END AS role
+      FROM ${table} p1
+      LEFT JOIN pegawai p2 ON p2.nik = p1.nip
+      LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
+      WHERE p1.no_rawat = ?
+      ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
+    `;
     const [rows] = await db.execute(examQuery, [noRawat]);
     
     return rows.map(row => ({
@@ -339,6 +518,7 @@ class GetMedicalRecordService {
       tgl_perawatan: this.formatDateOnly(row.tgl_perawatan),
       jam_rawat: row.jam_rawat,
       nip: row.nip || '',
+      role: row.role || '',
       tekanan_darah: row.tensi || '',
       nadi: row.nadi || '',
       respirasi: row.respirasi || '',
@@ -705,7 +885,8 @@ class GetMedicalRecordService {
       LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
       WHERE pl.no_rawat = ?
         AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
-      ORDER BY pl.tgl_periksa, pl.jam, tl.Pemeriksaan
+        AND (jp.nm_perawatan IS NULL OR LOWER(jp.nm_perawatan) NOT LIKE '%mikrobiologi%')
+      ORDER BY pl.tgl_periksa DESC, pl.jam ASC, tl.Pemeriksaan ASC
     `;
     const [rows] = await db.execute(labQuery, [noRawat, status, status]);
     
@@ -962,6 +1143,7 @@ class GetMedicalRecordService {
       tanggal_keluar: inpatientDetail?.tgl_keluar ? this.formatDateOnly(inpatientDetail.tgl_keluar) + ' ' + inpatientDetail.jam_keluar : '',
       ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
       kamar: inpatientDetail?.kd_kamar || '',
+      poliklinik: visit.nm_poli || '',
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ranap',
@@ -980,7 +1162,9 @@ class GetMedicalRecordService {
       laboratory,
       laboratoryRequest,
       radiology,
-      radiologyRequest
+      radiologyRequest,
+      icd10Map,
+      icdDetails
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ralan'),
       this.fetchProcedures(visit.no_rawat, 'ralan'),
@@ -989,13 +1173,17 @@ class GetMedicalRecordService {
       this.fetchLaboratory(visit.no_rawat),
       this.fetchLaboratoryRequest(visit.no_rawat, 'ralan'),
       this.fetchRadiology(visit.no_rawat),
-      this.fetchRadiologyRequest(visit.no_rawat, 'ralan')
+      this.fetchRadiologyRequest(visit.no_rawat, 'ralan'),
+      this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ralan'),
+      this.fetchIcdDetailsByNoRawat(visit.no_rawat, 'Ralan')
     ]);
 
     return {
       no_rawat: visit.no_rawat,
       tanggal: this.formatDateOnly(visit.tgl_registrasi) + ' ' + visit.jam_reg,
       poliklinik: visit.nm_poli || '',
+      diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
+      icd_details: icdDetails,
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ralan',
@@ -1023,7 +1211,9 @@ class GetMedicalRecordService {
       laboratoryRequest,
       radiology,
       radiologyRequest,
-      operationReports
+      operationReports,
+      icd10Map,
+      icdDetails
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ranap'),
       this.fetchProcedures(visit.no_rawat, 'ranap'),
@@ -1035,7 +1225,9 @@ class GetMedicalRecordService {
       this.fetchLaboratoryRequest(visit.no_rawat, 'ranap'),
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ranap'),
-      this.fetchOperationReports(visit.no_rawat)
+      this.fetchOperationReports(visit.no_rawat),
+      this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ranap'),
+      this.fetchIcdDetailsByNoRawat(visit.no_rawat, 'Ranap')
     ]);
 
     return {
@@ -1044,6 +1236,9 @@ class GetMedicalRecordService {
       tanggal_keluar: inpatientDetail?.tgl_keluar ? this.formatDateOnly(inpatientDetail.tgl_keluar) + ' ' + inpatientDetail.jam_keluar : '',
       ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
       kamar: inpatientDetail?.kd_kamar || '',
+      poliklinik: visit.nm_poli || '',
+      diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
+      icd_details: icdDetails,
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ranap',
@@ -1114,11 +1309,17 @@ class GetMedicalRecordService {
         SELECT
           p1.*,
           p2.nama,
+          CASE
+            WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
+            WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
+            ELSE ''
+          END AS role,
           r.no_rawat,
           r.status_lanjut
         FROM ${table} p1
         INNER JOIN reg_periksa r ON r.no_rawat = p1.no_rawat
         LEFT JOIN pegawai p2 ON p2.nik = p1.nip
+        LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
         WHERE r.no_rkm_medis = ? AND r.status_lanjut = ? ${focusFilter}
         ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
         LIMIT ? OFFSET ?
@@ -1332,6 +1533,10 @@ class GetMedicalRecordService {
       const prbProgram = String(patientPrbProgram?.[0]?.nm_program || '').trim();
       const outpatientVisits = outpatientPageResult?.rows || [];
       const inpatientVisitRefs = inpatientPageResult?.rows || [];
+      const [outpatientIcd10Map, inpatientIcd10Map] = await Promise.all([
+        outpatientVisits.length ? this.fetchIcd10DiagnosesMap(outpatientVisits.map((visit) => visit.no_rawat), 'Ralan') : Promise.resolve(new Map()),
+        inpatientVisitRefs.length ? this.fetchIcd10DiagnosesMap(inpatientVisitRefs.map((visit) => visit.no_rawat), 'Ranap') : Promise.resolve(new Map())
+      ]);
 
       let inpatientDetails = [];
       if (inpatientVisitRefs.length > 0) {
@@ -1355,7 +1560,12 @@ class GetMedicalRecordService {
       const [finalOutpatientVisits, finalInpatientVisits] = await Promise.all([
         includeVisitDetails
           ? Promise.all(outpatientVisits.map((visit) => this.buildOutpatientVisit(visit)))
-          : Promise.resolve(outpatientVisits.map((visit) => this.buildOutpatientVisitSummary(visit))),
+          : Promise.resolve(
+              outpatientVisits.map((visit) => ({
+                ...this.buildOutpatientVisitSummary(visit),
+                diagnosa_icd10: String(outpatientIcd10Map.get(visit.no_rawat) || '')
+              }))
+            ),
         includeVisitDetails
           ? Promise.all(
               inpatientVisitRefs.map((visit) =>
@@ -1364,7 +1574,10 @@ class GetMedicalRecordService {
             )
           : Promise.resolve(
               inpatientVisitRefs.map((visit) =>
-                this.buildInpatientVisitSummary(visit, inpatientDetailsMap.get(visit.no_rawat))
+                ({
+                  ...this.buildInpatientVisitSummary(visit, inpatientDetailsMap.get(visit.no_rawat)),
+                  diagnosa_icd10: String(inpatientIcd10Map.get(visit.no_rawat) || '')
+                })
               )
             )
       ]);

@@ -141,6 +141,21 @@ interface BalanceCairanEntry {
   is_intake_reference?: boolean;
 }
 
+interface RehabMedikAssessment {
+  no_rawat: string;
+  tanggal: string;
+  time: string;
+  anamnesa: string;
+  pemeriksaan_fisik: string;
+  diagnosa_fungsi: string;
+  anjuran: string;
+  evaluasi: string;
+  hasil: string;
+  kesimpulan: string;
+  rekomendasi: string;
+  suspek_penyakit: string;
+}
+
 interface RadiologyFormItem {
   kode: string;
   pemeriksaan: string;
@@ -167,7 +182,8 @@ interface ProcedureOption {
 type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
-type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan';
+type OutpatientExaminationSectionTabValue = 'examinations' | 'rehab-medik';
+type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'rehab-medik';
 
 interface MedicalRecordData {
   patient: {
@@ -245,6 +261,8 @@ const PAGE_SIZE = 5;
 type VisitHistoryTabValue = 'outpatient' | 'inpatient';
 type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
 type CareSectionTabValue = 'outpatient' | 'inpatient';
+type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi';
+type ExaminationRoleValue = Exclude<ExaminationRoleFilterValue, 'all'>;
 type MedicalRecordFetchOptions = {
   reset?: boolean;
   outpatientPage?: number;
@@ -285,6 +303,87 @@ const DEFAULT_PAGINATION_META: PaginationMeta = {
   limit: PAGE_SIZE,
   total: 0,
   hasMore: false
+};
+
+const EXAMINATION_ROLE_OPTIONS: Array<{ value: ExaminationRoleFilterValue; label: string }> = [
+  { value: 'all', label: 'Semua' },
+  { value: 'medis', label: 'Dokter' },
+  { value: 'paramedis', label: 'Perawat' },
+  { value: 'apoteker', label: 'Farmasi' },
+  { value: 'gizi', label: 'Gizi' }
+];
+
+const resolveExaminationRole = (...values: Array<string | null | undefined>): ExaminationRoleValue | '' => {
+  const normalizedValues = values
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  const explicitRole = normalizedValues.find(
+    (value) => value === 'medis' || value === 'paramedis' || value === 'apoteker' || value === 'gizi'
+  );
+
+  if (explicitRole === 'medis' || explicitRole === 'paramedis' || explicitRole === 'apoteker' || explicitRole === 'gizi') {
+    return explicitRole;
+  }
+
+  if (normalizedValues.some((value) => value.includes('dr.'))) {
+    return 'medis';
+  }
+
+  return '';
+};
+
+const normalizeExaminationRole = (value?: string | null): ExaminationRoleValue | '' => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'medis' || normalized === 'paramedis' || normalized === 'apoteker' || normalized === 'gizi') {
+    return normalized;
+  }
+  return '';
+};
+
+const getExaminationRoleLabel = (value?: string | null) => {
+  switch (normalizeExaminationRole(value)) {
+    case 'medis':
+      return 'Dokter';
+    case 'paramedis':
+      return 'Perawat';
+    case 'apoteker':
+      return 'Farmasi';
+    case 'gizi':
+      return 'Gizi';
+    default:
+      return 'Tanpa Role';
+  }
+};
+
+const getExaminationRoleStyles = (value?: string | null) => {
+  switch (normalizeExaminationRole(value)) {
+    case 'medis':
+      return {
+        badge: 'border-violet-200 bg-violet-100 text-violet-700',
+        soap: 'border-violet-200 bg-violet-50/80'
+      };
+    case 'paramedis':
+      return {
+        badge: 'border-sky-200 bg-sky-100 text-sky-700',
+        soap: 'border-sky-200 bg-sky-50/80'
+      };
+    case 'apoteker':
+      return {
+        badge: 'border-emerald-200 bg-emerald-100 text-emerald-700',
+        soap: 'border-emerald-200 bg-emerald-50/80'
+      };
+    case 'gizi':
+      return {
+        badge: 'border-amber-200 bg-amber-100 text-amber-700',
+        soap: 'border-amber-200 bg-amber-50/80'
+      };
+    default:
+      return {
+        badge: 'border-slate-200 bg-slate-100 text-slate-700',
+        soap: 'border-slate-200 bg-slate-50/80'
+      };
+  }
 };
 
 const getCurrentExaminationDateTime = () => ({
@@ -343,6 +442,18 @@ const getDefaultExaminationForm = () => ({
   instruksi: '',
   evaluasi: '',
   nip: ''
+});
+
+const getDefaultRehabMedikForm = () => ({
+  anamnesa: '',
+  pemeriksaan_fisik: '',
+  diagnosa_fungsi: '',
+  anjuran: '',
+  evaluasi: '',
+  hasil: '',
+  kesimpulan: '',
+  rekomendasi: '',
+  suspek_penyakit: 'Tidak'
 });
 
 const getDefaultProcedureForm = (): ProcedureFormItem[] => ([{
@@ -623,6 +734,40 @@ const buildFocusedItems = <T,>(
     });
 };
 
+const buildFocusedLabItems = (
+  records: LabData[] = [],
+  noRawat: string,
+  source: string
+) => {
+  return (records || [])
+    .map((record, index) => {
+      const normalizedTanggal = String(record?.tanggal || '').trim();
+      const [datePart = '', timePart = '00:00'] = normalizedTanggal.split(' ');
+
+      return {
+        ...record,
+        no_rawat: noRawat,
+        source,
+        __datePart: datePart,
+        __timePart: timePart,
+        __index: index
+      };
+    })
+    .sort((a: any, b: any) => {
+      const dateCompare = String(b.__datePart || '').localeCompare(String(a.__datePart || ''));
+      if (dateCompare !== 0) {
+        return dateCompare;
+      }
+
+      const timeCompare = String(a.__timePart || '').localeCompare(String(b.__timePart || ''));
+      if (timeCompare !== 0) {
+        return timeCompare;
+      }
+
+      return (a.__index || 0) - (b.__index || 0);
+    });
+};
+
 interface MedicalRecordProps {
   noRkmMedis?: string;
   noRawat?: string;
@@ -718,7 +863,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [savingWhatsapp, setSavingWhatsapp] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState('');
   const [sendingWhatsappMessage, setSendingWhatsappMessage] = useState(false);
+  const [outpatientExaminationSectionTab, setOutpatientExaminationSectionTab] = useState<OutpatientExaminationSectionTabValue>('examinations');
   const [inpatientExaminationSectionTab, setInpatientExaminationSectionTab] = useState<InpatientExaminationSectionTabValue>('examinations');
+  const [examinationRoleFilter, setExaminationRoleFilter] = useState<ExaminationRoleFilterValue>('all');
+  const [rehabMedikAccess, setRehabMedikAccess] = useState(false);
+  const [rehabMedikAccessLoading, setRehabMedikAccessLoading] = useState(false);
+  const [rehabMedikCurrentEntries, setRehabMedikCurrentEntries] = useState<RehabMedikAssessment[]>([]);
+  const [rehabMedikHistoryEntries, setRehabMedikHistoryEntries] = useState<RehabMedikAssessment[]>([]);
+  const [rehabMedikLoading, setRehabMedikLoading] = useState(false);
+  const [savingRehabMedik, setSavingRehabMedik] = useState(false);
+  const [deletingRehabMedik, setDeletingRehabMedik] = useState(false);
+  const [rehabMedikForm, setRehabMedikForm] = useState(getDefaultRehabMedikForm);
   const [balanceCairanEntries, setBalanceCairanEntries] = useState<BalanceCairanEntry[]>([]);
   const [balanceCairanLoading, setBalanceCairanLoading] = useState(false);
   const [selectedBalanceCairanId, setSelectedBalanceCairanId] = useState<number | null>(null);
@@ -1016,6 +1171,38 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return examinationHistoryData.inpatient;
   }, [examinationHistoryData.inpatient, formattedNoRawat, medicalData?.focused_examinations?.ranap]);
+  const filteredOutpatientExaminationHistory = useMemo(() => {
+    if (examinationRoleFilter === 'all') {
+      return outpatientExaminationHistory;
+    }
+
+    return outpatientExaminationHistory.filter(
+      (item) =>
+        resolveExaminationRole(
+          item?.exam?.role,
+          item?.exam?.pegawai,
+          item?.exam?.nama,
+          item?.visit?.dokter,
+          item?.visit?.nm_dokter
+        ) === examinationRoleFilter
+    );
+  }, [examinationRoleFilter, outpatientExaminationHistory]);
+  const filteredInpatientExaminationHistory = useMemo(() => {
+    if (examinationRoleFilter === 'all') {
+      return inpatientExaminationHistory;
+    }
+
+    return inpatientExaminationHistory.filter(
+      (item) =>
+        resolveExaminationRole(
+          item?.exam?.role,
+          item?.exam?.pegawai,
+          item?.exam?.nama,
+          item?.visit?.dokter,
+          item?.visit?.nm_dokter
+        ) === examinationRoleFilter
+    );
+  }, [examinationRoleFilter, inpatientExaminationHistory]);
   const outpatientProcedures = React.useMemo(() => {
     if (formattedNoRawat) {
       return buildFocusedItems(
@@ -1203,14 +1390,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [formattedNoRawat, medicalData?.focused_laboratory_request?.ranap, scopedInpatientVisits]);
   const outpatientLaboratoryHistory = React.useMemo(() => {
     if (formattedNoRawat) {
-      return buildFocusedItems(
-        medicalData?.focused_laboratory?.ralan || [],
+      return buildFocusedLabItems(
+        (medicalData?.focused_laboratory?.ralan || []) as LabData[],
         formattedNoRawat,
         'Rawat Jalan'
       );
     }
 
-    return buildFocusedItems(
+    return buildFocusedLabItems(
       scopedOutpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
       '',
       'Rawat Jalan'
@@ -1218,14 +1405,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [formattedNoRawat, medicalData?.focused_laboratory?.ralan, scopedOutpatientVisits]);
   const inpatientLaboratoryHistory = React.useMemo(() => {
     if (formattedNoRawat) {
-      return buildFocusedItems(
-        medicalData?.focused_laboratory?.ranap || [],
+      return buildFocusedLabItems(
+        (medicalData?.focused_laboratory?.ranap || []) as LabData[],
         formattedNoRawat,
         'Rawat Inap'
       );
     }
 
-    return buildFocusedItems(
+    return buildFocusedLabItems(
       scopedInpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
       '',
       'Rawat Inap'
@@ -1337,6 +1524,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     editingLabRequestNo,
     editingRadiologyRequestNo
   ]);
+  useEffect(() => {
+    if (!rehabMedikAccess) {
+      setOutpatientExaminationSectionTab('examinations');
+      setInpatientExaminationSectionTab((previous) => (
+        previous === 'rehab-medik' ? 'examinations' : previous
+      ));
+    }
+  }, [rehabMedikAccess]);
   const matchesCurrentUser = (...values: Array<string | null | undefined>) =>
     Boolean(
       currentUsername &&
@@ -1354,6 +1549,37 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const canEditPrescription = canDeletePrescription;
   const canEditLabRequest = canDeleteLabRequest;
   const canEditRadiologyRequest = canDeleteRadiologyRequest;
+  const renderExaminationRoleFilter = () => (
+    <div className="rounded-lg border bg-muted/20 p-3">
+      <div className="mb-2">
+        <p className="text-sm font-medium">Filter Role Pemeriksaan</p>
+        <p className="text-xs text-muted-foreground">Default menampilkan semua role. Klik salah satu role untuk memfilter.</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {EXAMINATION_ROLE_OPTIONS.map((option) => {
+          const isActive = examinationRoleFilter === option.value;
+          const roleStyles = getExaminationRoleStyles(option.value === 'all' ? '' : option.value);
+
+          return (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={isActive ? 'default' : 'outline'}
+              className={cn(
+                'transition-colors',
+                isActive && option.value !== 'all' && roleStyles.badge,
+                isActive && option.value === 'all' && 'bg-primary text-primary-foreground'
+              )}
+              onClick={() => setExaminationRoleFilter(option.value)}
+            >
+              {option.label}
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
   const renderExaminationCards = (history: Array<{ key: string; visit: any; exam: any; rawatType: 'Ralan' | 'Ranap' }>) => {
     if (history.length === 0) {
       return (
@@ -1365,6 +1591,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return history.map(({ key, visit, exam, rawatType }) => {
       const allowedToDelete = canDeleteExamination(exam);
+      const resolvedRole = resolveExaminationRole(exam?.role, exam?.pegawai, exam?.nama, visit?.dokter, visit?.nm_dokter);
+      const roleStyles = getExaminationRoleStyles(resolvedRole);
+      const roleLabel = getExaminationRoleLabel(resolvedRole);
 
       return (
       <div key={key} className="border rounded-lg p-4">
@@ -1387,11 +1616,19 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <Button
               size="sm"
               variant="secondary"
+              onClick={() => handleCopyExaminationAll(exam, rawatType)}
+            >
+              <Copy className="h-4 w-4 mr-1" />
+              Copy All
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               onClick={() => handleCopyExaminationTTV(exam)}
             >
               <Copy className="h-4 w-4 mr-1" />
               Copy TTV
-            </Button>
+            </Button>  
             <Button
               size="sm"
               variant="secondary"
@@ -1419,7 +1656,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-lg border p-4">
             <h4 className="font-medium">Tanda Vital</h4>
             <p className="text-sm">Tekanan Darah: {exam.tekanan_darah || exam.tensi || '-'}</p>
             <p className="text-sm">Nadi: {exam.nadi || '-'}</p>
@@ -1430,8 +1667,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <p className="text-sm">Tinggi: {exam.tinggi || '-'} cm</p>
             <p className="text-sm">Berat: {exam.berat || '-'} kg</p>
           </div>
-          <div className="space-y-2">
-            <h4 className="font-medium">SOAPIE</h4>
+          <div className={cn('space-y-2 rounded-lg border p-4', roleStyles.soap)}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="font-medium">SOAPIE</h4>
+              <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium', roleStyles.badge)}>
+                {roleLabel}
+              </span>
+            </div>
             <div className="text-sm">
               <strong>S (Subjektif):</strong>
               <p className="whitespace-pre-line break-words">{formatMultilineText(exam.s || exam.keluhan || '-')}</p>
@@ -1465,6 +1707,245 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         </div>
       </div>
     )});
+  };
+  const renderRehabMedikSection = () => {
+    if (!formattedNoRawat) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Pilih kunjungan terlebih dahulu untuk mengisi assesmen rehab medik.
+        </div>
+      );
+    }
+
+    if (rehabMedikAccessLoading) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Memeriksa akses assesmen rehab medik...
+        </div>
+      );
+    }
+
+    if (!rehabMedikAccess) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Anda tidak memiliki akses ke menu assesmen rehab medik.
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h4 className="font-medium">Form Assesmen Rehab Medik</h4>
+              <p className="text-sm text-muted-foreground">
+                Data tersimpan untuk no. rawat aktif, dan riwayat di bawah bisa dicopy kembali ke form.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void fetchRehabMedikData()}
+              disabled={rehabMedikLoading}
+            >
+              {rehabMedikLoading ? 'Memuat...' : 'Refresh'}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="rehab-anamnesa">Anamnesa</Label>
+              <Textarea
+                id="rehab-anamnesa"
+                value={rehabMedikForm.anamnesa}
+                onChange={(event) => setRehabMedikForm((prev) => ({ ...prev, anamnesa: event.target.value }))}
+                placeholder="Anamnesa pasien"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rehab-fisik">Pemeriksaan Fisik dan Uji Fungsi</Label>
+              <Textarea
+                id="rehab-fisik"
+                value={rehabMedikForm.pemeriksaan_fisik}
+                onChange={(event) => setRehabMedikForm((prev) => ({ ...prev, pemeriksaan_fisik: event.target.value }))}
+                placeholder="Pemeriksaan fisik dan uji fungsi"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rehab-diagnosa">Diagnosis Fungsi</Label>
+              <Textarea
+                id="rehab-diagnosa"
+                value={rehabMedikForm.diagnosa_fungsi}
+                onChange={(event) => setRehabMedikForm((prev) => ({ ...prev, diagnosa_fungsi: event.target.value }))}
+                placeholder="Diagnosis fungsi"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rehab-anjuran">Anjuran</Label>
+              <Textarea
+                id="rehab-anjuran"
+                value={rehabMedikForm.anjuran}
+                onChange={(event) => setRehabMedikForm((prev) => ({ ...prev, anjuran: event.target.value }))}
+                placeholder="Anjuran terapi"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rehab-evaluasi">Evaluasi</Label>
+              <Textarea
+                id="rehab-evaluasi"
+                value={rehabMedikForm.evaluasi}
+                onChange={(event) => setRehabMedikForm((prev) => ({ ...prev, evaluasi: event.target.value }))}
+                placeholder="Evaluasi"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rehab-hasil">Hasil Yang Didapat</Label>
+              <Textarea
+                id="rehab-hasil"
+                value={rehabMedikForm.hasil}
+                onChange={(event) => setRehabMedikForm((prev) => ({ ...prev, hasil: event.target.value }))}
+                placeholder="Hasil yang didapat"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rehab-kesimpulan">Kesimpulan</Label>
+              <Textarea
+                id="rehab-kesimpulan"
+                value={rehabMedikForm.kesimpulan}
+                onChange={(event) => setRehabMedikForm((prev) => ({ ...prev, kesimpulan: event.target.value }))}
+                placeholder="Kesimpulan"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rehab-rekomendasi">Rekomendasi</Label>
+              <Textarea
+                id="rehab-rekomendasi"
+                value={rehabMedikForm.rekomendasi}
+                onChange={(event) => setRehabMedikForm((prev) => ({ ...prev, rekomendasi: event.target.value }))}
+                placeholder="Rekomendasi"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rehab-suspek">Suspek Penyakit Akibat Kerja</Label>
+              <Select
+                value={rehabMedikForm.suspek_penyakit}
+                onValueChange={(value) => setRehabMedikForm((prev) => ({ ...prev, suspek_penyakit: value }))}
+              >
+                <SelectTrigger id="rehab-suspek">
+                  <SelectValue placeholder="Pilih status suspek" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Ya">Ya</SelectItem>
+                  <SelectItem value="Tidak">Tidak</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRehabMedikForm(getDefaultRehabMedikForm())}
+            >
+              Reset
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSaveRehabMedik()}
+              disabled={savingRehabMedik}
+            >
+              {savingRehabMedik ? 'Menyimpan...' : 'Simpan Assesmen Rehab Medik'}
+            </Button>
+          </div>
+        </div>
+
+        <div className="border rounded-lg p-4 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="font-medium">Data Assesmen Rehab Medik Saat Ini</h4>
+            {rehabMedikCurrentEntries.length > 0 && (
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => void handleDeleteRehabMedik()}
+                disabled={deletingRehabMedik}
+              >
+                {deletingRehabMedik ? 'Menghapus...' : 'Hapus'}
+              </Button>
+            )}
+          </div>
+
+          {rehabMedikCurrentEntries.length === 0 ? (
+            <div className="border border-dashed rounded-lg p-4 text-sm text-muted-foreground bg-muted/20">
+              Belum ada assesmen rehab medik untuk no. rawat ini.
+            </div>
+          ) : (
+            rehabMedikCurrentEntries.map((item, index) => (
+              <div key={`rehab-current-${item.no_rawat}-${item.tanggal}-${item.time}-${index}`} className="rounded-lg border p-4 space-y-3 bg-background">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm">
+                    <p><strong>Tgl / Jam:</strong> {formatDateSafe(`${item.tanggal} ${item.time}`)}</p>
+                    <p><strong>No. Rawat:</strong> {item.no_rawat || '-'}</p>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" onClick={() => handleCopyRehabMedik(item)}>
+                    Copy ke Form
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 text-sm">
+                  <div><strong>Anamnesa:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.anamnesa)}</p></div>
+                  <div><strong>Pemeriksaan Fisik:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.pemeriksaan_fisik)}</p></div>
+                  <div><strong>Diagnosa Fungsi:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.diagnosa_fungsi)}</p></div>
+                  <div><strong>Anjuran:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.anjuran)}</p></div>
+                  <div><strong>Evaluasi:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.evaluasi)}</p></div>
+                  <div><strong>Hasil:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.hasil)}</p></div>
+                  <div><strong>Kesimpulan:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.kesimpulan)}</p></div>
+                  <div><strong>Rekomendasi:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.rekomendasi)}</p></div>
+                  <div><strong>Suspek Akibat Kerja:</strong><p>{item.suspek_penyakit || '-'}</p></div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="border rounded-lg p-4 space-y-4">
+          <h4 className="font-medium">Riwayat Assesmen Rehab Medik</h4>
+          {rehabMedikHistoryEntries.length === 0 ? (
+            <div className="border border-dashed rounded-lg p-4 text-sm text-muted-foreground bg-muted/20">
+              Belum ada riwayat assesmen rehab medik pasien.
+            </div>
+          ) : (
+            rehabMedikHistoryEntries.map((item, index) => (
+              <div key={`rehab-history-${item.no_rawat}-${item.tanggal}-${item.time}-${index}`} className="rounded-lg border p-4 space-y-3 bg-muted/10">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm">
+                    <p><strong>Tgl / Jam:</strong> {formatDateSafe(`${item.tanggal} ${item.time}`)}</p>
+                    <p><strong>No. Rawat:</strong> {item.no_rawat || '-'}</p>
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => handleCopyRehabMedik(item)}>
+                    <Copy className="h-4 w-4 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 text-sm">
+                  <div><strong>Anamnesa:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.anamnesa)}</p></div>
+                  <div><strong>Pemeriksaan Fisik:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.pemeriksaan_fisik)}</p></div>
+                  <div><strong>Diagnosa Fungsi:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.diagnosa_fungsi)}</p></div>
+                  <div><strong>Anjuran:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.anjuran)}</p></div>
+                  <div><strong>Evaluasi:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.evaluasi)}</p></div>
+                  <div><strong>Hasil:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.hasil)}</p></div>
+                  <div><strong>Kesimpulan:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.kesimpulan)}</p></div>
+                  <div><strong>Rekomendasi:</strong><p className="whitespace-pre-line break-words">{formatMultilineText(item.rekomendasi)}</p></div>
+                  <div><strong>Suspek Akibat Kerja:</strong><p>{item.suspek_penyakit || '-'}</p></div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
   };
   const renderProcedureCards = (procedures: any[]) => {
     if (procedures.length === 0) {
@@ -1588,6 +2069,89 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             </div>
           </div>
         ))}
+      </div>
+    );
+  };
+  const renderVisitIcdDetails = (visit: any) => {
+    const icdDetails = visit?.icd_details || {};
+    const icd10Items = Array.isArray(icdDetails?.icd10) ? icdDetails.icd10 : [];
+    const icd9Items = Array.isArray(icdDetails?.icd9) ? icdDetails.icd9 : [];
+
+    const normalizePrioritas = (value: any) => {
+      const parsed = Number(value || 0);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const formatIcd9Text = (item: any) => {
+      const code = String(item?.kode || '').trim();
+      const desc = String(item?.deskripsi_panjang || item?.deskripsi_pendek || '').trim();
+      if (!code && !desc) {
+        return '-';
+      }
+      if (!desc) {
+        return code;
+      }
+      if (!code) {
+        return desc;
+      }
+      return `${code} - ${desc}`;
+    };
+
+    return (
+      <div className="border rounded-lg p-4 bg-muted/20">
+        <h3 className="text-lg font-semibold mb-3 flex items-center">
+          <FileText className="h-5 w-5 mr-2" />
+          ICD 10 / ICD 9 / SNOMED
+        </h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="rounded-lg border bg-background p-4">
+            <p className="text-sm font-semibold mb-2">ICD 10 (Diagnosa)</p>
+            {icd10Items.length === 0 ? (
+              <p className="text-sm text-muted-foreground">-</p>
+            ) : (
+              <div className="max-h-56 space-y-2 overflow-auto text-sm">
+                {icd10Items.map((item: any, index: number) => (
+                  <div key={`${item?.kd_penyakit || 'icd10'}-${index}`} className="rounded-md border bg-muted/10 px-3 py-2">
+                    <p className="font-medium">
+                      {normalizePrioritas(item?.prioritas) ? `${normalizePrioritas(item?.prioritas)}. ` : ''}
+                      {String(item?.kd_penyakit || '').trim() || '-'}
+                      {String(item?.nm_penyakit || '').trim() ? ` - ${String(item?.nm_penyakit || '').trim()}` : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {String(item?.status_penyakit || '').trim() ? `Status: ${String(item?.status_penyakit || '').trim()}` : '-'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      SNOMED: {String(item?.snomed_concept_id || '').trim() || '-'}
+                      {String(item?.snomed_term || '').trim() ? ` - ${String(item?.snomed_term || '').trim()}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border bg-background p-4">
+            <p className="text-sm font-semibold mb-2">ICD 9 (Prosedur)</p>
+            {icd9Items.length === 0 ? (
+              <p className="text-sm text-muted-foreground">-</p>
+            ) : (
+              <div className="max-h-56 space-y-2 overflow-auto text-sm">
+                {icd9Items.map((item: any, index: number) => (
+                  <div key={`${item?.kode || 'icd9'}-${index}`} className="rounded-md border bg-muted/10 px-3 py-2">
+                    <p className="font-medium">
+                      {normalizePrioritas(item?.prioritas) ? `${normalizePrioritas(item?.prioritas)}. ` : ''}
+                      {formatIcd9Text(item)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      SNOMED: {String(item?.snomed_concept_id || '').trim() || '-'}
+                      {String(item?.snomed_term || '').trim() ? ` - ${String(item?.snomed_term || '').trim()}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -1955,7 +2519,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     ));
   };
   const renderVisitLaboratoryHistory = (items: LabData[], noRawat: string, source: string) => {
-    const normalizedItems = buildFocusedItems(items || [], noRawat, source);
+    const normalizedItems = buildFocusedLabItems(items || [], noRawat, source);
     return renderLaboratoryHistoryCards(normalizedItems);
   };
   const renderRadiologyRequestCards = (items: any[]) => {
@@ -3649,6 +4213,196 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     whatsappNumber
   ]);
 
+  const fetchRehabMedikAccess = useCallback(async () => {
+    if (!currentUsername) {
+      setRehabMedikAccess(false);
+      return;
+    }
+
+    try {
+      setRehabMedikAccessLoading(true);
+      const response = await fetch(
+        `${API_URLS.ASSESMEN_REHAB_MEDIK_ACCESS}/${encodeURIComponent(currentUsername)}`
+      );
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setRehabMedikAccess(Boolean(responseJson?.can_access));
+    } catch (error) {
+      console.error('Error checking assesmen rehab medik access:', error);
+      setRehabMedikAccess(false);
+    } finally {
+      setRehabMedikAccessLoading(false);
+    }
+  }, [currentUsername]);
+
+  const fetchRehabMedikData = useCallback(async () => {
+    if (!formattedNoRawat || !currentUsername || !rehabMedikAccess) {
+      setRehabMedikCurrentEntries([]);
+      setRehabMedikHistoryEntries([]);
+      return;
+    }
+
+    try {
+      setRehabMedikLoading(true);
+      const params = new URLSearchParams({
+        username: currentUsername
+      });
+      const response = await fetch(
+        `${API_URLS.ASSESMEN_REHAB_MEDIK}/${encodeURIComponent(formattedNoRawat)}?${params.toString()}`
+      );
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setRehabMedikCurrentEntries(Array.isArray(responseJson?.current) ? responseJson.current : []);
+      setRehabMedikHistoryEntries(Array.isArray(responseJson?.history) ? responseJson.history : []);
+    } catch (error) {
+      console.error('Error fetching assesmen rehab medik:', error);
+      setRehabMedikCurrentEntries([]);
+      setRehabMedikHistoryEntries([]);
+    } finally {
+      setRehabMedikLoading(false);
+    }
+  }, [currentUsername, formattedNoRawat, rehabMedikAccess]);
+
+  const handleCopyRehabMedik = useCallback((item: RehabMedikAssessment) => {
+    setRehabMedikForm({
+      anamnesa: item.anamnesa || '',
+      pemeriksaan_fisik: item.pemeriksaan_fisik || '',
+      diagnosa_fungsi: item.diagnosa_fungsi || '',
+      anjuran: item.anjuran || '',
+      evaluasi: item.evaluasi || '',
+      hasil: item.hasil || '',
+      kesimpulan: item.kesimpulan || '',
+      rekomendasi: item.rekomendasi || '',
+      suspek_penyakit: item.suspek_penyakit === 'Ya' ? 'Ya' : 'Tidak'
+    });
+
+    toast({
+      title: "Data Disalin",
+      description: "Assesmen rehab medik berhasil disalin ke form"
+    });
+  }, [toast]);
+
+  const handleSaveRehabMedik = useCallback(async () => {
+    if (!formattedNoRawat) {
+      toast({
+        title: "Error",
+        description: "Pilih kunjungan terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!rehabMedikAccess) {
+      toast({
+        title: "Error",
+        description: "Anda tidak memiliki akses ke assesmen rehab medik",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSavingRehabMedik(true);
+      const response = await fetch(API_URLS.ASSESMEN_REHAB_MEDIK, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: currentUsername,
+          no_rawat: formattedNoRawat,
+          ...rehabMedikForm
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Assesmen rehab medik berhasil disimpan'
+      });
+
+      await fetchRehabMedikData();
+    } catch (error) {
+      console.error('Error saving assesmen rehab medik:', error);
+      const message = error instanceof Error ? error.message : 'Gagal menyimpan assesmen rehab medik';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSavingRehabMedik(false);
+    }
+  }, [
+    currentUsername,
+    fetchRehabMedikData,
+    formattedNoRawat,
+    rehabMedikAccess,
+    rehabMedikForm,
+    toast
+  ]);
+
+  const handleDeleteRehabMedik = useCallback(async () => {
+    if (!formattedNoRawat || !rehabMedikAccess) {
+      return;
+    }
+
+    try {
+      setDeletingRehabMedik(true);
+      const params = new URLSearchParams({
+        username: currentUsername
+      });
+      const response = await fetch(
+        `${API_URLS.ASSESMEN_REHAB_MEDIK}/${encodeURIComponent(formattedNoRawat)}?${params.toString()}`,
+        {
+          method: 'DELETE'
+        }
+      );
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Assesmen rehab medik berhasil dihapus'
+      });
+
+      setRehabMedikForm(getDefaultRehabMedikForm());
+      await fetchRehabMedikData();
+    } catch (error) {
+      console.error('Error deleting assesmen rehab medik:', error);
+      const message = error instanceof Error ? error.message : 'Gagal menghapus assesmen rehab medik';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setDeletingRehabMedik(false);
+    }
+  }, [currentUsername, fetchRehabMedikData, formattedNoRawat, rehabMedikAccess, toast]);
+
   const fetchBalanceCairan = useCallback(async () => {
     if (!formattedNoRawat) {
       setBalanceCairanEntries([]);
@@ -3760,6 +4514,31 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     toast,
     user?.name
   ]);
+
+  useEffect(() => {
+    void fetchRehabMedikAccess();
+  }, [fetchRehabMedikAccess]);
+
+  useEffect(() => {
+    if (!formattedNoRawat) {
+      setRehabMedikForm(getDefaultRehabMedikForm());
+      setRehabMedikCurrentEntries([]);
+      setRehabMedikHistoryEntries([]);
+      return;
+    }
+
+    setRehabMedikForm(getDefaultRehabMedikForm());
+  }, [formattedNoRawat]);
+
+  useEffect(() => {
+    if (formattedNoRawat && rehabMedikAccess) {
+      void fetchRehabMedikData();
+      return;
+    }
+
+    setRehabMedikCurrentEntries([]);
+    setRehabMedikHistoryEntries([]);
+  }, [fetchRehabMedikData, formattedNoRawat, rehabMedikAccess]);
 
   useEffect(() => {
     if (formattedNoRawat) {
@@ -4453,6 +5232,40 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     toast({
       title: "Data Disalin",
       description: "TTV berhasil disalin ke form tambah pemeriksaan",
+    });
+  };
+
+  const handleCopyExaminationAll = (examination: any, rawatType: 'Ralan' | 'Ranap') => {
+    setActiveTab('examinations');
+    setIsExaminationFormOpen(true);
+
+    const shouldCopyIE = rawatType === 'Ranap';
+
+    setExaminationForm((prev) => ({
+      ...getDefaultExaminationForm(),
+      suhu: examination.suhu_tubuh || examination.suhu || '',
+      tensi: examination.tensi || examination.tekanan_darah || '',
+      nadi: examination.nadi || '',
+      respirasi: examination.respirasi || '',
+      tinggi: examination.tinggi || '',
+      berat: examination.berat || '',
+      spo2: examination.spo2 || '',
+      gcs: examination.gcs || '',
+      kesadaran: examination.kesadaran || '',
+      keluhan: examination.keluhan || examination.s || '',
+      pemeriksaan: examination.pemeriksaan || examination.o || '',
+      rtl: examination.rtl || examination.p || '',
+      penilaian: examination.penilaian || examination.a || '',
+      instruksi: shouldCopyIE ? (examination.instruksi || examination.i || '') : '',
+      evaluasi: shouldCopyIE ? (examination.evaluasi || examination.e || '') : '',
+      nip: examination.nip || examination.pegawai || prev.nip || ''
+    }));
+
+    setEditingExamination(null);
+
+    toast({
+      title: "Data Disalin",
+      description: "TTV dan SOAPIE berhasil disalin ke form tambah pemeriksaan",
     });
   };
 
@@ -5765,16 +6578,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <div className="flex justify-between items-start">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                             <div>
-                              <p className="text-sm text-muted-foreground">No. Rawat</p>
-                              <p className="font-medium">{visit.no_rawat}</p>
-                            </div>
-                            <div>
                               <p className="text-sm text-muted-foreground">Tanggal</p>
                               <p className="font-medium">{formatDateSafe(visit.tanggal)}</p>
                             </div>
                             <div>
                               <p className="text-sm text-muted-foreground">Poliklinik</p>
                               <p className="font-medium">{visit.poliklinik}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-muted-foreground">Diagnosa (ICD 10)</p>
+                              <p className="font-medium">{visit.diagnosa_icd10 || '-'}</p>
                             </div>
                             <div>
                               <p className="text-sm text-muted-foreground">Dokter</p>
@@ -5889,6 +6702,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+
+                        {renderVisitIcdDetails(visit)}
 
                         {/* Tindakan */}
                         <div className="border rounded-lg p-2">
@@ -6010,16 +6825,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <div className="flex justify-between items-start">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                             <div>
-                              <p className="text-sm text-muted-foreground">No. Rawat</p>
-                              <p className="font-medium">{visit.no_rawat}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Tanggal Masuk</p>
+                              <p className="text-sm text-muted-foreground">Tanggal</p>
                               <p className="font-medium">{formatDateSafe(visit.tanggal_masuk)}</p>
                             </div>
                             <div>
-                              <p className="text-sm text-muted-foreground">Ruangan</p>
-                              <p className="font-medium">{visit.ruangan}</p>
+                              <p className="text-sm text-muted-foreground">Poliklinik</p>
+                              <p className="font-medium">{visit.poliklinik}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-muted-foreground">Diagnosa (ICD 10)</p>
+                              <p className="font-medium">{visit.diagnosa_icd10 || '-'}</p>
                             </div>
                             <div>
                               <p className="text-sm text-muted-foreground">Dokter</p>
@@ -6142,6 +6957,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+
+                        {renderVisitIcdDetails(visit)}
 
                         {/* Tindakan */}
                         <div className="border rounded-lg p-2">
@@ -6673,9 +7490,32 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                   <TabsContent value="outpatient">
                     {isFocusedExaminationsLoaded ? (
-                      <div className="space-y-4">
-                        {renderExaminationCards(outpatientExaminationHistory)}
-                      </div>
+                      rehabMedikAccess ? (
+                        <Tabs
+                          value={outpatientExaminationSectionTab}
+                          onValueChange={(value) => setOutpatientExaminationSectionTab(value as OutpatientExaminationSectionTabValue)}
+                          className="space-y-4"
+                        >
+                          <TabsList>
+                            <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
+                            <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
+                          </TabsList>
+
+                          <TabsContent value="examinations" className="space-y-4">
+                            {renderExaminationRoleFilter()}
+                            {renderExaminationCards(filteredOutpatientExaminationHistory)}
+                          </TabsContent>
+
+                          <TabsContent value="rehab-medik" className="space-y-4">
+                            {renderRehabMedikSection()}
+                          </TabsContent>
+                        </Tabs>
+                      ) : (
+                        <div className="space-y-4">
+                          {renderExaminationRoleFilter()}
+                          {renderExaminationCards(filteredOutpatientExaminationHistory)}
+                        </div>
+                      )
                     ) : renderDeferredTabState('pemeriksaan')}
                   </TabsContent>
 
@@ -6689,10 +7529,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <TabsList>
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
                           <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
+                          {rehabMedikAccess && (
+                            <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
+                          )}
                         </TabsList>
 
                         <TabsContent value="examinations" className="space-y-4">
-                          {renderExaminationCards(inpatientExaminationHistory)}
+                          {renderExaminationRoleFilter()}
+                          {renderExaminationCards(filteredInpatientExaminationHistory)}
                         </TabsContent>
 
                         <TabsContent value="balance-cairan" className="space-y-4">
@@ -6871,6 +7715,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             </>
                           )}
                         </TabsContent>
+
+                        {rehabMedikAccess && (
+                          <TabsContent value="rehab-medik" className="space-y-4">
+                            {renderRehabMedikSection()}
+                          </TabsContent>
+                        )}
                       </Tabs>
                     ) : renderDeferredTabState('pemeriksaan')}
                   </TabsContent>
