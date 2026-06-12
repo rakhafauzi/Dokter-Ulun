@@ -249,11 +249,16 @@ class DoctorAiAssistantService {
     return this.applyPlanMessageDefaults(resolvedPlan, message);
   }
 
+  hasLatestKeyword(message = '') {
+    return /\b(terakhir|terbaru|latest)\b|paling akhir|paling baru|most recent/i.test(String(message || ''));
+  }
+
   applyPlanMessageDefaults(plan, message) {
     const normalizedMessage = String(message || '').toLowerCase();
     const normalizedPlan = {
       ...plan
     };
+    normalizedPlan.latestOnly = this.hasLatestKeyword(normalizedMessage);
 
     if (!normalizedPlan.targetDate && !normalizedPlan.startDate && !normalizedPlan.endDate) {
       if (/\bkemarin\b/.test(normalizedMessage)) {
@@ -956,6 +961,7 @@ Aturan wajib:
 - Jika user menyebut "pasien ini", "yang sama", atau sejenisnya, gunakan konteks aktif.
 - Jika user menyebut "tanggal yang sama", gunakan targetDate dari konteks aktif.
 - Jika user menyebut "hari ini", gunakan ${today}.
+- Jika user menyebut "terakhir", "terbaru", "paling akhir", "paling baru", "latest", atau "most recent", prioritaskan data paling baru. Gunakan ORDER BY tanggal DESC dan LIMIT 1 bila user meminta satu data terbaru.
 - Jika tidak bisa dijawab dengan dataset yang tersedia, kembalikan sql = null.
 
 Balas JSON saja dengan skema:
@@ -964,6 +970,7 @@ Balas JSON saja dengan skema:
   "params": ["..."],
   "answer": "penjelasan singkat alami untuk dokter",
   "followUp": ["saran 1", "saran 2"],
+  "latestOnly": true,
   "confidence": 0.0,
   "notes": "catatan singkat"
 }
@@ -994,6 +1001,7 @@ Balas JSON saja dengan skema:
         followUp: Array.isArray(parsed.followUp)
           ? parsed.followUp.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 6)
           : [],
+        latestOnly: Boolean(parsed.latestOnly) || this.hasLatestKeyword(message),
         confidence: Number(parsed.confidence || 0),
         notes: parsed.notes ? String(parsed.notes).trim() : ''
       };
@@ -1004,6 +1012,7 @@ Balas JSON saja dengan skema:
         params: [],
         answer: '',
         followUp: [],
+        latestOnly: this.hasLatestKeyword(message),
         confidence: 0,
         notes: 'Fallback to null because JSON parsing failed'
       };
@@ -1046,7 +1055,8 @@ Balas JSON saja dengan skema:
         targetDate: conversationContext.targetDate || null,
         startDate: conversationContext.startDate || null,
         endDate: conversationContext.endDate || null,
-        careType: conversationContext.careType || null
+        careType: conversationContext.careType || null,
+        latestOnly: Boolean(naturalPlan.latestOnly)
       },
       previousContext: conversationContext
     });
@@ -1219,6 +1229,7 @@ Skema JSON:
   "inpatientTab": "rawat-bersama | rawat-gabung | null",
   "inpatientStatus": "all | masih-dirawat | sudah-pulang | pindah-kamar | null",
   "resumeStatus": "all | belum_resume | sudah_resume | null",
+  "latestOnly": "boolean",
   "confidence": 0.0,
   "notes": "penjelasan singkat"
 }
@@ -1254,6 +1265,7 @@ Aturan:
 - Jika user menyebut "sudah pulang", isi inpatientStatus = "sudah-pulang".
 - Jika user menyebut "belum resume", isi resumeStatus = "belum_resume".
 - Jika user menyebut "sudah resume" atau "sudah ada resume", isi resumeStatus = "sudah_resume".
+- Jika user menyebut "terakhir", "terbaru", "paling akhir", "paling baru", "latest", atau "most recent", isi latestOnly = true.
 - Jika tanggal tidak jelas untuk lab atau radiologi, isi targetDate null.
 - Jika intent tidak jelas, pilih unsupported.
             `.trim()
@@ -1300,6 +1312,7 @@ Aturan:
         resumeStatus: ['belum_resume', 'sudah_resume', 'all'].includes(String(parsed.resumeStatus || '').toLowerCase())
           ? String(parsed.resumeStatus).toLowerCase()
           : null,
+        latestOnly: Boolean(parsed.latestOnly),
         confidence: Number(parsed.confidence || 0),
         notes: String(parsed.notes || '').trim()
       };
@@ -1317,17 +1330,91 @@ Aturan:
         inpatientTab: null,
         inpatientStatus: null,
         resumeStatus: null,
+        latestOnly: false,
         confidence: 0,
         notes: 'Fallback to unsupported because JSON parsing failed'
       };
     }
   }
 
-  buildRowsPayload(rows) {
-    const normalizedRows = Array.isArray(rows) ? rows : [];
+  getRowSortTimestamp(row = {}) {
+    const dateTimePairs = [
+      ['tanggal_resep', 'jam_resep'],
+      ['tgl_periksa', 'jam'],
+      ['tgl_masuk', 'jam_masuk'],
+      ['tgl_keluar', 'jam_keluar'],
+      ['tgl_registrasi', 'jam_reg'],
+      ['tanggal_op', null],
+      ['kunjungan_terakhir', null],
+      ['tgl_registrasi', null]
+    ];
+
+    for (const [dateKey, timeKey] of dateTimePairs) {
+      const dateValue = row?.[dateKey];
+      if (!dateValue) {
+        continue;
+      }
+
+      const normalizedDate = String(dateValue).trim();
+      const normalizedTime = timeKey && row?.[timeKey]
+        ? String(row[timeKey]).trim()
+        : '00:00:00';
+      const candidate = new Date(`${normalizedDate}T${normalizedTime}`);
+      const timestamp = candidate.getTime();
+
+      if (!Number.isNaN(timestamp)) {
+        return timestamp;
+      }
+    }
+
+    return null;
+  }
+
+  sortRowsLatestFirst(rows = []) {
+    if (!Array.isArray(rows) || rows.length <= 1) {
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    const rowsWithMeta = rows.map((row, index) => ({
+      row,
+      index,
+      timestamp: this.getRowSortTimestamp(row)
+    }));
+
+    const sortableRows = rowsWithMeta.filter((item) => item.timestamp !== null);
+    if (sortableRows.length === 0) {
+      return rows;
+    }
+
+    return [...rowsWithMeta]
+      .sort((left, right) => {
+        if (left.timestamp === null && right.timestamp === null) {
+          return left.index - right.index;
+        }
+
+        if (left.timestamp === null) {
+          return 1;
+        }
+
+        if (right.timestamp === null) {
+          return -1;
+        }
+
+        if (left.timestamp !== right.timestamp) {
+          return right.timestamp - left.timestamp;
+        }
+
+        return left.index - right.index;
+      })
+      .map((item) => item.row);
+  }
+
+  buildRowsPayload(rows, plan = {}) {
+    const normalizedRows = this.sortRowsLatestFirst(Array.isArray(rows) ? rows : []);
+    const finalRows = plan?.latestOnly ? normalizedRows.slice(0, 1) : normalizedRows;
     return {
-      rows: normalizedRows,
-      columns: normalizedRows.length > 0 ? Object.keys(normalizedRows[0]) : []
+      rows: finalRows,
+      columns: finalRows.length > 0 ? Object.keys(finalRows[0]) : []
     };
   }
 
@@ -1352,7 +1439,7 @@ Aturan:
   }
 
   buildResponse({ intent, answer, rows, sql, suggestions, plan, previousContext }) {
-    const payload = this.buildRowsPayload(rows);
+    const payload = this.buildRowsPayload(rows, plan);
     const context = this.buildContextPayload({
       rows: payload.rows,
       plan: plan || {},
