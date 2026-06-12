@@ -70,25 +70,124 @@ class GetMedicalRecordService {
 
   static formatIcd10DiagnosesSummary(rows = []) {
     const items = Array.isArray(rows) ? rows : [];
-    const formatted = items
+    const normalizedItems = items
       .filter(Boolean)
-      .map((row) => {
-        const code = String(row?.code || '').trim();
-        const description = String(row?.description || '').trim();
-        if (!code && !description) {
-          return '';
-        }
-        if (!description) {
-          return code;
-        }
-        if (!code) {
-          return description;
-        }
-        return `${code} - ${description}`;
-      })
-      .filter(Boolean);
+      .map((row) => ({
+        code: String(row?.code || '').trim(),
+        description: String(row?.description || '').trim(),
+        prioritas: Number(row?.prioritas || 0)
+      }))
+      .filter((row) => row.code || row.description);
 
-    return formatted.slice(0, 3).join(', ');
+    const primary = normalizedItems.find((row) => row.prioritas === 1) || normalizedItems[0];
+    if (!primary) {
+      return '';
+    }
+
+    if (!primary.description) {
+      return primary.code;
+    }
+    if (!primary.code) {
+      return primary.description;
+    }
+    return `${primary.code} - ${primary.description}`;
+  }
+
+  static async fetchIcdDetailsByNoRawat(noRawat, statusLanjut) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    if (!normalizedNoRawat) {
+      return { icd10: [], icd9: [], snomed: [] };
+    }
+
+    const normalizedStatus = String(statusLanjut || '').trim() === 'Ranap' ? 'Ranap' : 'Ralan';
+
+    const [icd10Rows, icd9Rows, snomedRows] = await Promise.all([
+      db.execute(
+        `
+          SELECT
+            dp.kd_penyakit,
+            COALESCE(p.nm_penyakit, '') AS nm_penyakit,
+            dp.prioritas,
+            COALESCE(dp.status_penyakit, '') AS status_penyakit,
+            COALESCE(msi.snomed_concept_id, '') AS snomed_concept_id,
+            COALESCE(msi.snomed_term, '') AS snomed_term
+          FROM diagnosa_pasien dp
+          LEFT JOIN penyakit p ON p.kd_penyakit = dp.kd_penyakit
+          LEFT JOIN mlite_mapping_snomed_icd msi
+            ON msi.no_rawat = dp.no_rawat
+            AND msi.kd_penyakit = dp.kd_penyakit
+          WHERE dp.no_rawat = ?
+            AND dp.status = ?
+          ORDER BY dp.prioritas ASC, dp.kd_penyakit ASC
+        `,
+        [normalizedNoRawat, normalizedStatus]
+      ),
+      db.execute(
+        `
+          SELECT
+            pp.kode,
+            COALESCE(i.deskripsi_panjang, '') AS deskripsi_panjang,
+            COALESCE(i.deskripsi_pendek, '') AS deskripsi_pendek,
+            pp.prioritas,
+            COALESCE(msi9.snomed_concept_id, '') AS snomed_concept_id,
+            COALESCE(msi9.snomed_term, '') AS snomed_term
+          FROM prosedur_pasien pp
+          LEFT JOIN icd9 i ON i.kode = pp.kode
+          LEFT JOIN mlite_mapping_snomed_icd9 msi9
+            ON msi9.no_rawat = pp.no_rawat
+            AND msi9.kd_tindakan = pp.kode
+          WHERE pp.no_rawat = ?
+            AND pp.status = ?
+          ORDER BY pp.prioritas ASC, pp.kode ASC
+        `,
+        [normalizedNoRawat, normalizedStatus]
+      ),
+      db.execute(
+        `
+          SELECT DISTINCT
+            x.snomed_concept_id,
+            x.snomed_term
+          FROM (
+            SELECT snomed_concept_id, snomed_term
+            FROM mlite_mapping_snomed_icd
+            WHERE no_rawat = ?
+            UNION ALL
+            SELECT snomed_concept_id, snomed_term
+            FROM mlite_mapping_snomed_icd9
+            WHERE no_rawat = ?
+          ) x
+          WHERE COALESCE(TRIM(x.snomed_concept_id), '') <> ''
+             OR COALESCE(TRIM(x.snomed_term), '') <> ''
+          ORDER BY COALESCE(x.snomed_term, ''), COALESCE(x.snomed_concept_id, '')
+        `,
+        [normalizedNoRawat, normalizedNoRawat]
+      )
+    ]);
+
+    const icd10 = (Array.isArray(icd10Rows?.[0]) ? icd10Rows[0] : []).map((row) => ({
+      kd_penyakit: String(row?.kd_penyakit || '').trim(),
+      nm_penyakit: String(row?.nm_penyakit || '').trim(),
+      prioritas: Number(row?.prioritas || 0),
+      status_penyakit: String(row?.status_penyakit || '').trim(),
+      snomed_concept_id: String(row?.snomed_concept_id || '').trim(),
+      snomed_term: String(row?.snomed_term || '').trim()
+    }));
+
+    const icd9 = (Array.isArray(icd9Rows?.[0]) ? icd9Rows[0] : []).map((row) => ({
+      kode: String(row?.kode || '').trim(),
+      deskripsi_panjang: String(row?.deskripsi_panjang || '').trim(),
+      deskripsi_pendek: String(row?.deskripsi_pendek || '').trim(),
+      prioritas: Number(row?.prioritas || 0),
+      snomed_concept_id: String(row?.snomed_concept_id || '').trim(),
+      snomed_term: String(row?.snomed_term || '').trim()
+    }));
+
+    const snomed = (Array.isArray(snomedRows?.[0]) ? snomedRows[0] : []).map((row) => ({
+      snomed_concept_id: String(row?.snomed_concept_id || '').trim(),
+      snomed_term: String(row?.snomed_term || '').trim()
+    }));
+
+    return { icd10, icd9, snomed };
   }
 
   static async fetchIcd10DiagnosesMap(noRawats = [], statusLanjut) {
@@ -1063,7 +1162,8 @@ class GetMedicalRecordService {
       laboratoryRequest,
       radiology,
       radiologyRequest,
-      icd10Map
+      icd10Map,
+      icdDetails
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ralan'),
       this.fetchProcedures(visit.no_rawat, 'ralan'),
@@ -1073,7 +1173,8 @@ class GetMedicalRecordService {
       this.fetchLaboratoryRequest(visit.no_rawat, 'ralan'),
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ralan'),
-      this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ralan')
+      this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ralan'),
+      this.fetchIcdDetailsByNoRawat(visit.no_rawat, 'Ralan')
     ]);
 
     return {
@@ -1081,6 +1182,7 @@ class GetMedicalRecordService {
       tanggal: this.formatDateOnly(visit.tgl_registrasi) + ' ' + visit.jam_reg,
       poliklinik: visit.nm_poli || '',
       diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
+      icd_details: icdDetails,
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ralan',
@@ -1109,7 +1211,8 @@ class GetMedicalRecordService {
       radiology,
       radiologyRequest,
       operationReports,
-      icd10Map
+      icd10Map,
+      icdDetails
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ranap'),
       this.fetchProcedures(visit.no_rawat, 'ranap'),
@@ -1122,7 +1225,8 @@ class GetMedicalRecordService {
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ranap'),
       this.fetchOperationReports(visit.no_rawat),
-      this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ranap')
+      this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ranap'),
+      this.fetchIcdDetailsByNoRawat(visit.no_rawat, 'Ranap')
     ]);
 
     return {
@@ -1133,6 +1237,7 @@ class GetMedicalRecordService {
       kamar: inpatientDetail?.kd_kamar || '',
       poliklinik: visit.nm_poli || '',
       diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
+      icd_details: icdDetails,
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ranap',

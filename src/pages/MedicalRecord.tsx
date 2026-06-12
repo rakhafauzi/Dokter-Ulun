@@ -2038,6 +2038,89 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       </div>
     );
   };
+  const renderVisitIcdDetails = (visit: any) => {
+    const icdDetails = visit?.icd_details || {};
+    const icd10Items = Array.isArray(icdDetails?.icd10) ? icdDetails.icd10 : [];
+    const icd9Items = Array.isArray(icdDetails?.icd9) ? icdDetails.icd9 : [];
+
+    const normalizePrioritas = (value: any) => {
+      const parsed = Number(value || 0);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const formatIcd9Text = (item: any) => {
+      const code = String(item?.kode || '').trim();
+      const desc = String(item?.deskripsi_panjang || item?.deskripsi_pendek || '').trim();
+      if (!code && !desc) {
+        return '-';
+      }
+      if (!desc) {
+        return code;
+      }
+      if (!code) {
+        return desc;
+      }
+      return `${code} - ${desc}`;
+    };
+
+    return (
+      <div className="border rounded-lg p-4 bg-muted/20">
+        <h3 className="text-lg font-semibold mb-3 flex items-center">
+          <FileText className="h-5 w-5 mr-2" />
+          ICD 10 / ICD 9 / SNOMED
+        </h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="rounded-lg border bg-background p-4">
+            <p className="text-sm font-semibold mb-2">ICD 10 (Diagnosa)</p>
+            {icd10Items.length === 0 ? (
+              <p className="text-sm text-muted-foreground">-</p>
+            ) : (
+              <div className="max-h-56 space-y-2 overflow-auto text-sm">
+                {icd10Items.map((item: any, index: number) => (
+                  <div key={`${item?.kd_penyakit || 'icd10'}-${index}`} className="rounded-md border bg-muted/10 px-3 py-2">
+                    <p className="font-medium">
+                      {normalizePrioritas(item?.prioritas) ? `${normalizePrioritas(item?.prioritas)}. ` : ''}
+                      {String(item?.kd_penyakit || '').trim() || '-'}
+                      {String(item?.nm_penyakit || '').trim() ? ` - ${String(item?.nm_penyakit || '').trim()}` : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {String(item?.status_penyakit || '').trim() ? `Status: ${String(item?.status_penyakit || '').trim()}` : '-'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      SNOMED: {String(item?.snomed_concept_id || '').trim() || '-'}
+                      {String(item?.snomed_term || '').trim() ? ` - ${String(item?.snomed_term || '').trim()}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border bg-background p-4">
+            <p className="text-sm font-semibold mb-2">ICD 9 (Prosedur)</p>
+            {icd9Items.length === 0 ? (
+              <p className="text-sm text-muted-foreground">-</p>
+            ) : (
+              <div className="max-h-56 space-y-2 overflow-auto text-sm">
+                {icd9Items.map((item: any, index: number) => (
+                  <div key={`${item?.kode || 'icd9'}-${index}`} className="rounded-md border bg-muted/10 px-3 py-2">
+                    <p className="font-medium">
+                      {normalizePrioritas(item?.prioritas) ? `${normalizePrioritas(item?.prioritas)}. ` : ''}
+                      {formatIcd9Text(item)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      SNOMED: {String(item?.snomed_concept_id || '').trim() || '-'}
+                      {String(item?.snomed_term || '').trim() ? ` - ${String(item?.snomed_term || '').trim()}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
   const renderMedicationCards = (items: any[], isRequestTab: boolean) => {
     if (items.length === 0) {
       return (
@@ -6586,6 +6669,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           </div>
                         </div>
 
+                        {renderVisitIcdDetails(visit)}
+
                         {/* Tindakan */}
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
@@ -6838,6 +6923,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+
+                        {renderVisitIcdDetails(visit)}
 
                         {/* Tindakan */}
                         <div className="border rounded-lg p-2">
