@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { API_CONFIG } from '@/config/api';
+import { loadNotificationPreferences } from '@/lib/notification-preferences';
 
 // Define user type
 interface User {
@@ -13,6 +14,10 @@ interface User {
   all_poli?: string[];
   jenis_poli?: string;
   jenis_poli_sore?: string;
+  jadwal_poli?: Array<{
+    kd_poli: string;
+    nm_poli: string;
+  }>;
   jk: 'L' | 'P';
   no_telp?: string;
 }
@@ -71,6 +76,7 @@ const loginApi = async (username: string, password: string): Promise<{token: str
           all_poli: data.user.all_poli || [],
           jenis_poli: data.user.jenis_poli || '',
           jenis_poli_sore: data.user.jenis_poli_sore || '',
+          jadwal_poli: data.user.jadwal_poli || [],
           jk: data.user.jk || 'L', // Default to 'L' if not provided
           no_telp: data.user.no_telp
         }
@@ -128,8 +134,22 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       const response = await loginApi(username, password);
       
       if (response && response.token && response.user) {
-        // For now, we'll require 2FA for all users
-        // In production, you might check user preferences or role-based requirements
+        const preferences = loadNotificationPreferences();
+        const requiresOTP = preferences.otpLogin !== false;
+
+        if (!requiresOTP) {
+          setToken(response.token);
+          setUser(response.user);
+          localStorage.setItem('auth-token', response.token);
+          localStorage.setItem('auth-user', JSON.stringify(response.user));
+          setLoading(false);
+
+          return {
+            success: true,
+            requiresOTP: false
+          };
+        }
+
         setLoading(false);
         
         // Get phone number from user data from mysql-auth function

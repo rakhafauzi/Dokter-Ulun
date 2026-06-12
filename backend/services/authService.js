@@ -155,4 +155,61 @@ export class AuthService {
       return false;
     }
   }
+
+  static async changePassword(username, currentPassword, newPassword) {
+    const normalizedUsername = String(username || '').trim();
+    const normalizedCurrentPassword = String(currentPassword || '');
+    const normalizedNewPassword = String(newPassword || '');
+
+    if (!normalizedUsername || !normalizedCurrentPassword || !normalizedNewPassword) {
+      throw new Error('Username, password lama, dan password baru wajib diisi');
+    }
+
+    if (normalizedNewPassword.length < 6) {
+      throw new Error('Password baru minimal 6 karakter');
+    }
+
+    try {
+      const sql = `
+        SELECT username, password
+        FROM mlite_users
+        WHERE username = ?
+        LIMIT 1
+      `;
+      const users = await executeQuery(sql, [normalizedUsername]);
+      const user = Array.isArray(users) ? users[0] : null;
+
+      if (!user) {
+        throw new Error('Pengguna tidak ditemukan');
+      }
+
+      const isPasswordValid = await this.verifyPassword(
+        normalizedCurrentPassword,
+        String(user.password || '')
+      );
+
+      if (!isPasswordValid) {
+        throw new Error('Password lama tidak sesuai');
+      }
+
+      const hashedPassword = bcrypt.hashSync(normalizedNewPassword, 10);
+
+      await executeQuery(
+        `
+          UPDATE mlite_users
+          SET password = ?
+          WHERE username = ?
+        `,
+        [hashedPassword, normalizedUsername]
+      );
+
+      return {
+        success: true,
+        message: 'Password berhasil diperbarui'
+      };
+    } catch (error) {
+      console.error('Change password error:', error);
+      throw error;
+    }
+  }
 }

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Bell, FlaskConical, Loader2, Menu, Pill, Radio, Search, User, LogOut } from 'lucide-react';
+import { Bell, BellOff, BellRing, FlaskConical, Loader2, Menu, Pill, Radio, Search, Settings as SettingsIcon, User, LogOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { API_URLS } from '@/config/api';
@@ -9,6 +9,12 @@ import logoImg from '@/assets/logo.png'; // Add this import
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import {
+  NOTIFICATION_PREFERENCES_CHANGED_EVENT,
+  type NotificationPreferences,
+  loadNotificationPreferences,
+  saveNotificationPreferences
+} from '@/lib/notification-preferences';
 
 interface HeaderProps {
   hospitalName: string;
@@ -48,16 +54,7 @@ interface DoctorNotificationSummary {
 }
 
 type NotificationTab = 'prescription' | 'laboratory' | 'radiology';
-
-const EMPTY_SUMMARY: DoctorNotificationSummary = {
-  active: 0,
-  menunggu: 0,
-  diproses: 0,
-  selesai: 0,
-  prescription: 0,
-  laboratory: 0,
-  radiology: 0
-};
+type NotificationFilter = 'all' | 'active' | 'ready';
 
 const formatNotificationTime = (value?: string) => {
   const normalized = String(value || '').trim();
@@ -128,6 +125,115 @@ const getTabLabel = (tab: NotificationTab) => {
   }
 };
 
+const getReadyFilterLabel = (tab: NotificationTab) => {
+  return tab === 'prescription' ? 'Selesai' : 'Hasil Siap';
+};
+
+const isResultReadyNotification = (item: DoctorNotificationItem) =>
+  (item.type === 'laboratory' || item.type === 'radiology') && item.status === 'selesai';
+
+const getNotificationPriorityScore = (item: DoctorNotificationItem) => {
+  if (isResultReadyNotification(item)) {
+    return 400;
+  }
+
+  if (item.status === 'menunggu') {
+    return item.type === 'prescription' ? 320 : 300;
+  }
+
+  if (item.status === 'diproses') {
+    return item.type === 'prescription' ? 230 : 220;
+  }
+
+  return item.type === 'prescription' ? 120 : 140;
+};
+
+const getNotificationPriorityLabel = (item: DoctorNotificationItem) => {
+  if (isResultReadyNotification(item)) {
+    return 'Hasil Siap';
+  }
+
+  if (item.status === 'menunggu') {
+    return 'Prioritas';
+  }
+
+  if (item.status === 'diproses') {
+    return 'Dipantau';
+  }
+
+  return '';
+};
+
+const sortNotificationsByPriority = (items: DoctorNotificationItem[]) => {
+  return [...items].sort((left, right) => {
+    const priorityGap = getNotificationPriorityScore(right) - getNotificationPriorityScore(left);
+    if (priorityGap !== 0) {
+      return priorityGap;
+    }
+
+    return new Date(right.result_at || right.processed_at || right.created_at || 0).getTime()
+      - new Date(left.result_at || left.processed_at || left.created_at || 0).getTime();
+  });
+};
+
+const getNotificationAccentClassName = (item: DoctorNotificationItem) => {
+  if (isResultReadyNotification(item)) {
+    return 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 focus:bg-emerald-100/70';
+  }
+
+  if (item.status === 'menunggu') {
+    return 'border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 focus:bg-amber-100/70';
+  }
+
+  if (item.status === 'diproses') {
+    return 'border-blue-200 bg-blue-50/60 hover:bg-blue-100/70 focus:bg-blue-100/70';
+  }
+
+  return 'border-transparent';
+};
+
+const getNotificationTimeText = (item: DoctorNotificationItem) => {
+  if (isResultReadyNotification(item)) {
+    return `Hasil ${formatNotificationTime(item.result_at || item.created_at)}`;
+  }
+
+  if (item.status === 'diproses' && (item.sampled_at || item.processed_at)) {
+    return `Diproses ${formatNotificationTime(item.sampled_at || item.processed_at)}`;
+  }
+
+  return `Masuk ${formatNotificationTime(item.created_at)}`;
+};
+
+const filterNotifications = (
+  items: DoctorNotificationItem[],
+  filter: NotificationFilter,
+  tab: NotificationTab
+) => {
+  if (filter === 'active') {
+    return items.filter((item) => item.status !== 'selesai');
+  }
+
+  if (filter === 'ready') {
+    if (tab === 'prescription') {
+      return items.filter((item) => item.status === 'selesai');
+    }
+
+    return items.filter((item) => isResultReadyNotification(item));
+  }
+
+  return items;
+};
+
+const buildNotificationSummary = (items: DoctorNotificationItem[]): DoctorNotificationSummary => ({
+  active: items.filter((item) => item.status !== 'selesai').length,
+  menunggu: items.filter((item) => item.status === 'menunggu').length,
+  diproses: items.filter((item) => item.status === 'diproses').length,
+  selesai: items.filter((item) => item.status === 'selesai').length,
+  prescription: items.filter((item) => item.type === 'prescription' && item.status !== 'selesai').length,
+  laboratory: items.filter((item) => item.type === 'laboratory' && item.status !== 'selesai').length,
+  radiology: items.filter((item) => item.type === 'radiology' && item.status !== 'selesai').length
+});
+
 const Header: React.FC<HeaderProps> = ({ 
   hospitalName, 
   isMobile = false, 
@@ -139,17 +245,103 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [notificationSummary, setNotificationSummary] = React.useState<DoctorNotificationSummary>(EMPTY_SUMMARY);
   const [notifications, setNotifications] = React.useState<DoctorNotificationItem[]>([]);
   const [notificationLoading, setNotificationLoading] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<NotificationTab>('prescription');
+  const [tabFilters, setTabFilters] = React.useState<Record<NotificationTab, NotificationFilter>>({
+    prescription: 'all',
+    laboratory: 'all',
+    radiology: 'all'
+  });
+  const [notificationPreferences, setNotificationPreferences] = React.useState<NotificationPreferences>(() => loadNotificationPreferences());
   const previousActiveSignatureRef = React.useRef('');
+  const previousResultReadySignatureRef = React.useRef('');
   const hasLoadedNotificationsRef = React.useRef(false);
   const fetchNotificationsRef = React.useRef<((showLoading?: boolean) => Promise<void>) | null>(null);
+  const audioContextRef = React.useRef<AudioContext | null>(null);
+  const soundEnabled = notificationPreferences.sound;
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handlePreferencesChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<NotificationPreferences | undefined>;
+      setNotificationPreferences(customEvent.detail || loadNotificationPreferences());
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key) {
+        setNotificationPreferences(loadNotificationPreferences());
+      }
+    };
+
+    window.addEventListener(NOTIFICATION_PREFERENCES_CHANGED_EVENT, handlePreferencesChanged as EventListener);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(NOTIFICATION_PREFERENCES_CHANGED_EVENT, handlePreferencesChanged as EventListener);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  const playNotificationSound = React.useCallback((variant: 'update' | 'lab-ready' | 'radiology-ready') => {
+    if (!soundEnabled || typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const audioWindow = window as Window & typeof globalThis & {
+        webkitAudioContext?: typeof AudioContext;
+      };
+      const AudioContextCtor = window.AudioContext || audioWindow.webkitAudioContext;
+
+      if (!AudioContextCtor) {
+        return;
+      }
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextCtor();
+      }
+
+      const context = audioContextRef.current;
+      if (context.state === 'suspended') {
+        void context.resume();
+      }
+
+      const tones =
+        variant === 'lab-ready'
+          ? [880, 1174]
+          : variant === 'radiology-ready'
+            ? [740, 988]
+            : [659, 784];
+      const startAt = context.currentTime + 0.02;
+
+      tones.forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gainNode = context.createGain();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, startAt + index * 0.18);
+
+        gainNode.gain.setValueAtTime(0.001, startAt + index * 0.18);
+        gainNode.gain.exponentialRampToValueAtTime(0.08, startAt + index * 0.18 + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, startAt + index * 0.18 + 0.16);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(context.destination);
+
+        oscillator.start(startAt + index * 0.18);
+        oscillator.stop(startAt + index * 0.18 + 0.18);
+      });
+    } catch (error) {
+      console.error('Unable to play notification sound:', error);
+    }
+  }, [soundEnabled]);
 
   React.useEffect(() => {
     if (!doctorId) {
-      setNotificationSummary(EMPTY_SUMMARY);
       setNotifications([]);
       return;
     }
@@ -179,14 +371,38 @@ const Header: React.FC<HeaderProps> = ({
           return;
         }
 
-        const nextSummary = responseJson?.summary || EMPTY_SUMMARY;
         const nextNotifications = Array.isArray(responseJson?.data) ? responseJson.data : [];
-        const nextActiveSignature = nextNotifications
+        const effectiveNextNotifications = nextNotifications.filter((item: DoctorNotificationItem) => notificationPreferences[item.type]);
+        const nextSummary = buildNotificationSummary(effectiveNextNotifications);
+        const nextActiveSignature = effectiveNextNotifications
           .filter((item: DoctorNotificationItem) => item.status !== 'selesai')
           .map((item: DoctorNotificationItem) => `${item.id}:${item.status}`)
           .join('|');
+        const nextResultReadySignature = effectiveNextNotifications
+          .filter((item: DoctorNotificationItem) => isResultReadyNotification(item))
+          .map((item: DoctorNotificationItem) => `${item.id}:${item.result_at || item.created_at}`)
+          .join('|');
+        const readyItems = effectiveNextNotifications.filter((item: DoctorNotificationItem) => isResultReadyNotification(item));
+        const latestReadyItem = readyItems[0];
 
-        if (
+        const hasNewResultReady =
+          hasLoadedNotificationsRef.current &&
+          nextResultReadySignature &&
+          nextResultReadySignature !== previousResultReadySignatureRef.current;
+
+        if (hasNewResultReady) {
+          const completedResults = nextNotifications.filter((item: DoctorNotificationItem) => isResultReadyNotification(item)).length;
+          const nextPreferredTab = latestReadyItem?.type === 'radiology' ? 'radiology' : 'laboratory';
+          toast.success(`Ada ${completedResults} hasil pemeriksaan siap dibaca`, {
+            description: 'Periksa tab Laboratorium atau Radiologi untuk hasil terbaru.'
+          });
+          setActiveTab(nextPreferredTab);
+          setTabFilters((previous) => ({
+            ...previous,
+            [nextPreferredTab]: 'ready'
+          }));
+          playNotificationSound(latestReadyItem?.type === 'radiology' ? 'radiology-ready' : 'lab-ready');
+        } else if (
           hasLoadedNotificationsRef.current &&
           nextActiveSignature &&
           nextActiveSignature !== previousActiveSignatureRef.current
@@ -194,11 +410,12 @@ const Header: React.FC<HeaderProps> = ({
           toast.info(`Ada pembaruan proses layanan: ${nextSummary.active} notifikasi aktif`, {
             description: 'Periksa proses resep, laboratorium, atau radiologi terbaru.'
           });
+          playNotificationSound('update');
         }
 
         previousActiveSignatureRef.current = nextActiveSignature;
+        previousResultReadySignatureRef.current = nextResultReadySignature;
         hasLoadedNotificationsRef.current = true;
-        setNotificationSummary(nextSummary);
         setNotifications(nextNotifications);
       } catch (error) {
         if (showLoading) {
@@ -221,9 +438,23 @@ const Header: React.FC<HeaderProps> = ({
     return () => {
       isMounted = false;
       fetchNotificationsRef.current = null;
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        void audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
       window.clearInterval(intervalId);
     };
-  }, [doctorId]);
+  }, [doctorId, notificationPreferences, playNotificationSound]);
+
+  const effectiveNotifications = React.useMemo(
+    () => notifications.filter((item) => notificationPreferences[item.type]),
+    [notificationPreferences, notifications]
+  );
+
+  const notificationSummary = React.useMemo(
+    () => buildNotificationSummary(effectiveNotifications),
+    [effectiveNotifications]
+  );
 
   const handleOpenNotification = (item: DoctorNotificationItem) => {
     if (!item.no_rkm_medis) {
@@ -238,18 +469,25 @@ const Header: React.FC<HeaderProps> = ({
   };
 
   const notificationsByTab = React.useMemo<Record<NotificationTab, DoctorNotificationItem[]>>(() => ({
-    prescription: notifications.filter((item) => item.type === 'prescription'),
-    laboratory: notifications.filter((item) => item.type === 'laboratory'),
-    radiology: notifications.filter((item) => item.type === 'radiology')
-  }), [notifications]);
+    prescription: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'prescription')),
+    laboratory: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'laboratory')),
+    radiology: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'radiology'))
+  }), [effectiveNotifications]);
 
-  const tabStats = React.useMemo<Record<NotificationTab, { total: number; menunggu: number; diproses: number; selesai: number; active: number }>>(() => {
+  const filteredNotificationsByTab = React.useMemo<Record<NotificationTab, DoctorNotificationItem[]>>(() => ({
+    prescription: filterNotifications(notificationsByTab.prescription, tabFilters.prescription, 'prescription'),
+    laboratory: filterNotifications(notificationsByTab.laboratory, tabFilters.laboratory, 'laboratory'),
+    radiology: filterNotifications(notificationsByTab.radiology, tabFilters.radiology, 'radiology')
+  }), [notificationsByTab, tabFilters]);
+
+  const tabStats = React.useMemo<Record<NotificationTab, { total: number; menunggu: number; diproses: number; selesai: number; active: number; readyResults: number }>>(() => {
     const buildStats = (items: DoctorNotificationItem[]) => ({
       total: items.length,
       menunggu: items.filter((item) => item.status === 'menunggu').length,
       diproses: items.filter((item) => item.status === 'diproses').length,
       selesai: items.filter((item) => item.status === 'selesai').length,
-      active: items.filter((item) => item.status !== 'selesai').length
+      active: items.filter((item) => item.status !== 'selesai').length,
+      readyResults: items.filter((item) => isResultReadyNotification(item)).length
     });
 
     return {
@@ -270,11 +508,16 @@ const Header: React.FC<HeaderProps> = ({
 
     return items.map((item) => {
       const TypeIcon = getNotificationTypeIcon(item.type);
+      const priorityLabel = getNotificationPriorityLabel(item);
+      const isResultReady = isResultReadyNotification(item);
 
       return (
         <React.Fragment key={item.id}>
           <DropdownMenuItem
-            className="block rounded-md px-3 py-3 cursor-pointer"
+            className={cn(
+              'block rounded-md border px-3 py-3 cursor-pointer',
+              getNotificationAccentClassName(item)
+            )}
             onClick={() => handleOpenNotification(item)}
           >
             <div className="flex items-start gap-3">
@@ -295,12 +538,27 @@ const Header: React.FC<HeaderProps> = ({
                     {item.status_label}
                   </span>
                 </div>
+                {priorityLabel ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className={cn(
+                      'rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide',
+                      isResultReady ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white'
+                    )}>
+                      {priorityLabel}
+                    </span>
+                    {isResultReady ? (
+                      <span className="text-[11px] font-medium text-emerald-700">
+                        Hasil pemeriksaan sudah tersedia
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
                   {item.description}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                   <span>No. RM {item.no_rkm_medis || '-'}</span>
-                  <span>{formatNotificationTime(item.created_at)}</span>
+                  <span>{getNotificationTimeText(item)}</span>
                 </div>
               </div>
             </div>
@@ -378,21 +636,48 @@ const Header: React.FC<HeaderProps> = ({
               <div className="px-4 py-3 border-b">
                 <div className="flex items-center justify-between gap-2">
                   <DropdownMenuLabel className="p-0">Notifikasi Proses</DropdownMenuLabel>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2"
-                    onClick={() => void fetchNotificationsRef.current?.(true)}
-                  >
-                    Refresh
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => {
+                        const nextPreferences = {
+                          ...notificationPreferences,
+                          sound: !notificationPreferences.sound
+                        };
+                        setNotificationPreferences(nextPreferences);
+                        saveNotificationPreferences(nextPreferences);
+                      }}
+                      aria-label={soundEnabled ? 'Matikan suara notifikasi' : 'Aktifkan suara notifikasi'}
+                    >
+                      {soundEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => void fetchNotificationsRef.current?.(true)}
+                    >
+                      Refresh
+                    </Button>
+                  </div>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Pantau proses peresepan, laboratorium, dan radiologi pasien Anda.
                 </p>
-                <div className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                  Total aktif: <span className="font-semibold">{notificationSummary.active}</span>
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  <span>
+                    Total aktif: <span className="font-semibold">{notificationSummary.active}</span>
+                  </span>
+                  <span className={cn(
+                    'rounded-full px-2 py-1 font-semibold',
+                    soundEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                  )}>
+                    {soundEnabled ? 'Suara ON' : 'Suara OFF'}
+                  </span>
                 </div>
               </div>
               <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as NotificationTab)} className="w-full">
@@ -436,14 +721,52 @@ const Header: React.FC<HeaderProps> = ({
                           <div>Selesai</div>
                         </div>
                       </div>
-                      <div className="px-2 pb-1 text-[11px] text-muted-foreground">
-                        {getTabLabel(tab)}: {tabStats[tab].total} item, {tabStats[tab].active} aktif
+                      <div className="flex items-center justify-between gap-2 px-2 pb-1 text-[11px] text-muted-foreground">
+                        <span>
+                          {getTabLabel(tab)}: {tabStats[tab].total} item, {tabStats[tab].active} aktif
+                        </span>
+                        {(tab === 'laboratory' || tab === 'radiology') && tabStats[tab].readyResults > 0 ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700">
+                            Hasil siap: {tabStats[tab].readyResults}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-2 px-2 pb-2">
+                        <Button
+                          type="button"
+                          variant={tabFilters[tab] === 'all' ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-[11px]"
+                          onClick={() => setTabFilters((previous) => ({ ...previous, [tab]: 'all' }))}
+                        >
+                          Semua
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={tabFilters[tab] === 'active' ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-[11px]"
+                          onClick={() => setTabFilters((previous) => ({ ...previous, [tab]: 'active' }))}
+                        >
+                          Aktif Saja
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={tabFilters[tab] === 'ready' ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-[11px]"
+                          onClick={() => setTabFilters((previous) => ({ ...previous, [tab]: 'ready' }))}
+                        >
+                          {getReadyFilterLabel(tab)}
+                        </Button>
                       </div>
                     </div>
                     <div className="max-h-[360px] overflow-y-auto p-2 pt-0">
                       {renderNotificationList(
-                        notificationsByTab[tab],
-                        `Belum ada notifikasi ${getTabLabel(tab).toLowerCase()}.`
+                        filteredNotificationsByTab[tab],
+                        notificationPreferences[tab]
+                          ? `Belum ada notifikasi ${getTabLabel(tab).toLowerCase()} untuk filter ini.`
+                          : `Notifikasi ${getTabLabel(tab).toLowerCase()} sedang dinonaktifkan di Pengaturan.`
                       )}
                     </div>
                   </TabsContent>
@@ -467,6 +790,11 @@ const Header: React.FC<HeaderProps> = ({
               <div className="px-2 py-1.5 text-sm font-medium">
                 {username || 'User'}
               </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate('/pengaturan')} className="cursor-pointer">
+                <SettingsIcon className="mr-2 h-4 w-4" />
+                <span>Pengaturan</span>
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onLogout} className="text-red-500 cursor-pointer">
                 <LogOut className="mr-2 h-4 w-4" />

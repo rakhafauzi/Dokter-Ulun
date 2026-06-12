@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, Phone } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Phone } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,12 +10,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { useToast } from '@/hooks/use-toast';
 import logoImg from '@/assets/logo.png';
+import { loadNotificationPreferences } from '@/lib/notification-preferences';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [showOTP, setShowOTP] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
@@ -24,6 +26,7 @@ const Login = () => {
   const { login, sendOTP, verifyOTP, completeLogin } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const otpLoginEnabled = React.useMemo(() => loadNotificationPreferences().otpLogin, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,6 +206,17 @@ const Login = () => {
             <p className="mt-2 opacity-80">
               {showOTP ? 'Verifikasi OTP WhatsApp' : 'Login to access your account'}
             </p>
+            {!showOTP ? (
+              <div className="mt-3 flex justify-center">
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  otpLoginEnabled
+                    ? 'bg-white/20 text-white'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {otpLoginEnabled ? 'OTP login aktif di perangkat ini' : 'OTP login nonaktif di perangkat ini'}
+                </span>
+              </div>
+            ) : null}
           </div>
           
           {!showOTP ? (
@@ -234,13 +248,24 @@ const Login = () => {
                   </div>
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10"
+                    className="pl-10 pr-11"
                     disabled={loading}
                   />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1 h-8 w-8"
+                    onClick={() => setShowPassword((previous) => !previous)}
+                    disabled={loading}
+                    aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </Button>
                 </div>
               </div>
               

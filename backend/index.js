@@ -318,6 +318,28 @@ app.post('/api/auth/verify-otp', async (req, res) => {
   }
 });
 
+app.post('/api/auth/change-password', async (req, res) => {
+  const { username, currentPassword, newPassword } = req.body;
+
+  if (!username || !currentPassword || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      error: 'Username, password lama, dan password baru wajib diisi'
+    });
+  }
+
+  try {
+    const result = await AuthService.changePassword(username, currentPassword, newPassword);
+    res.json(result);
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Gagal mengubah password'
+    });
+  }
+});
+
 // Dashboard data endpoint
 app.post('/api/dashboard-data', async (req, res) => {
   const { username, kd_poli } = req.body;
