@@ -734,6 +734,40 @@ const buildFocusedItems = <T,>(
     });
 };
 
+const buildFocusedLabItems = (
+  records: LabData[] = [],
+  noRawat: string,
+  source: string
+) => {
+  return (records || [])
+    .map((record, index) => {
+      const normalizedTanggal = String(record?.tanggal || '').trim();
+      const [datePart = '', timePart = '00:00'] = normalizedTanggal.split(' ');
+
+      return {
+        ...record,
+        no_rawat: noRawat,
+        source,
+        __datePart: datePart,
+        __timePart: timePart,
+        __index: index
+      };
+    })
+    .sort((a: any, b: any) => {
+      const dateCompare = String(b.__datePart || '').localeCompare(String(a.__datePart || ''));
+      if (dateCompare !== 0) {
+        return dateCompare;
+      }
+
+      const timeCompare = String(a.__timePart || '').localeCompare(String(b.__timePart || ''));
+      if (timeCompare !== 0) {
+        return timeCompare;
+      }
+
+      return (a.__index || 0) - (b.__index || 0);
+    });
+};
+
 interface MedicalRecordProps {
   noRkmMedis?: string;
   noRawat?: string;
@@ -1356,14 +1390,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [formattedNoRawat, medicalData?.focused_laboratory_request?.ranap, scopedInpatientVisits]);
   const outpatientLaboratoryHistory = React.useMemo(() => {
     if (formattedNoRawat) {
-      return buildFocusedItems(
-        medicalData?.focused_laboratory?.ralan || [],
+      return buildFocusedLabItems(
+        (medicalData?.focused_laboratory?.ralan || []) as LabData[],
         formattedNoRawat,
         'Rawat Jalan'
       );
     }
 
-    return buildFocusedItems(
+    return buildFocusedLabItems(
       scopedOutpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
       '',
       'Rawat Jalan'
@@ -1371,14 +1405,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [formattedNoRawat, medicalData?.focused_laboratory?.ralan, scopedOutpatientVisits]);
   const inpatientLaboratoryHistory = React.useMemo(() => {
     if (formattedNoRawat) {
-      return buildFocusedItems(
-        medicalData?.focused_laboratory?.ranap || [],
+      return buildFocusedLabItems(
+        (medicalData?.focused_laboratory?.ranap || []) as LabData[],
         formattedNoRawat,
         'Rawat Inap'
       );
     }
 
-    return buildFocusedItems(
+    return buildFocusedLabItems(
       scopedInpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
       '',
       'Rawat Inap'
@@ -2485,7 +2519,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     ));
   };
   const renderVisitLaboratoryHistory = (items: LabData[], noRawat: string, source: string) => {
-    const normalizedItems = buildFocusedItems(items || [], noRawat, source);
+    const normalizedItems = buildFocusedLabItems(items || [], noRawat, source);
     return renderLaboratoryHistoryCards(normalizedItems);
   };
   const renderRadiologyRequestCards = (items: any[]) => {

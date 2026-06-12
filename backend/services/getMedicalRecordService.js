@@ -885,7 +885,8 @@ class GetMedicalRecordService {
       LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
       WHERE pl.no_rawat = ?
         AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
-      ORDER BY pl.tgl_periksa, pl.jam, tl.Pemeriksaan
+        AND (jp.nm_perawatan IS NULL OR LOWER(jp.nm_perawatan) NOT LIKE '%mikrobiologi%')
+      ORDER BY pl.tgl_periksa DESC, pl.jam ASC, tl.Pemeriksaan ASC
     `;
     const [rows] = await db.execute(labQuery, [noRawat, status, status]);
     
