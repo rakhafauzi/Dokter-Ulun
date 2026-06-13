@@ -3,6 +3,20 @@ import db from '../config/database.js';
 class GetMedicalRecordService {
   static DEFAULT_LIMIT = 5;
 
+  static getIgdPoliCodes() {
+    const rawValue = String(process.env.IGD_POLI_CODES || '').trim();
+    const parsedCodes = rawValue
+      .split(',')
+      .map((code) => code.trim())
+      .filter(Boolean);
+
+    return parsedCodes.length ? parsedCodes : ['B0054', 'IGDK', 'IGD01'];
+  }
+
+  static isIgdVisitByKdPoli(kdPoli) {
+    return this.getIgdPoliCodes().includes(String(kdPoli || '').trim());
+  }
+
   static getEnvValue(key) {
     const upper = String(key || '').trim();
     if (!upper) {
@@ -615,6 +629,65 @@ class GetMedicalRecordService {
       e: row.evaluasi || '',
       pegawai: row.nama || ''
     }));
+  }
+
+  static async fetchTriageIgd(noRawat) {
+    const [rows] = await db.execute(
+      `
+        SELECT *
+        FROM data_triase_igd
+        WHERE no_rawat = ?
+        LIMIT 1
+      `,
+      [noRawat]
+    );
+
+    const triage = rows[0];
+    if (!triage) {
+      return null;
+    }
+
+    const [detailRows] = await db.execute(
+      `
+        SELECT
+          dpt.kd_tindakan,
+          COALESCE(mti.nm_tindakan, '') AS nm_tindakan,
+          COALESCE(mti.kd_level, '') AS kd_level,
+          COALESCE(mti.nm_level, '') AS nm_level
+        FROM detail_pemeriksaan_triase dpt
+        LEFT JOIN master_triase_igd mti ON mti.kd_tindakan = dpt.kd_tindakan
+        WHERE dpt.no_rawat = ?
+        ORDER BY mti.kd_level ASC, mti.nm_tindakan ASC
+      `,
+      [noRawat]
+    );
+
+    const primaryLevel = detailRows[0] || {};
+
+    return {
+      tanggal: triage.tanggal ? `${this.formatDateOnly(triage.tanggal)} ${triage.jam || ''}`.trim() : '',
+      namakasus: triage.namakasus || '',
+      stts_diantar: triage.stts_diantar || '',
+      transportasi: triage.transportasi || '',
+      stts_fungsional: triage.stts_fungsional || '',
+      psikologis: triage.psikologis || '',
+      stts_tinggal: triage.stts_tinggal || '',
+      keluhan_utama: triage.keluhan_utama || '',
+      riwayat_penyakit: triage.riwayat_penyakit || '',
+      saturasi: triage.saturasi || '',
+      periksafisik: triage.periksafisik || '',
+      skala_nyeri: triage.skala_nyeri || '',
+      resiko_jatuh: triage.resiko_jatuh || '',
+      diagnosis: triage.diagnosis || '',
+      tindakan: triage.tindakan || '',
+      keterangan: triage.keterangan || '',
+      kd_level: primaryLevel.kd_level || '',
+      nm_level: primaryLevel.nm_level || '',
+      tindakan_triase: detailRows.map((item) => ({
+        kd_tindakan: item.kd_tindakan || '',
+        nm_tindakan: item.nm_tindakan || ''
+      }))
+    };
   }
 
   static async fetchProcedures(noRawat, type) {
@@ -1250,28 +1323,34 @@ class GetMedicalRecordService {
   }
 
   static buildOutpatientVisitSummary(visit) {
+    const isIgdVisit = this.isIgdVisitByKdPoli(visit.kd_poli);
     return {
       no_rawat: visit.no_rawat,
       tanggal: this.formatDateOnly(visit.tgl_registrasi) + ' ' + visit.jam_reg,
+      kd_poli: visit.kd_poli || '',
       poliklinik: visit.nm_poli || '',
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ralan',
+      is_igd_visit: isIgdVisit,
       details_loaded: false
     };
   }
 
   static buildInpatientVisitSummary(visit, inpatientDetail) {
+    const isIgdVisit = this.isIgdVisitByKdPoli(visit.kd_poli);
     return {
       no_rawat: visit.no_rawat,
       tanggal_masuk: inpatientDetail ? this.formatDateOnly(inpatientDetail.tgl_masuk) + ' ' + inpatientDetail.jam_masuk : '',
       tanggal_keluar: inpatientDetail?.tgl_keluar ? this.formatDateOnly(inpatientDetail.tgl_keluar) + ' ' + inpatientDetail.jam_keluar : '',
       ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
       kamar: inpatientDetail?.kd_kamar || '',
+      kd_poli: visit.kd_poli || '',
       poliklinik: visit.nm_poli || '',
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ranap',
+      is_igd_visit: isIgdVisit,
       cara_keluar: inpatientDetail?.stts_pulang || '',
       diagnosa_akhir: inpatientDetail?.diagnosa_akhir || '',
       details_loaded: false
@@ -1279,6 +1358,7 @@ class GetMedicalRecordService {
   }
 
   static async buildOutpatientVisit(visit) {
+    const isIgdVisit = this.isIgdVisitByKdPoli(visit.kd_poli) || String(visit.status_lanjut || '').trim() === 'IGD';
     const [
       examinations,
       procedures,
@@ -1288,6 +1368,7 @@ class GetMedicalRecordService {
       laboratoryRequest,
       radiology,
       radiologyRequest,
+      triaseIgd,
       icd10Map,
       icdDetails
     ] = await Promise.all([
@@ -1299,6 +1380,7 @@ class GetMedicalRecordService {
       this.fetchLaboratoryRequest(visit.no_rawat, 'ralan'),
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ralan'),
+      isIgdVisit ? this.fetchTriageIgd(visit.no_rawat) : Promise.resolve(null),
       this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ralan'),
       this.fetchIcdDetailsByNoRawat(visit.no_rawat, 'Ralan')
     ]);
@@ -1306,12 +1388,14 @@ class GetMedicalRecordService {
     return {
       no_rawat: visit.no_rawat,
       tanggal: this.formatDateOnly(visit.tgl_registrasi) + ' ' + visit.jam_reg,
+      kd_poli: visit.kd_poli || '',
       poliklinik: visit.nm_poli || '',
       diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
       icd_details: icdDetails,
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ralan',
+      is_igd_visit: isIgdVisit,
       examinations,
       procedures,
       medicationsRequest,
@@ -1320,11 +1404,13 @@ class GetMedicalRecordService {
       laboratory,
       radiology,
       radiologyRequest,
+      triase_igd: triaseIgd,
       details_loaded: true
     };
   }
 
   static async buildInpatientVisit(visit, inpatientDetail) {
+    const isIgdVisit = this.isIgdVisitByKdPoli(visit.kd_poli);
     const [
       examinations,
       procedures,
@@ -1361,12 +1447,14 @@ class GetMedicalRecordService {
       tanggal_keluar: inpatientDetail?.tgl_keluar ? this.formatDateOnly(inpatientDetail.tgl_keluar) + ' ' + inpatientDetail.jam_keluar : '',
       ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
       kamar: inpatientDetail?.kd_kamar || '',
+      kd_poli: visit.kd_poli || '',
       poliklinik: visit.nm_poli || '',
       diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
       icd_details: icdDetails,
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ranap',
+      is_igd_visit: isIgdVisit,
       cara_keluar: inpatientDetail?.stts_pulang || '',
       diagnosa_akhir: inpatientDetail?.diagnosa_akhir || '',
       examinations,

@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -154,6 +155,40 @@ interface RehabMedikAssessment {
   kesimpulan: string;
   rekomendasi: string;
   suspek_penyakit: string;
+}
+
+interface IgdTriageMasterOption {
+  kd_level: string;
+  nm_level: string;
+  kd_tindakan: string;
+  nm_tindakan: string;
+}
+
+interface IgdTriageSelectedAction {
+  kd_tindakan: string;
+  nm_tindakan: string;
+}
+
+interface IgdTriageForm {
+  tgl_perawatan: string;
+  jam_rawat: string;
+  kd_level: string;
+  namakasus: string;
+  stts_diantar: string;
+  transportasi: string;
+  stts_fungsional: string;
+  psikologis: string;
+  stts_tinggal: string;
+  keluhan_utama: string;
+  riwayat_penyakit: string;
+  saturasi: string;
+  periksafisik: string;
+  skala_nyeri: string;
+  resiko_jatuh: string;
+  diagnosis: string;
+  tindakan: string;
+  keterangan: string;
+  selected_tindakan: string[];
 }
 
 interface RadiologyFormItem {
@@ -445,6 +480,27 @@ const getDefaultExaminationForm = () => ({
   nip: ''
 });
 
+const getDefaultIgdTriageForm = (): IgdTriageForm => ({
+  ...getCurrentExaminationDateTime(),
+  kd_level: '',
+  namakasus: 'Non Trauma',
+  stts_diantar: '',
+  transportasi: '',
+  stts_fungsional: '',
+  psikologis: 'Stabil',
+  stts_tinggal: '',
+  keluhan_utama: '',
+  riwayat_penyakit: '',
+  saturasi: '',
+  periksafisik: '',
+  skala_nyeri: '',
+  resiko_jatuh: '',
+  diagnosis: '',
+  tindakan: '',
+  keterangan: '',
+  selected_tindakan: []
+});
+
 const getDefaultRehabMedikForm = () => ({
   anamnesa: '',
   pemeriksaan_fisik: '',
@@ -486,6 +542,87 @@ const mapStatusLanjutToStatusRawat = (statusLanjut?: string | null) => {
   }
 
   return 'Ralan';
+};
+
+const igdCaseOptions = ['Non Trauma', 'Trauma'];
+const igdArrivalStatusOptions = ['Datang sendiri', 'Keluarga', 'Polisi', 'Petugas'];
+const igdTransportationOptions = ['Ambulans', 'Kursi roda', 'Brankar', 'Jalan kaki', 'Lainnya'];
+const igdFunctionalStatusOptions = ['Mandiri', 'Perlu bantuan', 'Ketergantungan total'];
+const igdPsychologicalStatusOptions = ['Stabil', 'Cemas', 'Gelisah', 'Depresi'];
+const igdLivingStatusOptions = ['Sendiri', 'Keluarga', 'Orang Tua', 'Wali', 'Lainnya'];
+
+const getIgdTriaseBadgeTone = (value: string) => {
+  switch ((value || '').toLowerCase()) {
+    case 'merah':
+      return 'red' as const;
+    case 'merah muda':
+      return 'pink' as const;
+    case 'kuning':
+      return 'amber' as const;
+    case 'hijau muda':
+      return 'lime' as const;
+    case 'hijau':
+      return 'green' as const;
+    case 'hitam':
+      return 'dark' as const;
+    default:
+      return 'green' as const;
+  }
+};
+
+const getIgdTriaseSectionToneByLevel = (value: string) => {
+  const normalizedValue = String(value || '').trim().toUpperCase();
+
+  switch (normalizedValue) {
+    case '1':
+    case 'KL01':
+    case 'LEVEL 1':
+      return 'red' as const;
+    case '2':
+    case 'KL02':
+    case 'LEVEL 2':
+      return 'pink' as const;
+    case '3':
+    case 'KL03':
+    case 'LEVEL 3':
+      return 'amber' as const;
+    case '4':
+    case 'KL04':
+    case 'LEVEL 4':
+      return 'lime' as const;
+    case '5':
+    case 'KL05':
+    case 'LEVEL 5':
+      return 'green' as const;
+    default:
+      return 'green' as const;
+  }
+};
+
+const igdTriaseSectionToneClasses: Record<
+  ReturnType<typeof getIgdTriaseSectionToneByLevel>,
+  { container: string; subtle: string }
+> = {
+  red: {
+    container: 'border-red-200 bg-red-50/70 text-red-900',
+    subtle: 'text-red-800'
+  },
+  pink: {
+    container: 'border-pink-200 bg-pink-50/70 text-pink-900',
+    subtle: 'text-pink-800'
+  },
+  amber: {
+    container: 'border-amber-200 bg-amber-50/70 text-amber-900',
+    subtle: 'text-amber-800'
+  },
+  lime: {
+    container: 'border-lime-200 bg-lime-50/70 text-lime-900',
+    subtle: 'text-lime-800'
+  },
+  green: {
+    container: 'border-green-200 bg-green-50/70 text-green-900',
+    subtle: 'text-green-800'
+  }
 };
 
 const mapPrescriptionSourceToStatus = (source?: string | null): PrescriptionStatus => {
@@ -817,23 +954,29 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [aiScribeResult, setAiScribeResult] = useState('');
   const { toast } = useToast();
   const { user } = useAuth();
-
-  const defaultExaminationStatusRawat = useMemo(() => {
-    const allVisits = [
+  const allVisits = useMemo(
+    () => [
       ...(medicalData?.outpatient_visits || []),
       ...(medicalData?.inpatient_visits || [])
-    ];
-    const focusedVisit = formattedNoRawat
-      ? allVisits.find((visit: any) => visit.no_rawat === formattedNoRawat)
-      : null;
+    ],
+    [medicalData?.inpatient_visits, medicalData?.outpatient_visits]
+  );
+  const focusedVisit = useMemo(
+    () => (
+      formattedNoRawat
+        ? allVisits.find((visit: any) => visit.no_rawat === formattedNoRawat) || null
+        : null
+    ),
+    [allVisits, formattedNoRawat]
+  );
+  const activeIgdTriageNoRawat = String(formattedNoRawat || '').trim();
 
+  const defaultExaminationStatusRawat = useMemo(() => {
     return mapStatusLanjutToStatusRawat(
       focusedVisit?.status_lanjut || medicalData?.patient?.status_lanjut
     );
   }, [
-    formattedNoRawat,
-    medicalData?.inpatient_visits,
-    medicalData?.outpatient_visits,
+    focusedVisit?.status_lanjut,
     medicalData?.patient?.status_lanjut
   ]);
   const preferredCareSectionTab = useMemo<CareSectionTabValue>(
@@ -937,6 +1080,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
   // Examination form states
   const [examinationForm, setExaminationForm] = useState(getDefaultExaminationForm);
+  const [igdTriageForm, setIgdTriageForm] = useState<IgdTriageForm>(getDefaultIgdTriageForm);
+  const [igdTriageMasterOptions, setIgdTriageMasterOptions] = useState<IgdTriageMasterOption[]>([]);
+  const [loadingIgdTriage, setLoadingIgdTriage] = useState(false);
+  const [savingIgdTriage, setSavingIgdTriage] = useState(false);
 
   const [fullscreenLabHistory, setFullscreenLabHistory] = useState<any | null>(null);
   const [draggingLab, setDraggingLab] = useState<LabData | null>(null);
@@ -956,6 +1103,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [isPackageFormOpen, setIsPackageFormOpen] = useState(false);
   const [isLabFormOpen, setIsLabFormOpen] = useState(false);
   const [isRadiologyFormOpen, setIsRadiologyFormOpen] = useState(false);
+  const [isIgdTriageFormOpen, setIsIgdTriageFormOpen] = useState(false);
   const [pacsPreviewModal, setPacsPreviewModal] = useState<{
     open: boolean;
     title: string;
@@ -1526,6 +1674,87 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     medicalData?.focused_radiology_request !== undefined && medicalData?.focused_radiology !== undefined
   );
   const currentUsername = String(user?.username || '').trim();
+  const shouldShowIgdTriageSection = Boolean(activeIgdTriageNoRawat && focusedVisit?.is_igd_visit);
+  const selectedIgdTriageOptions = useMemo(
+    () => igdTriageMasterOptions.filter((item) => item.kd_level === igdTriageForm.kd_level),
+    [igdTriageForm.kd_level, igdTriageMasterOptions]
+  );
+  const activeIgdTriageSectionTone = getIgdTriaseSectionToneByLevel(igdTriageForm.kd_level);
+  const activeIgdTriageSectionClasses = igdTriaseSectionToneClasses[activeIgdTriageSectionTone];
+  const applyIgdTriageForm = useCallback((triageData: any | null) => {
+    if (!triageData) {
+      setIgdTriageForm(getDefaultIgdTriageForm());
+      return;
+    }
+
+    setIgdTriageForm({
+      tgl_perawatan: String(triageData.tanggal || '').trim() || format(new Date(), 'yyyy-MM-dd'),
+      jam_rawat: String(triageData.jam || '').trim() || format(new Date(), 'HH:mm'),
+      kd_level: String(triageData.kd_level || '').trim(),
+      namakasus: String(triageData.namakasus || 'Non Trauma').trim() || 'Non Trauma',
+      stts_diantar: String(triageData.stts_diantar || '').replace(/,\s*$/, '').trim(),
+      transportasi: String(triageData.transportasi || '').replace(/,\s*$/, '').trim(),
+      stts_fungsional: String(triageData.stts_fungsional || '').replace(/,\s*$/, '').trim(),
+      psikologis: String(triageData.psikologis || 'Stabil').replace(/,\s*$/, '').trim() || 'Stabil',
+      stts_tinggal: String(triageData.stts_tinggal || '').trim(),
+      keluhan_utama: String(triageData.keluhan_utama || '').trim(),
+      riwayat_penyakit: String(triageData.riwayat_penyakit || '').trim(),
+      saturasi: String(triageData.saturasi || '').trim(),
+      periksafisik: String(triageData.periksafisik || '').trim(),
+      skala_nyeri: String(triageData.skala_nyeri || '').trim(),
+      resiko_jatuh: String(triageData.resiko_jatuh || '').trim(),
+      diagnosis: String(triageData.diagnosis || '').trim(),
+      tindakan: String(triageData.tindakan || '').trim(),
+      keterangan: String(triageData.keterangan || '').trim(),
+      selected_tindakan: Array.isArray(triageData.selected_tindakan)
+        ? triageData.selected_tindakan
+            .map((item: string | IgdTriageSelectedAction) => (
+              typeof item === 'string'
+                ? item
+                : String(item?.kd_tindakan || '').trim()
+            ))
+            .filter(Boolean)
+        : []
+    });
+  }, []);
+  const loadIgdTriageMaster = useCallback(async () => {
+    if (igdTriageMasterOptions.length > 0) {
+      return;
+    }
+
+    const response = await fetch(`${API_URLS.TRIAGE_IGD}/master`);
+    const responseJson = await response.json().catch(() => null);
+
+    if (!response.ok || !responseJson?.success) {
+      throw new Error(responseJson?.error || 'Gagal memuat master triase IGD');
+    }
+
+    setIgdTriageMasterOptions(Array.isArray(responseJson.data) ? responseJson.data : []);
+  }, [igdTriageMasterOptions.length]);
+  const loadIgdTriageDetail = useCallback(async (targetNoRawat: string) => {
+    const normalizedNoRawat = String(targetNoRawat || '').trim();
+    if (!normalizedNoRawat) {
+      setIgdTriageForm(getDefaultIgdTriageForm());
+      return;
+    }
+
+    setLoadingIgdTriage(true);
+    try {
+      const response = await fetch(`${API_URLS.TRIAGE_IGD}/${encodeURIComponent(normalizedNoRawat)}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || 'Gagal memuat detail triase IGD');
+      }
+
+      applyIgdTriageForm(responseJson.data || null);
+    } catch (error) {
+      console.error('Error loading triase IGD:', error);
+      applyIgdTriageForm(null);
+    } finally {
+      setLoadingIgdTriage(false);
+    }
+  }, [applyIgdTriageForm]);
   useEffect(() => {
     if (!editingExamination) {
       setStatusRawat(defaultExaminationStatusRawat);
@@ -1560,6 +1789,36 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       ));
     }
   }, [rehabMedikAccess]);
+  useEffect(() => {
+    if (!shouldShowIgdTriageSection) {
+      setIgdTriageForm(getDefaultIgdTriageForm());
+      setIsIgdTriageFormOpen(false);
+      return;
+    }
+
+    loadIgdTriageMaster().catch((error) => {
+      console.error('Error loading triase IGD master:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal memuat master triase IGD',
+        variant: 'destructive'
+      });
+    });
+
+    const targetNoRawat = activeIgdTriageNoRawat;
+    if (!targetNoRawat) {
+      setIgdTriageForm(getDefaultIgdTriageForm());
+      return;
+    }
+
+    loadIgdTriageDetail(targetNoRawat);
+  }, [
+    activeIgdTriageNoRawat,
+    loadIgdTriageDetail,
+    loadIgdTriageMaster,
+    shouldShowIgdTriageSection,
+    toast
+  ]);
   const matchesCurrentUser = (...values: Array<string | null | undefined>) =>
     Boolean(
       currentUsername &&
@@ -2200,6 +2459,102 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             )}
           </div>
         </div>
+      </div>
+    );
+  };
+  const renderVisitIgdTriageDetails = (visit: any) => {
+    const triage = visit?.triase_igd;
+    if (!triage) {
+      return null;
+    }
+
+    const triageActions = Array.isArray(triage.tindakan_triase) ? triage.tindakan_triase : [];
+
+    return (
+      <div className="border rounded-lg p-4 bg-amber-50/40">
+        <h3 className="text-lg font-semibold mb-3 flex items-center">
+          <BadgeAlert className="h-5 w-5 mr-2" />
+          Triase IGD
+        </h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Waktu Triase</span>
+              <span className="font-medium text-right">{triage.tanggal || '-'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Level</span>
+              <span className="font-medium text-right">{triage.nm_level || triage.kd_level || '-'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Jenis Kasus</span>
+              <span className="font-medium text-right">{triage.namakasus || '-'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Status Diantar</span>
+              <span className="font-medium text-right">{triage.stts_diantar || '-'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Transportasi</span>
+              <span className="font-medium text-right">{triage.transportasi || '-'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Status Fungsional</span>
+              <span className="font-medium text-right">{triage.stts_fungsional || '-'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Psikologis</span>
+              <span className="font-medium text-right">{triage.psikologis || '-'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Saturasi</span>
+              <span className="font-medium text-right">{triage.saturasi || '-'}</span>
+            </div>
+          </div>
+          <div className="space-y-3 text-sm">
+            <div>
+              <p className="font-medium">Keluhan Utama</p>
+              <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(triage.keluhan_utama)}</p>
+            </div>
+            <div>
+              <p className="font-medium">Riwayat Penyakit</p>
+              <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(triage.riwayat_penyakit)}</p>
+            </div>
+            <div>
+              <p className="font-medium">Pemeriksaan Fisik</p>
+              <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(triage.periksafisik)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <p className="text-sm font-medium">Skala Nyeri</p>
+            <p className="text-sm text-muted-foreground">{triage.skala_nyeri || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-medium">Risiko Jatuh</p>
+            <p className="text-sm text-muted-foreground">{triage.resiko_jatuh || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-medium">Diagnosis Awal</p>
+            <p className="text-sm text-muted-foreground">{triage.diagnosis || '-'}</p>
+          </div>
+        </div>
+        {triageActions.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-sm font-medium mb-2">Tindakan Triase</p>
+            <div className="flex flex-wrap gap-2">
+              {triageActions.map((item: IgdTriageSelectedAction, index: number) => (
+                <span
+                  key={`${item.kd_tindakan || index}`}
+                  className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-800"
+                >
+                  {item.nm_tindakan || item.kd_tindakan}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -2928,7 +3283,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           (formattedNoRawat && responseData.inpatient_visits?.some((visit: any) => visit.no_rawat === formattedNoRawat))
             ? 'Ranap'
             : (formattedNoRawat && responseData.outpatient_visits?.some((visit: any) => visit.no_rawat === formattedNoRawat))
-              ? 'Ralan'
+                ? 'Ralan'
               : undefined;
         setStatusRawat(focusedVisitStatus || mapStatusLanjutToStatusRawat(responseData.patient?.status_lanjut));
       } else {
@@ -5316,8 +5671,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setEditingExamination({
       ...examination,
       no_rawat: visit.no_rawat,
-      status_lanjut: visit.status_lanjut
+      status_lanjut: visit.status_lanjut,
+      is_igd_visit: Boolean(visit.is_igd_visit)
     });
+    setStatusRawat(mapStatusLanjutToStatusRawat(visit.status_lanjut));
     
     setExaminationForm({
       tgl_perawatan: examination.tgl_perawatan || '',
@@ -6486,6 +6843,70 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       });
     }
   };
+  const handleSaveIgdTriage = async () => {
+    const normalizedNoRawat = activeIgdTriageNoRawat;
+    if (!normalizedNoRawat) {
+      toast({
+        title: 'No. Rawat belum tersedia',
+        description: 'Pilih kunjungan pasien IGD terlebih dahulu sebelum menyimpan triase.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const normalizedTime = igdTriageForm.jam_rawat
+      ? igdTriageForm.jam_rawat.split(':').length === 2
+        ? `${igdTriageForm.jam_rawat}:00`
+        : igdTriageForm.jam_rawat
+      : '';
+
+    try {
+      setSavingIgdTriage(true);
+
+      const response = await fetch(API_URLS.TRIAGE_IGD, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rawat: normalizedNoRawat,
+          tanggal: igdTriageForm.tgl_perawatan,
+          jam: normalizedTime,
+          kd_dokter: currentUsername,
+          kd_petugas: currentUsername,
+          tinggi: examinationForm.tinggi,
+          berat: examinationForm.berat,
+          ...igdTriageForm
+        })
+      });
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.details ||
+          responseJson?.error ||
+          'Gagal menyimpan Triase IGD'
+        );
+      }
+
+      toast({
+        title: 'Berhasil',
+        description: 'Data Triase IGD berhasil disimpan'
+      });
+      setIsIgdTriageFormOpen(false);
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+      await loadIgdTriageDetail(normalizedNoRawat);
+    } catch (error) {
+      console.error('Error saving triase IGD:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal menyimpan Triase IGD',
+        variant: 'destructive'
+      });
+    } finally {
+      setSavingIgdTriage(false);
+    }
+  };
 
   const currentPatient = medicalData?.patient || {
     nama: "",
@@ -6790,6 +7211,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </div>
                       ) : visit.details_loaded ? (
                       <div className="space-y-6">
+                        {renderVisitIgdTriageDetails(visit)}
+
                         {/* Pemeriksaan */}
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
@@ -7037,6 +7460,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </div>
                       ) : visit.details_loaded ? (
                       <div className="space-y-6">
+                        {renderVisitIgdTriageDetails(visit)}
+
                         {/* Pemeriksaan */}
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
@@ -7338,6 +7763,393 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 </div>
               )}
 
+              {shouldShowIgdTriageSection && (
+                <Collapsible open={isIgdTriageFormOpen} onOpenChange={setIsIgdTriageFormOpen}>
+                  <div className={cn(
+                    "border rounded-lg p-4 mb-6 transition-colors",
+                    activeIgdTriageSectionClasses.container
+                  )}>
+                    <CollapsibleTrigger asChild>
+                      <button className="w-full flex items-center justify-between text-lg font-semibold mb-4 hover:text-primary transition-colors">
+                        <div className="flex items-center">
+                          <BadgeAlert className="h-5 w-5 mr-2" />
+                          Form Triase IGD
+                        </div>
+                        {isIgdTriageFormOpen ? (
+                          <ChevronUp className="h-5 w-5 transition-transform duration-200" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5 transition-transform duration-200" />
+                        )}
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-4 animate-accordion-down">
+                      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className={cn("text-sm", activeIgdTriageSectionClasses.subtle)}>
+                            Form triase terpisah untuk kunjungan pasien IGD. Status rawat pemeriksaan tetap mengikuti `Ralan`.
+                          </p>
+                          <p className={cn("text-xs", activeIgdTriageSectionClasses.subtle)}>
+                            No. Rawat: {activeIgdTriageNoRawat || '-'}
+                          </p>
+                        </div>
+                        {loadingIgdTriage ? (
+                          <p className={cn("text-xs", activeIgdTriageSectionClasses.subtle)}>Memuat data triase...</p>
+                        ) : null}
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                        <div>
+                          <Label htmlFor="triase-tgl-perawatan">Tanggal Triase</Label>
+                          <DatePickerPopover
+                            triggerId="triase-tgl-perawatan"
+                            mode="single"
+                            selected={igdTriageForm.tgl_perawatan ? new Date(igdTriageForm.tgl_perawatan) : undefined}
+                            onSelect={(date) => setIgdTriageForm((prev) => ({
+                              ...prev,
+                              tgl_perawatan: date ? format(date, "yyyy-MM-dd") : ""
+                            }))}
+                            displayValue={igdTriageForm.tgl_perawatan ? format(new Date(igdTriageForm.tgl_perawatan), "dd/MM/yyyy") : undefined}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-jam-rawat">Jam Triase</Label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="w-full justify-start text-left font-normal">
+                                <Clock className="mr-2 h-4 w-4" />
+                                {igdTriageForm.jam_rawat || "Pilih jam"}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <div className="p-3">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <Label className="text-xs">Jam</Label>
+                                    <Select
+                                      value={igdTriageForm.jam_rawat?.split(':')[0] || ''}
+                                      onValueChange={(hour) => {
+                                        const minute = igdTriageForm.jam_rawat?.split(':')[1] || '00';
+                                        setIgdTriageForm((prev) => ({ ...prev, jam_rawat: `${hour}:${minute}` }));
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8">
+                                        <SelectValue placeholder="Jam" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {Array.from({length: 24}, (_, i) => (
+                                          <SelectItem key={i} value={String(i).padStart(2, '0')}>
+                                            {String(i).padStart(2, '0')}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Menit</Label>
+                                    <Select
+                                      value={igdTriageForm.jam_rawat?.split(':')[1] || ''}
+                                      onValueChange={(minute) => {
+                                        const hour = igdTriageForm.jam_rawat?.split(':')[0] || '00';
+                                        setIgdTriageForm((prev) => ({ ...prev, jam_rawat: `${hour}:${minute}` }));
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8">
+                                        <SelectValue placeholder="Menit" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {Array.from({length: 60}, (_, i) => (
+                                          <SelectItem key={i} value={String(i).padStart(2, '0')}>
+                                            {String(i).padStart(2, '0')}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-level">Level Triase</Label>
+                          <Select
+                            value={igdTriageForm.kd_level}
+                            onValueChange={(value) => setIgdTriageForm((prev) => ({
+                              ...prev,
+                              kd_level: value,
+                              selected_tindakan: []
+                            }))}
+                          >
+                            <SelectTrigger id="triase-level">
+                              <SelectValue placeholder="Pilih level triase" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from(new Map(
+                                igdTriageMasterOptions.map((item) => [item.kd_level, item])
+                              ).values()).map((level) => (
+                                <SelectItem key={level.kd_level} value={level.kd_level}>
+                                  {level.nm_level}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-namakasus">Jenis Kasus</Label>
+                          <Select
+                            value={igdTriageForm.namakasus}
+                            onValueChange={(value) => setIgdTriageForm((prev) => ({ ...prev, namakasus: value }))}
+                          >
+                            <SelectTrigger id="triase-namakasus">
+                              <SelectValue placeholder="Pilih jenis kasus" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {igdCaseOptions.map((option) => (
+                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div>
+                          <Label htmlFor="triase-skala-nyeri">Skala Nyeri</Label>
+                          <Input
+                            id="triase-skala-nyeri"
+                            placeholder="0-10"
+                            value={igdTriageForm.skala_nyeri}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, skala_nyeri: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-diantar">Status Diantar</Label>
+                          <Select
+                            value={igdTriageForm.stts_diantar}
+                            onValueChange={(value) => setIgdTriageForm((prev) => ({ ...prev, stts_diantar: value }))}
+                          >
+                            <SelectTrigger id="triase-diantar">
+                              <SelectValue placeholder="Pilih status diantar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {igdArrivalStatusOptions.map((option) => (
+                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-transportasi">Transportasi</Label>
+                          <Select
+                            value={igdTriageForm.transportasi}
+                            onValueChange={(value) => setIgdTriageForm((prev) => ({ ...prev, transportasi: value }))}
+                          >
+                            <SelectTrigger id="triase-transportasi">
+                              <SelectValue placeholder="Pilih transportasi" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {igdTransportationOptions.map((option) => (
+                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-fungsional">Status Fungsional</Label>
+                          <Select
+                            value={igdTriageForm.stts_fungsional}
+                            onValueChange={(value) => setIgdTriageForm((prev) => ({ ...prev, stts_fungsional: value }))}
+                          >
+                            <SelectTrigger id="triase-fungsional">
+                              <SelectValue placeholder="Pilih status fungsional" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {igdFunctionalStatusOptions.map((option) => (
+                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-psikologis">Status Psikologis</Label>
+                          <Select
+                            value={igdTriageForm.psikologis}
+                            onValueChange={(value) => setIgdTriageForm((prev) => ({ ...prev, psikologis: value }))}
+                          >
+                            <SelectTrigger id="triase-psikologis">
+                              <SelectValue placeholder="Pilih status psikologis" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {igdPsychologicalStatusOptions.map((option) => (
+                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-tinggal">Status Tinggal</Label>
+                          <Select
+                            value={igdTriageForm.stts_tinggal}
+                            onValueChange={(value) => setIgdTriageForm((prev) => ({ ...prev, stts_tinggal: value }))}
+                          >
+                            <SelectTrigger id="triase-tinggal">
+                              <SelectValue placeholder="Pilih status tinggal" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {igdLivingStatusOptions.map((option) => (
+                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-saturasi">Saturasi Oksigen (%)</Label>
+                          <Input
+                            id="triase-saturasi"
+                            placeholder="98"
+                            value={igdTriageForm.saturasi}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, saturasi: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-resiko-jatuh">Risiko Jatuh</Label>
+                          <Input
+                            id="triase-resiko-jatuh"
+                            placeholder="Contoh: Dewasa (skala morse)"
+                            value={igdTriageForm.resiko_jatuh}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, resiko_jatuh: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                          <Label htmlFor="triase-keluhan-utama">Keluhan Utama</Label>
+                          <Textarea
+                            id="triase-keluhan-utama"
+                            placeholder="Keluhan utama pasien saat datang ke IGD"
+                            value={igdTriageForm.keluhan_utama}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, keluhan_utama: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-riwayat-penyakit">Riwayat Penyakit</Label>
+                          <Textarea
+                            id="triase-riwayat-penyakit"
+                            placeholder="Riwayat penyakit yang relevan"
+                            value={igdTriageForm.riwayat_penyakit}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, riwayat_penyakit: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-periksa-fisik">Pemeriksaan Fisik Triase</Label>
+                          <Textarea
+                            id="triase-periksa-fisik"
+                            placeholder="Temuan pemeriksaan fisik awal"
+                            value={igdTriageForm.periksafisik}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, periksafisik: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-keterangan">Keterangan Tambahan</Label>
+                          <Textarea
+                            id="triase-keterangan"
+                            placeholder="Keterangan tambahan triase"
+                            value={igdTriageForm.keterangan}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, keterangan: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                          <Label htmlFor="triase-diagnosis">Diagnosis Awal</Label>
+                          <Input
+                            id="triase-diagnosis"
+                            placeholder="Diagnosis awal triase"
+                            value={igdTriageForm.diagnosis}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, diagnosis: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="triase-tindakan">Tindakan Awal</Label>
+                          <Input
+                            id="triase-tindakan"
+                            placeholder="Tindakan awal yang dilakukan"
+                            value={igdTriageForm.tindakan}
+                            onChange={(e) => setIgdTriageForm((prev) => ({ ...prev, tindakan: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <Label>Tindakan Triase</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Pilih tindakan berdasarkan level triase yang aktif.
+                          </p>
+                        </div>
+                        {igdTriageForm.kd_level ? (
+                          selectedIgdTriageOptions.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              {selectedIgdTriageOptions.map((option) => {
+                                const checked = igdTriageForm.selected_tindakan.includes(option.kd_tindakan);
+
+                                return (
+                                  <label
+                                    key={option.kd_tindakan}
+                                    className="flex items-start gap-3 rounded-md border bg-white p-3 text-sm"
+                                  >
+                                    <Checkbox
+                                      checked={checked}
+                                      onCheckedChange={(value) => setIgdTriageForm((prev) => ({
+                                        ...prev,
+                                        selected_tindakan: value
+                                          ? [...prev.selected_tindakan, option.kd_tindakan]
+                                          : prev.selected_tindakan.filter((item) => item !== option.kd_tindakan)
+                                      }))}
+                                    />
+                                    <div>
+                                      <p className="font-medium">{option.nm_tindakan}</p>
+                                      <p className="text-xs text-muted-foreground">{option.kd_tindakan}</p>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                              Belum ada tindakan triase aktif untuk level ini.
+                            </div>
+                          )
+                        ) : (
+                          <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                            Pilih level triase terlebih dahulu.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setIgdTriageForm(getDefaultIgdTriageForm())}
+                        >
+                          Reset Triase
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={handleSaveIgdTriage}
+                          disabled={savingIgdTriage || loadingIgdTriage}
+                        >
+                          {savingIgdTriage ? 'Menyimpan...' : 'Simpan Triase'}
+                        </Button>
+                      </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              )}
+
               {/* Form Tambah Pemeriksaan */}
               <Collapsible open={isExaminationFormOpen} onOpenChange={setIsExaminationFormOpen}>
                 <div className="border rounded-lg p-4 mb-6 bg-muted/30">
@@ -7444,7 +8256,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                      </Select>
                    </div>
                  </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                   {/* Tanda Vital */}
                   <div className="space-y-4">

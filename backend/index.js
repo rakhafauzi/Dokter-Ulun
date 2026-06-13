@@ -35,6 +35,7 @@ import PrescriptionDataService from './services/prescriptionDataService.js';
 import RadiologyDataService from './services/radiologyDataService.js';
 import ResumePasienDataService from './services/resumePasienDataService.js';
 import SaveExaminationService from './services/saveExaminationService.js';
+import TriageIgdService from './services/triageIgdService.js';
 import WhatsappOtpService from './services/whatsappOtpService.js';
 import statisticsDataRoutes from './routes/statisticsData.js';
 import updateExaminationRoute from './routes/updateExamination.js';
@@ -149,6 +150,45 @@ app.post('/api/save-examination', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+});
+
+app.get('/api/triase-igd/master', async (_req, res) => {
+  try {
+    const result = await TriageIgdService.getMasterOptions();
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error fetching triase IGD master:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal mengambil master triase IGD'
+    });
+  }
+});
+
+app.get('/api/triase-igd/:no_rawat', async (req, res) => {
+  try {
+    const result = await TriageIgdService.getTriageByNoRawat(req.params.no_rawat);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error fetching triase IGD detail:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal mengambil detail triase IGD'
+    });
+  }
+});
+
+app.post('/api/triase-igd', async (req, res) => {
+  try {
+    const result = await TriageIgdService.saveTriage(req.body || {});
+    res.json(result);
+  } catch (error) {
+    console.error('Error saving triase IGD:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal menyimpan triase IGD'
     });
   }
 });
