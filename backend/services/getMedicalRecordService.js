@@ -236,11 +236,19 @@ class GetMedicalRecordService {
   static async resolveMedicationStockBangsalCode(noRawat, status) {
     const normalizedStatus = String(status || '').trim().toLowerCase();
 
+    if (normalizedStatus === 'ibs') {
+      return this.getEnvValue('STOK_RESEP_IBS');
+    }
+
+    if (normalizedStatus === 'pulang') {
+      return this.getEnvValue('STOK_RESEP_RANAP');
+    }
+
     if (normalizedStatus === 'ranap') {
       return this.getEnvValue('STOK_RESEP_RANAP');
     }
 
-    if (normalizedStatus === 'pulang' || normalizedStatus === 'ibs' || normalizedStatus === 'ralan') {
+    if (normalizedStatus === 'ralan') {
       const [rows] = await db.execute(
         `
           SELECT kd_poli
@@ -260,6 +268,81 @@ class GetMedicalRecordService {
     }
 
     return '';
+  }
+
+  static async findMatchingMedicationPackage(prescriptionItems = []) {
+    const normalizedItems = (Array.isArray(prescriptionItems) ? prescriptionItems : [])
+      .map((item) => ({
+        kode_brng: String(item?.kode_brng || '').trim(),
+        jumlah: String(item?.jumlah ?? item?.jml ?? '').trim(),
+        aturan_pakai: String(item?.aturan_pakai || '').trim()
+      }))
+      .filter((item) => item.kode_brng);
+
+    if (!normalizedItems.length) {
+      return null;
+    }
+
+    const uniqueCodes = Array.from(new Set(normalizedItems.map((item) => item.kode_brng)));
+    const placeholders = uniqueCodes.map(() => '?').join(', ');
+    const [rows] = await db.execute(
+      `
+        SELECT
+          ept.id_paket,
+          ept.kd_obat,
+          ept.jumlah,
+          ept.aturan_pakai,
+          epo.kd_paket,
+          epo.nama_paket
+        FROM eresep_paket_operasi_template ept
+        INNER JOIN eresep_paket_operasi epo ON epo.id = ept.id_paket
+        WHERE epo.status = '1'
+          AND ept.kd_obat IN (${placeholders})
+      `,
+      uniqueCodes
+    );
+
+    const packageMap = new Map();
+    rows.forEach((row) => {
+      const key = String(row?.id_paket || '').trim();
+      if (!key) {
+        return;
+      }
+      const existing = packageMap.get(key) || {
+        id_paket: key,
+        kd_paket: String(row?.kd_paket || '').trim(),
+        nama_paket: String(row?.nama_paket || '').trim(),
+        items: []
+      };
+      existing.items.push({
+        kode_brng: String(row?.kd_obat || '').trim(),
+        jumlah: String(row?.jumlah ?? '').trim(),
+        aturan_pakai: String(row?.aturan_pakai || '').trim()
+      });
+      packageMap.set(key, existing);
+    });
+
+    const prescriptionSignature = normalizedItems
+      .map((item) => `${item.kode_brng}::${item.jumlah}::${item.aturan_pakai}`)
+      .sort()
+      .join('|');
+
+    for (const packageItem of packageMap.values()) {
+      const packageSignature = (Array.isArray(packageItem.items) ? packageItem.items : [])
+        .map((item) => `${item.kode_brng}::${item.jumlah}::${item.aturan_pakai}`)
+        .sort()
+        .join('|');
+
+      if (packageSignature && packageSignature === prescriptionSignature) {
+        return {
+          id_paket: packageItem.id_paket,
+          kd_paket: packageItem.kd_paket,
+          nama_paket: packageItem.nama_paket
+        };
+      }
+    }
+
+    return null;
   }
 
   static async getOrthancConfig() {
@@ -671,16 +754,32 @@ class GetMedicalRecordService {
 
   // Helper function to fetch medications request using 2-step approach
   static async fetchMedicationsRequest(noRawat, status) {
-    const stockBangsalCode = await this.resolveMedicationStockBangsalCode(noRawat, status);
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const stockBangsalCode = await this.resolveMedicationStockBangsalCode(noRawat, normalizedStatus);
 
-    // Step 1: Get list of unique prescriptions
-    const prescRequestQuery = `
-      SELECT DISTINCT no_resep, tgl_peresepan, jam_peresepan, kd_dokter
-      FROM resep_obat 
-      WHERE no_rawat = ? AND status = ?
-      ORDER BY tgl_peresepan, jam_peresepan
-    `;
-    const [prescRequestRows] = await db.execute(prescRequestQuery, [noRawat, status]);
+    const prescRequestQuery = normalizedStatus === 'pulang'
+      ? `
+          SELECT
+            rdp.no_resep,
+            rdp.tgl_peresepan,
+            rdp.jam_peresepan,
+            rdp.kd_dokter
+          FROM resep_dokter_pulang rdp
+          INNER JOIN resep_pulang rp ON rp.no_resep = rdp.no_resep
+          WHERE rp.no_rawat = ?
+          GROUP BY rdp.no_resep, rdp.tgl_peresepan, rdp.jam_peresepan, rdp.kd_dokter
+          ORDER BY rdp.tgl_peresepan, rdp.jam_peresepan
+        `
+      : `
+          SELECT DISTINCT no_resep, tgl_peresepan, jam_peresepan, kd_dokter
+          FROM resep_obat
+          WHERE no_rawat = ? AND status = ?
+          ORDER BY tgl_peresepan, jam_peresepan
+        `;
+    const [prescRequestRows] = await db.execute(
+      prescRequestQuery,
+      normalizedStatus === 'pulang' ? [noRawat] : [noRawat, normalizedStatus]
+    );
     const medicationsRequest = [];
     
     // Step 2: For each prescription request, fetch detailed medications request
@@ -690,21 +789,37 @@ class GetMedicalRecordService {
         continue;
       }
       
-      const detailRequestQuery = `
-        SELECT
-          dro.kode_brng,
-          dro.jml,
-          dro.aturan_pakai,
-          ob.nama_brng,
-          ob.kode_sat AS satuan,
-          COALESCE(SUM(gb.stok), 0) AS stok
-        FROM resep_dokter dro
-        LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
-        LEFT JOIN gudangbarang gb ON gb.kode_brng = dro.kode_brng AND gb.kd_bangsal = ?
-        WHERE dro.no_resep = ?
-        GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat
-        ORDER BY ob.nama_brng
-      `;
+      const detailRequestQuery = normalizedStatus === 'pulang'
+        ? `
+            SELECT
+              rp.kode_brng,
+              rp.jml_barang AS jml,
+              rp.dosis AS aturan_pakai,
+              ob.nama_brng,
+              ob.kode_sat AS satuan,
+              COALESCE(SUM(gb.stok), 0) AS stok
+            FROM resep_pulang rp
+            LEFT JOIN databarang ob ON rp.kode_brng = ob.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = rp.kode_brng AND gb.kd_bangsal = ?
+            WHERE rp.no_resep = ?
+            GROUP BY rp.kode_brng, rp.jml_barang, rp.dosis, ob.nama_brng, ob.kode_sat
+            ORDER BY ob.nama_brng
+          `
+        : `
+            SELECT
+              dro.kode_brng,
+              dro.jml,
+              dro.aturan_pakai,
+              ob.nama_brng,
+              ob.kode_sat AS satuan,
+              COALESCE(SUM(gb.stok), 0) AS stok
+            FROM resep_dokter dro
+            LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = dro.kode_brng AND gb.kd_bangsal = ?
+            WHERE dro.no_resep = ?
+            GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat
+            ORDER BY ob.nama_brng
+          `;
       const compoundQuery = `
         SELECT
           rdr.no_racik,
@@ -721,7 +836,9 @@ class GetMedicalRecordService {
       `;
       const [detailRequestRows, compoundRows] = await Promise.all([
         db.execute(detailRequestQuery, [stockBangsalCode, prescRequestRow.no_resep]).then(([rows]) => rows),
-        db.execute(compoundQuery, [prescRequestRow.no_resep]).then(([rows]) => rows)
+        normalizedStatus === 'pulang'
+          ? Promise.resolve([])
+          : db.execute(compoundQuery, [prescRequestRow.no_resep]).then(([rows]) => rows)
       ]);
       
       const obatList = detailRequestRows.map(row => ({
@@ -773,13 +890,21 @@ class GetMedicalRecordService {
         });
       }
       
+      const packageMatch = compounds.length === 0
+        ? await this.findMatchingMedicationPackage(obatList)
+        : null;
+
       if (obatList.length > 0 || compounds.length > 0) {
         medicationsRequest.push({
           tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
           no_resep: prescRequestRow.no_resep,
           kd_dokter: prescRequestRow.kd_dokter || '',
           obat: obatList,
-          compounds
+          compounds,
+          is_package: Boolean(packageMatch),
+          package_id: packageMatch?.id_paket || '',
+          package_name: packageMatch?.nama_paket || '',
+          package_code: packageMatch?.kd_paket || ''
         });
       }
     }

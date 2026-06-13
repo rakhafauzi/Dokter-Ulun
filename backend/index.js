@@ -1333,7 +1333,7 @@ app.post('/api/medical-scribe', async (req, res) => {
 // Prescription Data endpoints
 app.get('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, no_resep, search, limit, package_id } = req.query;
+    const { action, no_rawat, no_resep, search, limit, package_id, prescription_status } = req.query;
     
     let result;
     
@@ -1363,7 +1363,7 @@ app.get('/api/prescription-data', async (req, res) => {
         break;
 
       case 'search_medicines':
-        result = await PrescriptionDataService.searchMedicines(search, limit, no_rawat);
+        result = await PrescriptionDataService.searchMedicines(search, limit, no_rawat, prescription_status);
         break;
 
       case 'search_packages':
@@ -1383,7 +1383,7 @@ app.get('/api/prescription-data', async (req, res) => {
             error: 'no_rawat is required for get_package_items'
           });
         }
-        result = await PrescriptionDataService.getPackageItems(package_id, no_rawat);
+        result = await PrescriptionDataService.getPackageItems(package_id, no_rawat, prescription_status);
         break;
         
       case 'get_compound_methods':

@@ -263,6 +263,7 @@ type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
 type CareSectionTabValue = 'outpatient' | 'inpatient';
 type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi';
 type ExaminationRoleValue = Exclude<ExaminationRoleFilterValue, 'all'>;
+type MedicationRequestFilterValue = 'umum' | 'pulang' | 'ibs' | 'package';
 type MedicalRecordFetchOptions = {
   reset?: boolean;
   outpatientPage?: number;
@@ -497,6 +498,22 @@ const mapPrescriptionSourceToStatus = (source?: string | null): PrescriptionStat
       return 'IBS';
     default:
       return 'Ralan';
+  }
+};
+
+const matchesMedicationRequestFilter = (item: any, filter: MedicationRequestFilterValue) => {
+  const status = item?.status || mapPrescriptionSourceToStatus(item?.source);
+  const isPackage = Boolean(item?.is_package);
+
+  switch (filter) {
+    case 'pulang':
+      return status === 'Pulang';
+    case 'ibs':
+      return status === 'IBS' && !isPackage;
+    case 'package':
+      return isPackage;
+    default:
+      return status !== 'Pulang' && status !== 'IBS' && !isPackage;
   }
 };
 
@@ -846,6 +863,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [selectedPackageText, setSelectedPackageText] = useState<string>('');
   const [packageItemsLoading, setPackageItemsLoading] = useState(false);
   const [packageItems, setPackageItems] = useState<Array<{ kode_brng: string; nama_brng: string; satuan: string; jumlah: any; aturan_pakai: string; stok: number }>>([]);
+  const [packageIsIbs, setPackageIsIbs] = useState(false);
   const [isAllergyModalOpen, setIsAllergyModalOpen] = useState(false);
   const [allergyCategory, setAllergyCategory] = useState<AllergyCategory | ''>('');
   const [allergySearchOpen, setAllergySearchOpen] = useState(false);
@@ -903,6 +921,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [procedureStatusRawat, setProcedureStatusRawat] = useState<ProcedureStatusRawat>('Ralan');
   const [editingPrescriptionNo, setEditingPrescriptionNo] = useState<string | null>(null);
   const [deletingPrescriptionNo, setDeletingPrescriptionNo] = useState<string | null>(null);
+  const [medicationRequestFilter, setMedicationRequestFilter] = useState<MedicationRequestFilterValue>('umum');
   const [editingLabRequestNo, setEditingLabRequestNo] = useState<string | null>(null);
   const [labFormNoRawat, setLabFormNoRawat] = useState<string>('');
   const [deletingLabRequestNo, setDeletingLabRequestNo] = useState<string | null>(null);
@@ -1329,6 +1348,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     medicalData?.focused_medications_request?.ranap,
     scopedInpatientVisits
   ]);
+  const filteredOutpatientMedicationRequests = React.useMemo(
+    () => outpatientMedicationRequests.filter((item) => matchesMedicationRequestFilter(item, medicationRequestFilter)),
+    [medicationRequestFilter, outpatientMedicationRequests]
+  );
+  const filteredInpatientMedicationRequests = React.useMemo(
+    () => inpatientMedicationRequests.filter((item) => matchesMedicationRequestFilter(item, medicationRequestFilter)),
+    [inpatientMedicationRequests, medicationRequestFilter]
+  );
   const outpatientMedicationHistory = React.useMemo(() => {
     if (formattedNoRawat) {
       return buildFocusedItems(
@@ -2216,6 +2243,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <div>
               <p className="text-sm text-muted-foreground">Sumber</p>
               <p className="font-medium">{med.source}</p>
+              {med.is_package ? (
+                <p className="text-xs text-emerald-700">
+                  Paket: {med.package_name || 'Paket Obat & BHP'}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
@@ -3583,6 +3615,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setMedicineSearchQuery({});
     setMedicineSearchLoading({});
     setEditingPrescriptionNo(null);
+    setPackageIsIbs(false);
   };
 
   const resetCompoundForm = () => {
@@ -3933,6 +3966,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
   const fetchMedicineOptions = useCallback(async (medIndex: number, obatIndex: number, searchText = '') => {
     const key = getMedicineFieldKey(medIndex, obatIndex);
+    const selectedPrescriptionStatus = medications[medIndex]?.status || (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
 
     try {
       setMedicineSearchLoading((previous) => ({ ...previous, [key]: true }));
@@ -3945,6 +3979,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
       if (formattedNoRawat) {
         params.set('no_rawat', formattedNoRawat);
+        params.set('prescription_status', selectedPrescriptionStatus);
       }
 
       const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
@@ -3966,10 +4001,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
-  }, [formattedNoRawat]);
+  }, [formattedNoRawat, medications, statusRawat]);
 
   const fetchCompoundMedicineOptions = useCallback(async (compoundIndex: number, racikanIndex: number, searchText = '') => {
     const key = getCompoundMedicineFieldKey(compoundIndex, racikanIndex);
+    const selectedPrescriptionStatus = medications[0]?.status || (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
 
     try {
       setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: true }));
@@ -3982,6 +4018,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
       if (formattedNoRawat) {
         params.set('no_rawat', formattedNoRawat);
+        params.set('prescription_status', selectedPrescriptionStatus);
       }
 
       const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
@@ -4003,7 +4040,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
-  }, [formattedNoRawat]);
+  }, [formattedNoRawat, medications, statusRawat]);
 
   const fetchCompoundMethods = useCallback(async () => {
     try {
@@ -4693,7 +4730,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const params = new URLSearchParams({
         action: 'get_package_items',
         package_id: selectedPackageId,
-        no_rawat: formattedNoRawat
+        no_rawat: formattedNoRawat,
+        prescription_status: packageIsIbs ? 'IBS' : (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan')
       });
 
       const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
@@ -4718,7 +4756,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setPackageItemsLoading(false);
     }
-  }, [formattedNoRawat, selectedPackageId, toast]);
+  }, [formattedNoRawat, packageIsIbs, selectedPackageId, statusRawat, toast]);
 
   const applyPackageItemsToMedicationForm = useCallback(() => {
     if (!packageItems.length) {
@@ -4730,7 +4768,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       return;
     }
 
-    const currentPrescriptionStatus: PrescriptionStatus = statusRawat === 'Ranap' ? 'Ranap' : 'Ralan';
+    const currentPrescriptionStatus: PrescriptionStatus = packageIsIbs
+      ? 'IBS'
+      : (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
     const obatItems = packageItems.map((item) => ({
       kode_brng: String(item.kode_brng || '').trim(),
       nama: String(item.nama_brng || '').trim(),
@@ -4761,9 +4801,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     toast({
       title: "Berhasil",
-      description: "Item paket berhasil dimasukkan ke form resep obat"
+      description: currentPrescriptionStatus === 'IBS'
+        ? 'Item paket IBS berhasil dimasukkan ke form resep obat'
+        : 'Item paket berhasil dimasukkan ke form resep obat'
     });
-  }, [packageItems, statusRawat, toast]);
+  }, [packageIsIbs, packageItems, statusRawat, toast]);
 
   const fetchProcedureOptions = useCallback(async (index: number, searchText = '') => {
     if (!formattedNoRawat) {
@@ -8141,7 +8183,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             )));
                           }}
                         >
-                          <SelectTrigger id={`med-status-${medIndex}`}>
+                          <SelectTrigger id={`med-status-${medIndex}`} disabled={!!editingPrescriptionNo}>
                             <SelectValue placeholder="Pilih status rawat" />
                           </SelectTrigger>
                           <SelectContent>
@@ -8624,6 +8666,24 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         transition: 'height 0.2s ease-out, opacity 0.2s ease-out'
                       }}
                     >
+                      <div className="flex flex-col gap-3 rounded-md border border-emerald-200 bg-emerald-100/40 p-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-emerald-900">Paket Obat & BHP</p>
+                          <p className="text-xs text-emerald-800/80">
+                            Centang Paket IBS untuk ambil stok depo IBS dan simpan resep ke alur IBS.
+                          </p>
+                        </div>
+                        <label className="flex items-center gap-2 text-sm font-medium text-emerald-900">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={packageIsIbs}
+                            onChange={(event) => setPackageIsIbs(event.target.checked)}
+                            disabled={!!editingPrescriptionNo}
+                          />
+                          Paket IBS
+                        </label>
+                      </div>
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:items-end">
                         <div className="md:col-span-2">
                           <Label htmlFor="package-select">Nama Paket Obat & BHP</Label>
@@ -8765,6 +8825,24 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <TabsContent value="current">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Riwayat Resep Obat</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { value: 'umum', label: 'Umum' },
+                        { value: 'pulang', label: 'Obat Pulang' },
+                        { value: 'ibs', label: 'Obat IBS' },
+                        { value: 'package', label: 'Paket Obat & BHP' }
+                      ].map((filterOption) => (
+                        <Button
+                          key={filterOption.value}
+                          type="button"
+                          variant={medicationRequestFilter === filterOption.value ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setMedicationRequestFilter(filterOption.value as MedicationRequestFilterValue)}
+                        >
+                          {filterOption.label}
+                        </Button>
+                      ))}
+                    </div>
                     <Tabs key={`medications-current-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
@@ -8778,12 +8856,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </TabsList>
                       <TabsContent value="outpatient">
                         {isFocusedMedicationsLoaded ? (
-                          <div className="space-y-4">{renderMedicationCards(outpatientMedicationRequests, true)}</div>
+                          <div className="space-y-4">{renderMedicationCards(filteredOutpatientMedicationRequests, true)}</div>
                         ) : renderDeferredTabState('resep')}
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedMedicationsLoaded ? (
-                          <div className="space-y-4">{renderMedicationCards(inpatientMedicationRequests, true)}</div>
+                          <div className="space-y-4">{renderMedicationCards(filteredInpatientMedicationRequests, true)}</div>
                         ) : renderDeferredTabState('resep')}
                       </TabsContent>
                     </Tabs>

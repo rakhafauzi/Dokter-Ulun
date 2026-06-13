@@ -43,6 +43,8 @@ export function AboutModal({ open, onOpenChange }: AboutModalProps) {
                 <li>Pebrie (Muhammad Pebrie Budiman, S.Kom)</li>
                 <li>Ana (Erliana, A.Md.Kom)</li> 
                 <li>Wanda (Wanda Septia Dewi Lestari, S.Kom)</li>
+                <li>Rezqi (Muhammad Rezqi. Z, A.Md.Kom)</li>
+                <li>Diba (Masyita Ratu Diba, A.Md.Kom)</li>
               </ul>
               <p className="mt-4 text-sm text-muted-foreground">Version 2.0.0</p>
             </div>
