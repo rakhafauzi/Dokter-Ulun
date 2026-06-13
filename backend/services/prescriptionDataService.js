@@ -38,37 +38,59 @@ class PrescriptionDataService {
     return Math.round((Number(value) || 0) * 1000) / 1000;
   }
 
-  async generatePrescriptionNumber(connection, normalizedPrescriptionDate) {
+  async generatePrescriptionNumber(connection, normalizedPrescriptionDate, mode = 'regular') {
     const datePrefix = normalizedPrescriptionDate.replace(/-/g, '');
+    const normalizedMode = String(mode || '').trim().toLowerCase();
+    const prefix = normalizedMode === 'pulang' ? `4${datePrefix}` : datePrefix;
+    const tableName = normalizedMode === 'pulang' ? 'resep_dokter_pulang' : 'resep_obat';
     const [sequenceRows] = await connection.execute(
       `
         SELECT MAX(no_resep) AS last_no_resep
-        FROM resep_obat
+        FROM ${tableName}
         WHERE no_resep LIKE ?
       `,
-      [`${datePrefix}%`]
+      [`${prefix}%`]
     );
     const lastNoResep = sequenceRows[0]?.last_no_resep || '';
-    const lastSequence = Number(String(lastNoResep).slice(datePrefix.length)) || 0;
+    const lastSequence = Number(String(lastNoResep).slice(prefix.length)) || 0;
     const nextSequence = String(lastSequence + 1).padStart(5, '0');
-    return `${datePrefix}${nextSequence}`;
+    return `${prefix}${nextSequence}`;
   }
 
-  async findReusablePrescription(connection, no_rawat, kd_dokter, normalizedPrescriptionDate) {
-    const [rows] = await connection.execute(
-      `
-        SELECT
-          no_resep,
-          IF(jam_peresepan = jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan
-        FROM resep_obat
-        WHERE no_rawat = ?
-          AND kd_dokter = ?
-          AND tgl_peresepan = ?
-        ORDER BY tgl_peresepan DESC, jam_peresepan DESC
-        LIMIT 1
-      `,
-      [no_rawat, kd_dokter, normalizedPrescriptionDate]
-    );
+  async findReusablePrescription(
+    connection,
+    no_rawat,
+    kd_dokter,
+    normalizedPrescriptionDate,
+    mode = 'regular'
+  ) {
+    const normalizedMode = String(mode || '').trim().toLowerCase();
+    const query = normalizedMode === 'pulang'
+      ? `
+          SELECT
+            rdp.no_resep,
+            IF(rdp.jam_peresepan = rdp.jam_perawatan, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan
+          FROM resep_dokter_pulang rdp
+          INNER JOIN resep_pulang rp ON rp.no_resep = rdp.no_resep
+          WHERE rp.no_rawat = ?
+            AND rdp.kd_dokter = ?
+            AND rdp.tgl_peresepan = ?
+          GROUP BY rdp.no_resep, rdp.jam_peresepan, rdp.jam_perawatan
+          ORDER BY rdp.tgl_peresepan DESC, rdp.jam_peresepan DESC
+          LIMIT 1
+        `
+      : `
+          SELECT
+            no_resep,
+            IF(jam_peresepan = jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan
+          FROM resep_obat
+          WHERE no_rawat = ?
+            AND kd_dokter = ?
+            AND tgl_peresepan = ?
+          ORDER BY tgl_peresepan DESC, jam_peresepan DESC
+          LIMIT 1
+        `;
+    const [rows] = await connection.execute(query, [no_rawat, kd_dokter, normalizedPrescriptionDate]);
 
     const row = rows[0];
     if (!row) {
@@ -211,6 +233,22 @@ class PrescriptionDataService {
   async resolveStockBangsalCode(connection, no_rawat, resolvedPrescriptionStatus) {
     const normalizedStatus = String(resolvedPrescriptionStatus || '').trim().toLowerCase();
 
+    if (normalizedStatus === 'ibs') {
+      const value = this.getEnvValue('STOK_RESEP_IBS');
+      if (!value) {
+        throw new Error('Konfigurasi STOK_RESEP_IBS belum diisi');
+      }
+      return value;
+    }
+
+    if (normalizedStatus === 'pulang') {
+      const value = this.getEnvValue('STOK_RESEP_RANAP');
+      if (!value) {
+        throw new Error('Konfigurasi STOK_RESEP_RANAP belum diisi');
+      }
+      return value;
+    }
+
     if (normalizedStatus === 'ranap') {
       const value = this.getEnvValue('STOK_RESEP_RANAP');
       if (!value) {
@@ -244,6 +282,35 @@ class PrescriptionDataService {
       throw new Error('Konfigurasi STOK_RESEP_RAJAL belum diisi');
     }
     return value;
+  }
+
+  async resolvePulangStorageBangsalCode(connection, no_rawat, kd_dokter) {
+    const [rows] = await connection.execute(
+      `
+        SELECT bangsal.kd_bangsal
+        FROM kamar_inap
+        INNER JOIN reg_periksa ON reg_periksa.no_rawat = kamar_inap.no_rawat
+        INNER JOIN kamar ON kamar.kd_kamar = kamar_inap.kd_kamar
+        INNER JOIN bangsal ON bangsal.kd_bangsal = kamar.kd_bangsal
+        INNER JOIN dpjp_ranap ON dpjp_ranap.no_rawat = reg_periksa.no_rawat
+        WHERE reg_periksa.no_rawat = ?
+          AND dpjp_ranap.kd_dokter = ?
+        LIMIT 1
+      `,
+      [no_rawat, kd_dokter]
+    );
+
+    const kdBangsal = String(rows?.[0]?.kd_bangsal || '').trim();
+    if (kdBangsal) {
+      return kdBangsal;
+    }
+
+    const fallback = this.getEnvValue('STOK_RESEP_RANAP');
+    if (!fallback) {
+      throw new Error('Kode bangsal resep pulang tidak ditemukan');
+    }
+
+    return fallback;
   }
 
   async validateMedicineStock(connection, kdBangsal, medicines) {
@@ -418,14 +485,35 @@ class PrescriptionDataService {
     }
 
     try {
-      const headerQuery = `
-        SELECT no_rawat, status
-        FROM resep_obat
-        WHERE no_resep = ?
-        LIMIT 1
-      `;
-      const headerRows = await executeQuery(headerQuery, [no_resep]);
-      const prescriptionHeader = Array.isArray(headerRows) ? headerRows[0] : null;
+      const regularHeaderRows = await executeQuery(
+        `
+          SELECT no_rawat, status, kd_dokter
+          FROM resep_obat
+          WHERE no_resep = ?
+          LIMIT 1
+        `,
+        [no_resep]
+      );
+      let prescriptionHeader = Array.isArray(regularHeaderRows) ? regularHeaderRows[0] : null;
+      let isPulangPrescription = false;
+
+      if (!prescriptionHeader?.no_rawat) {
+        const pulangHeaderRows = await executeQuery(
+          `
+            SELECT
+              rp.no_rawat,
+              'pulang' AS status,
+              rdp.kd_dokter
+            FROM resep_dokter_pulang rdp
+            INNER JOIN resep_pulang rp ON rp.no_resep = rdp.no_resep
+            WHERE rdp.no_resep = ?
+            LIMIT 1
+          `,
+          [no_resep]
+        );
+        prescriptionHeader = Array.isArray(pulangHeaderRows) ? pulangHeaderRows[0] : null;
+        isPulangPrescription = Boolean(prescriptionHeader?.no_rawat);
+      }
 
       if (!prescriptionHeader?.no_rawat) {
         throw new Error('Header resep tidak ditemukan');
@@ -450,26 +538,50 @@ class PrescriptionDataService {
       }
 
       // Get prescription medicines
-      const medicineQuery = `
-        SELECT
-          rd.*,
-          db.nama_brng,
-          db.kode_sat AS satuan,
-          db.kelas1 AS harga,
-          COALESCE(SUM(gb.stok), 0) AS stok
-        FROM resep_dokter rd
-        LEFT JOIN databarang db ON rd.kode_brng = db.kode_brng
-        LEFT JOIN gudangbarang gb ON gb.kode_brng = rd.kode_brng AND gb.kd_bangsal = ?
-        WHERE rd.no_resep = ?
-        GROUP BY
-          rd.no_resep,
-          rd.kode_brng,
-          rd.jml,
-          rd.aturan_pakai,
-          db.nama_brng,
-          db.kode_sat,
-          db.kelas1
-      `;
+      const medicineQuery = isPulangPrescription
+        ? `
+            SELECT
+              rp.no_resep,
+              rp.kode_brng,
+              rp.jml_barang AS jml,
+              rp.dosis AS aturan_pakai,
+              db.nama_brng,
+              db.kode_sat AS satuan,
+              db.kelas3 AS harga,
+              COALESCE(SUM(gb.stok), 0) AS stok
+            FROM resep_pulang rp
+            LEFT JOIN databarang db ON rp.kode_brng = db.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = rp.kode_brng AND gb.kd_bangsal = ?
+            WHERE rp.no_resep = ?
+            GROUP BY
+              rp.no_resep,
+              rp.kode_brng,
+              rp.jml_barang,
+              rp.dosis,
+              db.nama_brng,
+              db.kode_sat,
+              db.kelas3
+          `
+        : `
+            SELECT
+              rd.*,
+              db.nama_brng,
+              db.kode_sat AS satuan,
+              db.kelas1 AS harga,
+              COALESCE(SUM(gb.stok), 0) AS stok
+            FROM resep_dokter rd
+            LEFT JOIN databarang db ON rd.kode_brng = db.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = rd.kode_brng AND gb.kd_bangsal = ?
+            WHERE rd.no_resep = ?
+            GROUP BY
+              rd.no_resep,
+              rd.kode_brng,
+              rd.jml,
+              rd.aturan_pakai,
+              db.nama_brng,
+              db.kode_sat,
+              db.kelas1
+          `;
       
       // Get prescription compounds
       const compoundQuery = `
@@ -482,7 +594,7 @@ class PrescriptionDataService {
       
       const [medicines, compounds] = await Promise.all([
         executeQuery(medicineQuery, [stockBangsalCode, no_resep]),
-        executeQuery(compoundQuery, [no_resep])
+        isPulangPrescription ? Promise.resolve([]) : executeQuery(compoundQuery, [no_resep])
       ]);
       
       const compoundRows = Array.isArray(compounds) ? compounds : [];
@@ -552,7 +664,7 @@ class PrescriptionDataService {
     }
   }
 
-  async searchMedicines(search = '', limit = 20, no_rawat = '') {
+  async searchMedicines(search = '', limit = 20, no_rawat = '', prescriptionStatus = '') {
     const keyword = String(search || '').trim();
     const effectiveLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
     const normalizedNoRawat = String(no_rawat || '').trim();
@@ -563,7 +675,11 @@ class PrescriptionDataService {
       let stockBangsalCode = '';
 
       if (normalizedNoRawat) {
-        const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, normalizedNoRawat, null);
+        const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(
+          connection,
+          normalizedNoRawat,
+          prescriptionStatus
+        );
         stockBangsalCode = await this.resolveStockBangsalCode(connection, normalizedNoRawat, resolvedPrescriptionStatus);
       }
 
@@ -663,7 +779,7 @@ class PrescriptionDataService {
     }
   }
 
-  async getPackageItems(packageId, no_rawat) {
+  async getPackageItems(packageId, no_rawat, prescriptionStatus = '') {
     const normalizedPackageId = String(packageId || '').trim();
     const normalizedNoRawat = String(no_rawat || '').trim();
 
@@ -678,7 +794,11 @@ class PrescriptionDataService {
     const connection = await getConnection();
 
     try {
-      const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, normalizedNoRawat, null);
+      const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(
+        connection,
+        normalizedNoRawat,
+        prescriptionStatus
+      );
       const stockBangsalCode = await this.resolveStockBangsalCode(connection, normalizedNoRawat, resolvedPrescriptionStatus);
 
       const [rows] = await connection.execute(
@@ -767,6 +887,85 @@ class PrescriptionDataService {
         ...compoundMedicineRequests
       ]);
 
+      if (resolvedPrescriptionStatus === 'pulang') {
+        if (normalizedCompounds.length > 0) {
+          throw new Error('Resep obat pulang belum mendukung racikan');
+        }
+
+        const storageBangsalCode = await this.resolvePulangStorageBangsalCode(connection, no_rawat, kd_dokter);
+        const medicineCodes = Array.from(new Set(normalizedMedicines.map((medicine) => medicine.kode_brng)));
+        const placeholders = medicineCodes.map(() => '?').join(', ');
+        const [catalogRows] = medicineCodes.length
+          ? await connection.execute(
+              `
+                SELECT kode_brng, kelas3
+                FROM databarang
+                WHERE kode_brng IN (${placeholders})
+              `,
+              medicineCodes
+            )
+          : [[]];
+        const priceByCode = new Map(
+          (Array.isArray(catalogRows) ? catalogRows : []).map((row) => [
+            String(row.kode_brng || '').trim(),
+            Number(row.kelas3) || 0
+          ])
+        );
+
+        let no_resep = await this.findReusablePrescription(
+          connection,
+          no_rawat,
+          kd_dokter,
+          normalizedPrescriptionDate,
+          'pulang'
+        );
+        let reusedExisting = true;
+
+        if (!no_resep) {
+          reusedExisting = false;
+          no_resep = await this.generatePrescriptionNumber(connection, normalizedPrescriptionDate, 'pulang');
+          await connection.execute(
+            `
+              INSERT INTO resep_dokter_pulang
+              VALUES (?, ?, ?, CURTIME(), ?, CURTIME())
+            `,
+            [no_resep, kd_dokter, normalizedPrescriptionDate, normalizedPrescriptionDate]
+          );
+        }
+
+        for (const medicine of normalizedMedicines) {
+          const qty = this.parseMedicineQty(medicine.jml);
+          const unitPrice = priceByCode.get(medicine.kode_brng) || 0;
+          const totalPrice = this.roundToThree(unitPrice * qty);
+
+          await connection.execute(
+            `
+              INSERT INTO resep_pulang
+              VALUES (?, ?, ?, ?, ?, ?, ?, CURTIME(), ?, ?, 0)
+            `,
+            [
+              no_rawat,
+              medicine.kode_brng,
+              medicine.jml,
+              unitPrice,
+              totalPrice,
+              medicine.aturan_pakai,
+              normalizedPrescriptionDate,
+              storageBangsalCode,
+              no_resep
+            ]
+          );
+        }
+
+        await connection.commit();
+
+        return {
+          success: true,
+          no_resep,
+          reused_existing: reusedExisting
+        };
+      }
+
       let no_resep = await this.findReusablePrescription(connection, no_rawat, kd_dokter, normalizedPrescriptionDate);
       let reusedExisting = true;
 
@@ -853,43 +1052,52 @@ class PrescriptionDataService {
     try {
       await connection.beginTransaction();
       const normalizedUsername = String(username || '').trim();
-
-      if (normalizedUsername) {
-        const [ownerRows] = await connection.execute(
-          'SELECT kd_dokter FROM resep_obat WHERE no_resep = ? LIMIT 1',
-          [no_resep]
-        );
-
-        if (!ownerRows.length) {
-          throw new Error('Resep tidak ditemukan atau sudah dihapus');
-        }
-
-        if (String(ownerRows[0].kd_dokter || '').trim() !== normalizedUsername) {
-          throw new Error('Anda tidak berhak mengedit resep ini');
-        }
-      }
-
       const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate);
       const normalizedPrescriptionStatus = this.normalizePrescriptionStatus(prescriptionStatus);
       const normalizedMedicines = await this.normalizeMedicines(medicines);
       const normalizedCompounds = await this.normalizeCompounds(connection, compounds);
 
-      const [headerRows] = await connection.execute(
+      const [regularHeaderRows] = await connection.execute(
         `
-          SELECT no_rawat, status
+          SELECT no_rawat, status, kd_dokter
           FROM resep_obat
           WHERE no_resep = ?
           LIMIT 1
         `,
         [no_resep]
       );
+      let header = regularHeaderRows[0] || null;
+      let isPulangPrescription = false;
 
-      if (!headerRows.length) {
+      if (!header) {
+        const [pulangHeaderRows] = await connection.execute(
+          `
+            SELECT
+              rp.no_rawat,
+              'pulang' AS status,
+              rdp.kd_dokter
+            FROM resep_dokter_pulang rdp
+            INNER JOIN resep_pulang rp ON rp.no_resep = rdp.no_resep
+            WHERE rdp.no_resep = ?
+            LIMIT 1
+          `,
+          [no_resep]
+        );
+        header = pulangHeaderRows[0] || null;
+        isPulangPrescription = Boolean(header);
+      }
+
+      if (!header) {
         throw new Error('Resep tidak ditemukan atau sudah dihapus');
       }
 
-      const noRawatHeader = String(headerRows[0].no_rawat || '').trim();
-      const resolvedStatus = normalizedPrescriptionStatus || (await this.resolvePrescriptionStatus(connection, noRawatHeader, headerRows[0].status));
+      if (normalizedUsername && String(header.kd_dokter || '').trim() !== normalizedUsername) {
+        throw new Error('Anda tidak berhak mengedit resep ini');
+      }
+
+      const noRawatHeader = String(header.no_rawat || '').trim();
+      const headerStatus = String(header.status || '').trim();
+      const resolvedStatus = normalizedPrescriptionStatus || (await this.resolvePrescriptionStatus(connection, noRawatHeader, headerStatus));
       const stockBangsalCode = await this.resolveStockBangsalCode(connection, noRawatHeader, resolvedStatus);
       const compoundMedicineRequests = normalizedCompounds.flatMap((compound) => (
         compound.details.map((detail) => ({
@@ -901,6 +1109,83 @@ class PrescriptionDataService {
         ...normalizedMedicines,
         ...compoundMedicineRequests
       ]);
+
+      if (isPulangPrescription) {
+        if (normalizedPrescriptionStatus && normalizedPrescriptionStatus !== 'pulang') {
+          throw new Error('Status resep obat pulang tidak dapat diubah ke tipe lain');
+        }
+
+        if (normalizedCompounds.length > 0) {
+          throw new Error('Resep obat pulang belum mendukung racikan');
+        }
+
+        const storageBangsalCode = await this.resolvePulangStorageBangsalCode(
+          connection,
+          noRawatHeader,
+          String(header.kd_dokter || '').trim()
+        );
+        const medicineCodes = Array.from(new Set(normalizedMedicines.map((medicine) => medicine.kode_brng)));
+        const placeholders = medicineCodes.map(() => '?').join(', ');
+        const [catalogRows] = medicineCodes.length
+          ? await connection.execute(
+              `
+                SELECT kode_brng, kelas3
+                FROM databarang
+                WHERE kode_brng IN (${placeholders})
+              `,
+              medicineCodes
+            )
+          : [[]];
+        const priceByCode = new Map(
+          (Array.isArray(catalogRows) ? catalogRows : []).map((row) => [
+            String(row.kode_brng || '').trim(),
+            Number(row.kelas3) || 0
+          ])
+        );
+
+        if (normalizedPrescriptionDate) {
+          await connection.execute(
+            `
+              UPDATE resep_dokter_pulang
+              SET tgl_perawatan = ?, tgl_peresepan = ?
+              WHERE no_resep = ?
+            `,
+            [normalizedPrescriptionDate, normalizedPrescriptionDate, no_resep]
+          );
+        }
+
+        await connection.execute('DELETE FROM resep_pulang WHERE no_resep = ?', [no_resep]);
+
+        for (const medicine of normalizedMedicines) {
+          const qty = this.parseMedicineQty(medicine.jml);
+          const unitPrice = priceByCode.get(medicine.kode_brng) || 0;
+          const totalPrice = this.roundToThree(unitPrice * qty);
+
+          await connection.execute(
+            `
+              INSERT INTO resep_pulang
+              VALUES (?, ?, ?, ?, ?, ?, ?, CURTIME(), ?, ?, 0)
+            `,
+            [
+              noRawatHeader,
+              medicine.kode_brng,
+              medicine.jml,
+              unitPrice,
+              totalPrice,
+              medicine.aturan_pakai,
+              normalizedPrescriptionDate || this.normalizePrescriptionDate(new Date()) || new Date().toISOString().slice(0, 10),
+              storageBangsalCode,
+              no_resep
+            ]
+          );
+        }
+
+        await connection.commit();
+
+        return {
+          success: true
+        };
+      }
 
       const headerUpdates = [];
       const headerParams = [];
@@ -986,19 +1271,38 @@ class PrescriptionDataService {
       await connection.beginTransaction();
       const normalizedUsername = String(username || '').trim();
 
-      if (normalizedUsername) {
-        const [ownerRows] = await connection.execute(
-          'SELECT kd_dokter FROM resep_obat WHERE no_resep = ? LIMIT 1',
+      const [regularHeaderRows] = await connection.execute(
+        'SELECT kd_dokter FROM resep_obat WHERE no_resep = ? LIMIT 1',
+        [no_resep]
+      );
+      let ownerDoctor = String(regularHeaderRows?.[0]?.kd_dokter || '').trim();
+      let isPulangPrescription = false;
+
+      if (!ownerDoctor) {
+        const [pulangHeaderRows] = await connection.execute(
+          'SELECT kd_dokter FROM resep_dokter_pulang WHERE no_resep = ? LIMIT 1',
           [no_resep]
         );
+        ownerDoctor = String(pulangHeaderRows?.[0]?.kd_dokter || '').trim();
+        isPulangPrescription = Boolean(ownerDoctor);
+      }
 
-        if (!ownerRows.length) {
-          throw new Error('Resep tidak ditemukan atau sudah dihapus');
-        }
+      if (!ownerDoctor) {
+        throw new Error('Resep tidak ditemukan atau sudah dihapus');
+      }
 
-        if (String(ownerRows[0].kd_dokter || '').trim() !== normalizedUsername) {
-          throw new Error('Anda tidak berhak menghapus resep ini');
-        }
+      if (normalizedUsername && ownerDoctor !== normalizedUsername) {
+        throw new Error('Anda tidak berhak menghapus resep ini');
+      }
+
+      if (isPulangPrescription) {
+        await connection.execute('DELETE FROM resep_pulang WHERE no_resep = ?', [no_resep]);
+        await connection.execute('DELETE FROM resep_dokter_pulang WHERE no_resep = ?', [no_resep]);
+        await connection.commit();
+
+        return {
+          success: true
+        };
       }
       
       await connection.execute('DELETE FROM resep_dokter_racikan_detail WHERE no_resep = ?', [no_resep]);

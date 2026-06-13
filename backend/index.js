@@ -1333,7 +1333,7 @@ app.post('/api/medical-scribe', async (req, res) => {
 // Prescription Data endpoints
 app.get('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, no_resep, search, limit, package_id } = req.query;
+    const { action, no_rawat, no_resep, search, limit, package_id, prescription_status } = req.query;
     
     let result;
     
@@ -1363,7 +1363,7 @@ app.get('/api/prescription-data', async (req, res) => {
         break;
 
       case 'search_medicines':
-        result = await PrescriptionDataService.searchMedicines(search, limit, no_rawat);
+        result = await PrescriptionDataService.searchMedicines(search, limit, no_rawat, prescription_status);
         break;
 
       case 'search_packages':
@@ -1383,7 +1383,7 @@ app.get('/api/prescription-data', async (req, res) => {
             error: 'no_rawat is required for get_package_items'
           });
         }
-        result = await PrescriptionDataService.getPackageItems(package_id, no_rawat);
+        result = await PrescriptionDataService.getPackageItems(package_id, no_rawat, prescription_status);
         break;
         
       case 'get_compound_methods':
@@ -1740,6 +1740,7 @@ app.post('/api/resume-pasien-data', async (req, res) => {
 app.get('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
+    const { status_rawat = 'Ranap', kd_dokter = '' } = req.query;
     
     if (!no_rawat) {
       return res.status(400).json({
@@ -1748,7 +1749,7 @@ app.get('/api/resume-pasien-data/:no_rawat', async (req, res) => {
       });
     }
 
-    const result = await ResumePasienDataService.getResumeDetail(no_rawat);
+    const result = await ResumePasienDataService.getResumeDetail(no_rawat, status_rawat, kd_dokter);
     res.json(result);
   } catch (error) {
     console.error('Resume detail error:', error);
@@ -1763,6 +1764,7 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
     const resumeData = req.body;
+    const statusRawat = String(req.body?.status_rawat || 'Ranap').trim();
     
     if (!no_rawat) {
       return res.status(400).json({
@@ -1771,7 +1773,7 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
       });
     }
 
-    const result = await ResumePasienDataService.saveResume(no_rawat, resumeData);
+    const result = await ResumePasienDataService.saveResume(no_rawat, resumeData, statusRawat);
     res.json(result);
   } catch (error) {
     console.error('Save resume error:', error);
@@ -1782,9 +1784,33 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   }
 });
 
+app.post('/api/resume-pasien-data/:no_rawat/verification', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const { kd_dokter = '', verified = true } = req.body || {};
+
+    if (!no_rawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat is required'
+      });
+    }
+
+    const result = await ResumePasienDataService.setResumeVerification(no_rawat, kd_dokter, Boolean(verified));
+    res.json(result);
+  } catch (error) {
+    console.error('Resume verification error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.delete('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
+    const { status_rawat = 'Ranap', kd_dokter = '' } = req.query;
     
     if (!no_rawat) {
       return res.status(400).json({
@@ -1793,7 +1819,7 @@ app.delete('/api/resume-pasien-data/:no_rawat', async (req, res) => {
       });
     }
 
-    const result = await ResumePasienDataService.deleteResume(no_rawat);
+    const result = await ResumePasienDataService.deleteResume(no_rawat, status_rawat, kd_dokter);
     res.json(result);
   } catch (error) {
     console.error('Delete resume error:', error);
