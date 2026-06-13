@@ -1599,15 +1599,6 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     />
                     {!isRalan ? (
                       <>
-                        <div>
-                          <Label htmlFor="tindakan_venti">Tindakan Ventilator</Label>
-                          <Input
-                            id="tindakan_venti"
-                            value={formData.tindakan_venti || ''}
-                            readOnly
-                            className="bg-muted"
-                          />
-                        </div>
                         <SearchableMedicalCodeField
                           label="Prosedur Sekunder 1"
                           placeholder="Pilih prosedur sekunder 1"
@@ -1642,6 +1633,23 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     ) : null}
                   </div>
                 </div>
+                {!isRalan ? (
+                <div className="space-y-4">
+                  <h3 className="font-semibold">Tindakan Ventilator</h3>
+                  <div className="grid grid-cols-1 gap-4">
+                    <>
+                      <div>
+                        <Input
+                          id="tindakan_venti"
+                          value={formData.tindakan_venti || ''}
+                          readOnly
+                          className="bg-muted"
+                        />
+                      </div>
+                    </>
+                  </div>
+                </div>
+                ) : null}
 
                 <div className="space-y-4">
                   <h3 className="font-semibold">{isRalan ? 'Terapi Pulang' : 'Rencana Pulang'}</h3>
