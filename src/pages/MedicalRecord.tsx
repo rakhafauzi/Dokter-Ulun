@@ -218,7 +218,7 @@ type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type OutpatientExaminationSectionTabValue = 'examinations' | 'rehab-medik';
-type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'rehab-medik';
+type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ekstrapiramidal' | 'rehab-medik';
 
 interface MedicalRecordData {
   patient: {
@@ -240,6 +240,13 @@ interface MedicalRecordData {
     ralan?: any[];
     ranap?: any[];
   };
+  focused_ekstrapiramidal?: {
+    no_rawat?: string;
+    dokter?: string;
+    hasil?: Record<string, string>;
+    created_at?: string;
+    updated_at?: string;
+  } | null;
   focused_procedures?: {
     ralan?: any[];
     ranap?: any[];
@@ -249,6 +256,20 @@ interface MedicalRecordData {
     ranap?: any[];
     pulang?: any[];
     ibs?: any[];
+  };
+  focused_medications_request_meta?: {
+    ralan_has_more?: boolean;
+    ralan_racikan_has_more?: boolean;
+    ralan_umum_has_more?: boolean;
+    ralan_racikan_total?: number;
+    ralan_umum_total?: number;
+    ranap_has_more?: boolean;
+    ranap_racikan_has_more?: boolean;
+    ranap_umum_has_more?: boolean;
+    ranap_racikan_total?: number;
+    ranap_umum_total?: number;
+    pulang_has_more?: boolean;
+    ibs_has_more?: boolean;
   };
   focused_medications?: {
     ralan?: any[];
@@ -298,7 +319,7 @@ type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
 type CareSectionTabValue = 'outpatient' | 'inpatient';
 type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi';
 type ExaminationRoleValue = Exclude<ExaminationRoleFilterValue, 'all'>;
-type MedicationRequestFilterValue = 'umum' | 'pulang' | 'ibs' | 'package';
+type MedicationRequestFilterValue = 'umum' | 'racikan' | 'pulang' | 'ibs' | 'package';
 type MedicalRecordFetchOptions = {
   reset?: boolean;
   outpatientPage?: number;
@@ -311,6 +332,7 @@ type MedicalRecordFetchOptions = {
   includeFocusedMedications?: boolean;
   includeFocusedLaboratory?: boolean;
   includeFocusedRadiology?: boolean;
+  focusedMedicationHistoryMode?: 'latest' | 'all';
   requestScope?: 'visits' | 'focused';
 };
 
@@ -513,6 +535,21 @@ const getDefaultRehabMedikForm = () => ({
   suspek_penyakit: 'Tidak'
 });
 
+const getDefaultEkstrapiramidalForm = () => ({
+  piramidal1: '1',
+  piramidal2: '1',
+  piramidal3: '1',
+  piramidal4: '1',
+  piramidal5: '1',
+  piramidal6: '1',
+  piramidal7: '1',
+  piramidal8: '1',
+  piramidal9: '1',
+  piramidal10: '1',
+  piramidal11: '1',
+  piramidal12: '1'
+});
+
 const getDefaultProcedureForm = (): ProcedureFormItem[] => ([{
   kode: '',
   nama: '',
@@ -641,8 +678,11 @@ const mapPrescriptionSourceToStatus = (source?: string | null): PrescriptionStat
 const matchesMedicationRequestFilter = (item: any, filter: MedicationRequestFilterValue) => {
   const status = item?.status || mapPrescriptionSourceToStatus(item?.source);
   const isPackage = Boolean(item?.is_package);
+  const hasCompoundItems = Array.isArray(item?.compounds) && item.compounds.length > 0;
 
   switch (filter) {
+    case 'racikan':
+      return status !== 'Pulang' && status !== 'IBS' && !isPackage && hasCompoundItems;
     case 'pulang':
       return status === 'Pulang';
     case 'ibs':
@@ -650,7 +690,7 @@ const matchesMedicationRequestFilter = (item: any, filter: MedicationRequestFilt
     case 'package':
       return isPackage;
     default:
-      return status !== 'Pulang' && status !== 'IBS' && !isPackage;
+      return status !== 'Pulang' && status !== 'IBS' && !isPackage && !hasCompoundItems;
   }
 };
 
@@ -873,7 +913,7 @@ const buildFocusedItems = <T,>(
   return records
     .map((record, index) => ({
       ...record,
-      no_rawat: noRawat,
+      no_rawat: (record as any)?.no_rawat || noRawat,
       source,
       ...extra,
       __timestamp: getRecordTimestamp(getDateValue ? getDateValue(record) : (record as any)?.tanggal),
@@ -886,6 +926,41 @@ const buildFocusedItems = <T,>(
 
       return a.__index - b.__index;
     });
+};
+
+const splitMedicationRequestItems = (records: any[] = []) => {
+  return (Array.isArray(records) ? records : []).flatMap((record, index) => {
+    const obatItems = Array.isArray(record?.obat) ? record.obat : [];
+    const compoundItems = Array.isArray(record?.compounds) ? record.compounds : [];
+    const hasCompoundItems = compoundItems.length > 0;
+    const hasObatItems = obatItems.length > 0;
+    const baseRecord = {
+      ...record,
+      __has_compounds_original: hasCompoundItems
+    };
+
+    if (Boolean(record?.is_package) || !hasCompoundItems || !hasObatItems) {
+      return [
+        {
+          ...baseRecord,
+          __split_key: `${record?.no_resep || record?.tanggal || index}-default`
+        }
+      ];
+    }
+
+    return [
+      {
+        ...baseRecord,
+        compounds: [],
+        __split_key: `${record?.no_resep || record?.tanggal || index}-umum`
+      },
+      {
+        ...baseRecord,
+        obat: [],
+        __split_key: `${record?.no_resep || record?.tanggal || index}-racikan`
+      }
+    ];
+  });
 };
 
 const buildFocusedLabItems = (
@@ -920,6 +995,36 @@ const buildFocusedLabItems = (
 
       return (a.__index || 0) - (b.__index || 0);
     });
+};
+
+const ekstrapiramidalQuestionLabels: Record<string, string> = {
+  piramidal1: 'Perlambatan atau kelemahan yang nyata, ada kesan kesulitan dalam menjalankan tugas rutin',
+  piramidal2: 'Kesulitan dalam berjalan dan menjaga keseimbangan',
+  piramidal3: 'Kesulitan dalam menelan atau berbicara',
+  piramidal4: 'Kekakuan, postur tubuh kaku',
+  piramidal5: 'Kram atau nyeri pada anggota gerak, tulang belakang dan atau leher',
+  piramidal6: 'Gelisah, nervous, tidak bisa diam',
+  piramidal7: 'Tremor, gemetar',
+  piramidal8: 'Krisis okulogirik atau postur tubuh yang abnormal yang dipertahankan',
+  piramidal9: 'Banyak ludah',
+  piramidal10: 'Gerakan-gerakan yang involunter yang abnormal (diskinesia) dari anggota gerak atau badan',
+  piramidal11: 'Gerakan-gerakan yang involunter yang abnormal (diskinesia) dari lidah, rahang, bibir atau muka',
+  piramidal12: 'Pusing pada saat berdiri (khususnya pada pagi hari)'
+};
+
+const mapEkstrapiramidalAnswer = (value?: string | number | null) => {
+  switch (String(value || '').trim()) {
+    case '1':
+      return 'Tidak Ada';
+    case '2':
+      return 'Ringan';
+    case '3':
+      return 'Sedang';
+    case '4':
+      return 'Berat';
+    default:
+      return '-';
+  }
 };
 
 interface MedicalRecordProps {
@@ -1044,6 +1149,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     bab: ''
   });
   const [savingBalanceCairan, setSavingBalanceCairan] = useState(false);
+  const [ekstrapiramidalForm, setEkstrapiramidalForm] = useState(getDefaultEkstrapiramidalForm);
+  const [savingEkstrapiramidal, setSavingEkstrapiramidal] = useState(false);
 
   const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
   const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
@@ -1065,6 +1172,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [editingPrescriptionNo, setEditingPrescriptionNo] = useState<string | null>(null);
   const [deletingPrescriptionNo, setDeletingPrescriptionNo] = useState<string | null>(null);
   const [medicationRequestFilter, setMedicationRequestFilter] = useState<MedicationRequestFilterValue>('umum');
+  const [medicationCurrentCareTab, setMedicationCurrentCareTab] = useState<CareSectionTabValue>(preferredCareSectionTab);
+  const [showAllOutpatientMedicationRequests, setShowAllOutpatientMedicationRequests] = useState(false);
+  const [loadingAllOutpatientMedicationRequests, setLoadingAllOutpatientMedicationRequests] = useState(false);
+  const [showAllInpatientMedicationRequests, setShowAllInpatientMedicationRequests] = useState(false);
+  const [loadingAllInpatientMedicationRequests, setLoadingAllInpatientMedicationRequests] = useState(false);
   const [editingLabRequestNo, setEditingLabRequestNo] = useState<string | null>(null);
   const [labFormNoRawat, setLabFormNoRawat] = useState<string>('');
   const [deletingLabRequestNo, setDeletingLabRequestNo] = useState<string | null>(null);
@@ -1434,6 +1546,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       (record: any) => record?.tanggal
     );
   }, [formattedNoRawat, medicalData?.focused_medications_request?.ralan, scopedOutpatientVisits]);
+  const normalizedOutpatientMedicationRequests = React.useMemo(
+    () => splitMedicationRequestItems(outpatientMedicationRequests),
+    [outpatientMedicationRequests]
+  );
   const inpatientMedicationRequests = React.useMemo(() => {
     if (formattedNoRawat) {
       const ranap = buildFocusedItems(
@@ -1496,14 +1612,83 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     medicalData?.focused_medications_request?.ranap,
     scopedInpatientVisits
   ]);
+  const normalizedInpatientMedicationRequests = React.useMemo(
+    () => splitMedicationRequestItems(inpatientMedicationRequests),
+    [inpatientMedicationRequests]
+  );
   const filteredOutpatientMedicationRequests = React.useMemo(
-    () => outpatientMedicationRequests.filter((item) => matchesMedicationRequestFilter(item, medicationRequestFilter)),
-    [medicationRequestFilter, outpatientMedicationRequests]
+    () => normalizedOutpatientMedicationRequests.filter((item) => matchesMedicationRequestFilter(item, medicationRequestFilter)),
+    [medicationRequestFilter, normalizedOutpatientMedicationRequests]
+  );
+  const displayedOutpatientMedicationRequests = React.useMemo(
+    () => (showAllOutpatientMedicationRequests ? filteredOutpatientMedicationRequests : filteredOutpatientMedicationRequests.slice(0, 1)),
+    [filteredOutpatientMedicationRequests, showAllOutpatientMedicationRequests]
+  );
+  const hasMoreOutpatientMedicationRequests = React.useMemo(
+    () => {
+      const meta = medicalData?.focused_medications_request_meta;
+      const hasHiddenLoadedItems = filteredOutpatientMedicationRequests.length > 1;
+      const displayedCount = showAllOutpatientMedicationRequests
+        ? filteredOutpatientMedicationRequests.length
+        : displayedOutpatientMedicationRequests.length;
+
+      if (medicationRequestFilter === 'racikan') {
+        return Number(meta?.ralan_racikan_total || 0) > displayedCount || hasHiddenLoadedItems;
+      }
+
+      if (medicationRequestFilter === 'umum') {
+        return Number(meta?.ralan_umum_total || 0) > displayedCount || hasHiddenLoadedItems;
+      }
+
+      return Boolean(meta?.ralan_has_more) || hasHiddenLoadedItems;
+    },
+    [
+      displayedOutpatientMedicationRequests.length,
+      filteredOutpatientMedicationRequests.length,
+      medicalData?.focused_medications_request_meta,
+      medicationRequestFilter,
+      showAllOutpatientMedicationRequests
+    ]
   );
   const filteredInpatientMedicationRequests = React.useMemo(
-    () => inpatientMedicationRequests.filter((item) => matchesMedicationRequestFilter(item, medicationRequestFilter)),
-    [inpatientMedicationRequests, medicationRequestFilter]
+    () => normalizedInpatientMedicationRequests.filter((item) => matchesMedicationRequestFilter(item, medicationRequestFilter)),
+    [medicationRequestFilter, normalizedInpatientMedicationRequests]
   );
+  const displayedInpatientMedicationRequests = React.useMemo(
+    () => (showAllInpatientMedicationRequests ? filteredInpatientMedicationRequests : filteredInpatientMedicationRequests.slice(0, 1)),
+    [filteredInpatientMedicationRequests, showAllInpatientMedicationRequests]
+  );
+  const hasMoreInpatientMedicationRequests = React.useMemo(() => {
+    const meta = medicalData?.focused_medications_request_meta;
+    const hasHiddenLoadedItems = filteredInpatientMedicationRequests.length > 1;
+    const displayedCount = showAllInpatientMedicationRequests
+      ? filteredInpatientMedicationRequests.length
+      : displayedInpatientMedicationRequests.length;
+
+    if (medicationRequestFilter === 'pulang') {
+      return Boolean(meta?.pulang_has_more) || hasHiddenLoadedItems;
+    }
+
+    if (medicationRequestFilter === 'ibs') {
+      return Boolean(meta?.ibs_has_more) || hasHiddenLoadedItems;
+    }
+
+    if (medicationRequestFilter === 'racikan') {
+      return Number(meta?.ranap_racikan_total || 0) > displayedCount || hasHiddenLoadedItems;
+    }
+
+    if (medicationRequestFilter === 'umum') {
+      return Number(meta?.ranap_umum_total || 0) > displayedCount || hasHiddenLoadedItems;
+    }
+
+    return Boolean(meta?.ranap_has_more || meta?.pulang_has_more || meta?.ibs_has_more) || hasHiddenLoadedItems;
+  }, [
+    displayedInpatientMedicationRequests.length,
+    filteredInpatientMedicationRequests.length,
+    medicalData?.focused_medications_request_meta,
+    medicationRequestFilter,
+    showAllInpatientMedicationRequests
+  ]);
   const outpatientMedicationHistory = React.useMemo(() => {
     if (formattedNoRawat) {
       return buildFocusedItems(
@@ -1542,6 +1727,25 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       (record: any) => record?.tanggal
     );
   }, [formattedNoRawat, medicalData?.focused_medications?.ranap, scopedInpatientVisits]);
+
+  useEffect(() => {
+    setShowAllOutpatientMedicationRequests(false);
+  }, [formattedNoRawat, medicationRequestFilter, no_rkm_medis]);
+
+  useEffect(() => {
+    setShowAllInpatientMedicationRequests(false);
+  }, [formattedNoRawat, medicationRequestFilter, no_rkm_medis]);
+
+  useEffect(() => {
+    setMedicationCurrentCareTab(preferredCareSectionTab);
+  }, [preferredCareSectionTab]);
+
+  useEffect(() => {
+    if (medicationCurrentCareTab === 'outpatient' && (medicationRequestFilter === 'pulang' || medicationRequestFilter === 'ibs')) {
+      setMedicationRequestFilter('umum');
+    }
+  }, [medicationCurrentCareTab, medicationRequestFilter]);
+
   const outpatientLaboratoryRequests = React.useMemo(() => {
     if (formattedNoRawat) {
       return buildFocusedItems(medicalData?.focused_laboratory_request?.ralan || [], formattedNoRawat, 'Rawat Jalan');
@@ -1594,6 +1798,25 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       'Rawat Inap'
     );
   }, [formattedNoRawat, medicalData?.focused_laboratory?.ranap, scopedInpatientVisits]);
+  const inpatientLaboratoryHistoryAll = useMemo(() => {
+    const combined = [...outpatientLaboratoryHistory, ...inpatientLaboratoryHistory];
+
+    return combined.sort((a, b) => {
+      const leftTimestamp = Number((a as any)?.__timestamp || 0);
+      const rightTimestamp = Number((b as any)?.__timestamp || 0);
+
+      if (rightTimestamp !== leftTimestamp) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      const leftIndex = Number((a as any)?.__index || 0);
+      const rightIndex = Number((b as any)?.__index || 0);
+
+      return leftIndex - rightIndex;
+    });
+  }, [inpatientLaboratoryHistory, outpatientLaboratoryHistory]);
+  const laboratoryHistoryInpatientView =
+    defaultExaminationStatusRawat === 'Ranap' ? inpatientLaboratoryHistoryAll : inpatientLaboratoryHistory;
   const outpatientRadiologyRequests = React.useMemo(() => {
     if (formattedNoRawat) {
       return buildFocusedItems(medicalData?.focused_radiology_request?.ralan || [], formattedNoRawat, 'Rawat Jalan');
@@ -1662,7 +1885,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     [balanceCairanEntries, selectedBalanceCairanId]
   );
   const activeVitalSeries = vitalChartSeries.filter((series) => visibleVitalSeries[series.key]);
-  const isFocusedExaminationsLoaded = !formattedNoRawat || medicalData?.focused_examinations !== undefined;
+  const isFocusedExaminationsLoaded =
+    !formattedNoRawat ||
+    (medicalData?.focused_examinations !== undefined && medicalData?.focused_ekstrapiramidal !== undefined);
   const isFocusedProceduresLoaded = !formattedNoRawat || medicalData?.focused_procedures !== undefined;
   const isFocusedMedicationsLoaded = !formattedNoRawat || (
     medicalData?.focused_medications_request !== undefined && medicalData?.focused_medications !== undefined
@@ -2254,6 +2479,148 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       </div>
     );
   };
+  const renderEkstrapiramidalSection = () => {
+    if (!formattedNoRawat) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Pilih kunjungan rawat inap terlebih dahulu untuk melihat data ekstrapiramidal.
+        </div>
+      );
+    }
+
+    const ekstrapiramidal = medicalData?.focused_ekstrapiramidal;
+    const hasil = ekstrapiramidal?.hasil && typeof ekstrapiramidal.hasil === 'object'
+      ? ekstrapiramidal.hasil
+      : {};
+    const items = Object.keys(ekstrapiramidalQuestionLabels).map((key) => ({
+      key,
+      question: ekstrapiramidalQuestionLabels[key],
+      answer: mapEkstrapiramidalAnswer((hasil as Record<string, string>)[key])
+    }));
+    const dokterInput = String(user?.name || currentUsername || '').trim() || '-';
+    const answerOptions = [
+      { value: '1', label: 'Tidak Ada' },
+      { value: '2', label: 'Ringan' },
+      { value: '3', label: 'Sedang' },
+      { value: '4', label: 'Berat' }
+    ];
+
+    return (
+      <div className="space-y-4">
+        <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h4 className="font-medium">Form Ekstrapiramidal</h4>
+              <p className="text-sm text-muted-foreground">
+                Penilaian gejala/efek samping Ekstrapiramidal.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <Label htmlFor="ep-no-rawat">No. Rawat</Label>
+              <Input id="ep-no-rawat" value={formattedNoRawat} readOnly className="bg-muted" />
+            </div>
+            <div>
+              <Label htmlFor="ep-dokter">Dokter</Label>
+              <Input id="ep-dokter" value={dokterInput} readOnly className="bg-muted" />
+            </div>
+            <div>
+              <Label htmlFor="ep-last-update">Data Tersimpan</Label>
+              <Input
+                id="ep-last-update"
+                value={formatDateSafe(ekstrapiramidal?.updated_at || ekstrapiramidal?.created_at || '-')}
+                readOnly
+                className="bg-muted"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {items.map((item, index) => (
+              <div key={`form-${item.key}`} className="space-y-2 rounded-lg border bg-background p-4">
+                <Label htmlFor={`ekstrapiramidal-${item.key}`} className="leading-6">
+                  {index + 1}. {item.question}
+                </Label>
+                <select
+                  id={`ekstrapiramidal-${item.key}`}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={(ekstrapiramidalForm as Record<string, string>)[item.key] || '1'}
+                  onChange={(event) => setEkstrapiramidalForm((prev) => ({
+                    ...prev,
+                    [item.key]: event.target.value
+                  }))}
+                >
+                  {answerOptions.map((option) => (
+                    <option key={`${item.key}-${option.value}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEkstrapiramidalForm({
+                ...getDefaultEkstrapiramidalForm(),
+                ...(hasil as Record<string, string>)
+              })}
+              disabled={savingEkstrapiramidal}
+            >
+              Reset
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSaveEkstrapiramidal()}
+              disabled={savingEkstrapiramidal}
+            >
+              {savingEkstrapiramidal ? 'Menyimpan...' : 'Simpan'}
+            </Button>
+          </div>
+        </div>
+
+        {Object.keys(hasil).length === 0 ? (
+          <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+            Belum ada data ekstrapiramidal pada kunjungan ini.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="border rounded-lg p-4 bg-muted/20">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">No. Rawat</p>
+                  <p className="font-medium">{formattedNoRawat}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Dokter</p>
+                  <p className="font-medium">{ekstrapiramidal?.dokter || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Waktu Input</p>
+                  <p className="font-medium">{formatDateSafe(ekstrapiramidal?.created_at || ekstrapiramidal?.updated_at || '-')}</p>
+                </div>
+              </div>
+            </div>
+            {items.map((item, index) => (
+              <div key={item.key} className="rounded-lg border p-4 bg-background">
+                <p className="text-sm text-muted-foreground mb-1">Pertanyaan {index + 1}</p>
+                <p className="font-medium">{item.question}</p>
+                <p className="mt-2 text-sm">
+                  <span className="text-muted-foreground">Jawaban: </span>
+                  <span className="font-medium">{item.answer}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
   const renderProcedureCards = (procedures: any[]) => {
     if (procedures.length === 0) {
       return (
@@ -2571,21 +2938,29 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const allowedToDelete = canDeletePrescription(med);
       const compoundItems = Array.isArray(med?.compounds) ? med.compounds : [];
       const hasCompoundItems = compoundItems.length > 0;
-      const canEditThisPrescription = canEditPrescription(med) && !hasCompoundItems;
+      const hasCompoundItemsOriginal = Boolean(med?.__has_compounds_original) || hasCompoundItems;
+      const medicationItems = Array.isArray(med?.obat) ? med.obat : [];
+      const hasMedicationItems = medicationItems.length > 0;
+      const canEditThisPrescription = canEditPrescription(med) && !hasCompoundItemsOriginal;
       const editPrescriptionLabel = canEditPrescription(med)
-        ? (hasCompoundItems ? 'Ada Racikan' : 'Edit Resep')
+        ? (hasCompoundItemsOriginal ? 'Ada Racikan' : 'Edit Resep')
         : 'Bukan Data Anda';
       const deletePrescriptionLabel = deletingPrescriptionNo === med.no_resep
         ? 'Menghapus...'
         : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
 
       return (
-      <div key={`${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
+      <div key={med.__split_key || `${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
         <div className="mb-4 flex flex-col-reverse gap-3 md:flex-col">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div>
               <p className="text-sm text-muted-foreground">Nomor Resep</p>
-              <p className="font-medium">{med.no_resep || '-'}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium">{med.no_resep || '-'}</p>
+                <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-100/70 px-2.5 py-0.5 text-xs font-medium text-violet-700">
+                  {med.nm_dokter ? `${med.nm_dokter}` : `${med.kd_dokter || '-'}`}
+                </span>
+              </div>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Tanggal</p>
@@ -2648,10 +3023,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           </div>
         </div>
         <div className="space-y-2">
-          <div className="flex justify-between items-center mb-2">
-            <h4 className="font-medium">{(Array.isArray(med?.obat) ? med.obat.length : 0) > 0 ? 'Obat:' : 'Resep:'}</h4>
-          </div>
-          {(Array.isArray(med?.obat) ? med.obat : []).map((obat: any, i: number) => (
+          {hasMedicationItems ? (
+            <div className="flex justify-between items-center mb-2">
+              <h4 className="font-medium">Obat:</h4>
+            </div>
+          ) : null}
+          {medicationItems.map((obat: any, i: number) => (
             <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
               <div>
                 <p className="text-sm text-muted-foreground">Nama</p>
@@ -3171,6 +3548,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     includeFocusedMedications = false,
     includeFocusedLaboratory = false,
     includeFocusedRadiology = false,
+    focusedMedicationHistoryMode = 'latest',
     requestScope = includeOutpatient || includeInpatient ? 'visits' : 'focused'
   }: MedicalRecordFetchOptions = {}) => {
     if (!no_rkm_medis) {
@@ -3209,6 +3587,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           includeFocusedMedications,
           includeFocusedLaboratory,
           includeFocusedRadiology,
+          focusedMedicationHistoryMode,
           focus_no_rawat: formattedNoRawat || undefined
         })
       });
@@ -3262,8 +3641,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               responseData.inpatient_visits || []
             ),
             focused_examinations: responseData.focused_examinations || previousData.focused_examinations,
+            focused_ekstrapiramidal:
+              responseData.focused_ekstrapiramidal !== undefined
+                ? responseData.focused_ekstrapiramidal
+                : previousData.focused_ekstrapiramidal,
             focused_procedures: responseData.focused_procedures || previousData.focused_procedures,
             focused_medications_request: responseData.focused_medications_request || previousData.focused_medications_request,
+            focused_medications_request_meta: responseData.focused_medications_request_meta || previousData.focused_medications_request_meta,
             focused_medications: responseData.focused_medications || previousData.focused_medications,
             focused_laboratory_request: responseData.focused_laboratory_request || previousData.focused_laboratory_request,
             focused_laboratory: responseData.focused_laboratory || previousData.focused_laboratory,
@@ -3314,6 +3698,66 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       }
     }
   }, [formattedNoRawat, no_rkm_medis]);
+
+  const handleLoadAllOutpatientMedicationRequests = useCallback(async () => {
+    if (!formattedNoRawat || loadingAllOutpatientMedicationRequests || showAllOutpatientMedicationRequests) {
+      return;
+    }
+
+    setLoadingAllOutpatientMedicationRequests(true);
+    try {
+      await fetchMedicalRecord({
+        reset: false,
+        outpatientPage: pagination.outpatient.page,
+        inpatientPage: pagination.inpatient.page,
+        includeOutpatient: false,
+        includeInpatient: false,
+        includeFocusedMedications: true,
+        focusedMedicationHistoryMode: 'all',
+        requestScope: 'focused'
+      });
+      setShowAllOutpatientMedicationRequests(true);
+    } finally {
+      setLoadingAllOutpatientMedicationRequests(false);
+    }
+  }, [
+    fetchMedicalRecord,
+    formattedNoRawat,
+    loadingAllOutpatientMedicationRequests,
+    pagination.inpatient.page,
+    pagination.outpatient.page,
+    showAllOutpatientMedicationRequests
+  ]);
+
+  const handleLoadAllInpatientMedicationRequests = useCallback(async () => {
+    if (!formattedNoRawat || loadingAllInpatientMedicationRequests || showAllInpatientMedicationRequests) {
+      return;
+    }
+
+    setLoadingAllInpatientMedicationRequests(true);
+    try {
+      await fetchMedicalRecord({
+        reset: false,
+        outpatientPage: pagination.outpatient.page,
+        inpatientPage: pagination.inpatient.page,
+        includeOutpatient: false,
+        includeInpatient: false,
+        includeFocusedMedications: true,
+        focusedMedicationHistoryMode: 'all',
+        requestScope: 'focused'
+      });
+      setShowAllInpatientMedicationRequests(true);
+    } finally {
+      setLoadingAllInpatientMedicationRequests(false);
+    }
+  }, [
+    fetchMedicalRecord,
+    formattedNoRawat,
+    loadingAllInpatientMedicationRequests,
+    pagination.inpatient.page,
+    pagination.outpatient.page,
+    showAllInpatientMedicationRequests
+  ]);
 
   const fetchVisitDetails = useCallback(async (noRawat: string) => {
     if (!noRawat) {
@@ -4997,6 +5441,73 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     user?.name
   ]);
 
+  const handleSaveEkstrapiramidal = useCallback(async () => {
+    if (!formattedNoRawat) {
+      toast({
+        title: "Error",
+        description: "Pilih kunjungan rawat inap terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSavingEkstrapiramidal(true);
+      const response = await fetch(API_URLS.EKSTRAPIRAMIDAL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rawat: formattedNoRawat,
+          dokter: String(user?.name || currentUsername || '').trim(),
+          ...ekstrapiramidalForm
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Ekstrapiramidal berhasil disimpan'
+      });
+
+      await fetchMedicalRecord({
+        reset: false,
+        outpatientPage: pagination.outpatient.page,
+        inpatientPage: pagination.inpatient.page,
+        includeOutpatient: false,
+        includeInpatient: false,
+        includeFocusedExaminations: true,
+        requestScope: 'focused'
+      });
+    } catch (error) {
+      console.error('Error saving ekstrapiramidal:', error);
+      const message = error instanceof Error ? error.message : 'Gagal menyimpan ekstrapiramidal';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSavingEkstrapiramidal(false);
+    }
+  }, [
+    currentUsername,
+    ekstrapiramidalForm,
+    fetchMedicalRecord,
+    formattedNoRawat,
+    pagination.inpatient.page,
+    pagination.outpatient.page,
+    toast,
+    user?.name
+  ]);
+
   useEffect(() => {
     void fetchRehabMedikAccess();
   }, [fetchRehabMedikAccess]);
@@ -5031,6 +5542,24 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setBalanceCairanEntries([]);
     setSelectedBalanceCairanId(null);
   }, [fetchBalanceCairan, formattedNoRawat]);
+
+  useEffect(() => {
+    if (!formattedNoRawat) {
+      setEkstrapiramidalForm(getDefaultEkstrapiramidalForm());
+      return;
+    }
+
+    const hasil = medicalData?.focused_ekstrapiramidal?.hasil;
+    if (hasil && typeof hasil === 'object') {
+      setEkstrapiramidalForm({
+        ...getDefaultEkstrapiramidalForm(),
+        ...(hasil as Record<string, string>)
+      });
+      return;
+    }
+
+    setEkstrapiramidalForm(getDefaultEkstrapiramidalForm());
+  }, [formattedNoRawat, medicalData?.focused_ekstrapiramidal]);
 
   const fetchPackageOptions = useCallback(async (searchText = '') => {
     try {
@@ -8511,6 +9040,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <TabsList>
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
                           <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
+                          <TabsTrigger value="ekstrapiramidal">Ekstrapiramidal</TabsTrigger>
                           {rehabMedikAccess && (
                             <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
                           )}
@@ -8696,6 +9226,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               </div>
                             </>
                           )}
+                        </TabsContent>
+
+                        <TabsContent value="ekstrapiramidal" className="space-y-4">
+                          {renderEkstrapiramidalSection()}
                         </TabsContent>
 
                         {rehabMedikAccess && (
@@ -9626,7 +10160,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               ) : null}
 
               {/* Data Existing */}
-              <Tabs defaultValue="history" className="space-y-4">
+              <Tabs defaultValue="current" className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="current">Data Resep Obat</TabsTrigger>
                   <TabsTrigger value="history">Riwayat Pemberian Obat</TabsTrigger>
@@ -9639,8 +10173,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                     <div className="flex flex-wrap gap-2">
                       {[
                         { value: 'umum', label: 'Umum' },
-                        { value: 'pulang', label: 'Obat Pulang' },
-                        { value: 'ibs', label: 'Obat IBS' },
+                        { value: 'racikan', label: 'Racikan' },
+                        ...(medicationCurrentCareTab === 'inpatient'
+                          ? [
+                              { value: 'pulang', label: 'Obat Pulang' },
+                              { value: 'ibs', label: 'Obat IBS' }
+                            ]
+                          : []),
                         { value: 'package', label: 'Paket Obat & BHP' }
                       ].map((filterOption) => (
                         <Button
@@ -9654,7 +10193,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </Button>
                       ))}
                     </div>
-                    <Tabs key={`medications-current-${preferredCareSectionTab}`} defaultValue={preferredCareSectionTab} className="mt-2">
+                    <Tabs
+                      key={`medications-current-${preferredCareSectionTab}`}
+                      value={medicationCurrentCareTab}
+                      onValueChange={(value) => setMedicationCurrentCareTab(value as CareSectionTabValue)}
+                      className="mt-2"
+                    >
                       <TabsList className="mb-4">
                         <TabsTrigger value="outpatient">
                           <User className="mr-2 h-4 w-4" />
@@ -9667,12 +10211,40 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </TabsList>
                       <TabsContent value="outpatient">
                         {isFocusedMedicationsLoaded ? (
-                          <div className="space-y-4">{renderMedicationCards(filteredOutpatientMedicationRequests, true)}</div>
+                          <div className="space-y-4">
+                            {renderMedicationCards(displayedOutpatientMedicationRequests, true)}
+                            {!showAllOutpatientMedicationRequests && hasMoreOutpatientMedicationRequests ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => void handleLoadAllOutpatientMedicationRequests()}
+                                  disabled={loadingAllOutpatientMedicationRequests}
+                                >
+                                  {loadingAllOutpatientMedicationRequests ? 'Loading...' : 'See More'}
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
                         ) : renderDeferredTabState('resep')}
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedMedicationsLoaded ? (
-                          <div className="space-y-4">{renderMedicationCards(filteredInpatientMedicationRequests, true)}</div>
+                          <div className="space-y-4">
+                            {renderMedicationCards(displayedInpatientMedicationRequests, true)}
+                            {!showAllInpatientMedicationRequests && hasMoreInpatientMedicationRequests ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => void handleLoadAllInpatientMedicationRequests()}
+                                  disabled={loadingAllInpatientMedicationRequests}
+                                >
+                                  {loadingAllInpatientMedicationRequests ? 'Loading...' : 'See More'}
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
                         ) : renderDeferredTabState('resep')}
                       </TabsContent>
                     </Tabs>
@@ -10125,7 +10697,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedLaboratoryLoaded ? (
-                          <div className="space-y-4">{renderLaboratoryHistoryCards(inpatientLaboratoryHistory)}</div>
+                          <div className="space-y-4">{renderLaboratoryHistoryCards(laboratoryHistoryInpatientView)}</div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
                     </Tabs>

@@ -16,6 +16,7 @@ import RawatInapDataService from './services/rawatInapDataService.js';
 import HemodialisaDataService from './services/hemodialisaDataService.js';
 import GetMedicalRecordService from './services/getMedicalRecordService.js';
 import DigitalFilesService from './services/digitalFilesService.js';
+import EkstrapiramidalService from './services/ekstrapiramidalService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
 import DoctorAiAssistantService from './services/doctorAiAssistantService.js';
 import DoctorNotificationService from './services/doctorNotificationService.js';
@@ -572,6 +573,7 @@ app.post('/api/get-medical-record', async (req, res) => {
       includeFocusedMedications,
       includeFocusedLaboratory,
       includeFocusedRadiology,
+      focusedMedicationHistoryMode,
       focus_no_rawat
     } = req.body;
 
@@ -587,6 +589,7 @@ app.post('/api/get-medical-record', async (req, res) => {
       includeFocusedMedications,
       includeFocusedLaboratory,
       includeFocusedRadiology,
+      focusedMedicationHistoryMode,
       focusNoRawat: focus_no_rawat
     });
 
@@ -954,6 +957,19 @@ app.post('/api/balance-cairan', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error in balance-cairan POST endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/ekstrapiramidal', async (req, res) => {
+  try {
+    const result = await EkstrapiramidalService.save(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in ekstrapiramidal POST endpoint:', error);
     res.status(400).json({
       success: false,
       error: error.message

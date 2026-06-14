@@ -690,6 +690,39 @@ class GetMedicalRecordService {
     };
   }
 
+  static async fetchEkstrapiramidal(noRawat) {
+    const [rows] = await db.execute(
+      `
+        SELECT *
+        FROM mlite_ekstrapiramidal
+        WHERE no_rawat = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+      `,
+      [noRawat]
+    );
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    let hasil = null;
+    try {
+      hasil = row?.hasil ? JSON.parse(row.hasil) : null;
+    } catch (error) {
+      hasil = null;
+    }
+
+    return {
+      no_rawat: String(row?.no_rawat || '').trim(),
+      dokter: String(row?.dokter || row?.nm_dokter || '').trim(),
+      hasil: hasil && typeof hasil === 'object' ? hasil : {},
+      created_at: String(row?.created_at || row?.tanggal || '').trim(),
+      updated_at: String(row?.updated_at || '').trim()
+    };
+  }
+
   static async fetchProcedures(noRawat, type) {
     const tablePrefix = type === 'ralan' ? 'rawat_jl' : 'rawat_inap';
     const procedureReferenceTable = type === 'ralan' ? 'jns_perawatan' : 'jns_perawatan_inap';
@@ -836,18 +869,21 @@ class GetMedicalRecordService {
             rdp.no_resep,
             rdp.tgl_peresepan,
             rdp.jam_peresepan,
-            rdp.kd_dokter
+            rdp.kd_dokter,
+            COALESCE(d.nm_dokter, '') AS nm_dokter
           FROM resep_dokter_pulang rdp
           INNER JOIN resep_pulang rp ON rp.no_resep = rdp.no_resep
+          LEFT JOIN dokter d ON d.kd_dokter = rdp.kd_dokter
           WHERE rp.no_rawat = ?
-          GROUP BY rdp.no_resep, rdp.tgl_peresepan, rdp.jam_peresepan, rdp.kd_dokter
+          GROUP BY rdp.no_resep, rdp.tgl_peresepan, rdp.jam_peresepan, rdp.kd_dokter, d.nm_dokter
           ORDER BY rdp.tgl_peresepan, rdp.jam_peresepan
         `
       : `
-          SELECT DISTINCT no_resep, tgl_peresepan, jam_peresepan, kd_dokter
-          FROM resep_obat
-          WHERE no_rawat = ? AND status = ?
-          ORDER BY tgl_peresepan, jam_peresepan
+          SELECT DISTINCT ro.no_resep, ro.tgl_peresepan, ro.jam_peresepan, ro.kd_dokter, COALESCE(d.nm_dokter, '') AS nm_dokter
+          FROM resep_obat ro
+          LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
+          WHERE ro.no_rawat = ? AND ro.status = ?
+          ORDER BY ro.tgl_peresepan, ro.jam_peresepan
         `;
     const [prescRequestRows] = await db.execute(
       prescRequestQuery,
@@ -971,7 +1007,9 @@ class GetMedicalRecordService {
         medicationsRequest.push({
           tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
           no_resep: prescRequestRow.no_resep,
+          no_rawat: noRawat,
           kd_dokter: prescRequestRow.kd_dokter || '',
+          nm_dokter: prescRequestRow.nm_dokter || '',
           obat: obatList,
           compounds,
           is_package: Boolean(packageMatch),
@@ -983,6 +1021,310 @@ class GetMedicalRecordService {
     }
     
     return medicationsRequest;
+  }
+
+  static async fetchMedicationRequestsByNoRm(noRm, status = 'ralan', options = {}) {
+    const normalizedNoRm = String(noRm || '').trim();
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const historyMode = String(options.historyMode || '').trim().toLowerCase() === 'all' ? 'all' : 'latest';
+    if (!normalizedNoRm) {
+      return {
+        items: [],
+        hasMore: false,
+        compoundHasMore: false,
+        nonCompoundHasMore: false,
+        compoundTotal: 0,
+        nonCompoundTotal: 0
+      };
+    }
+
+    const compoundCountQuery = ['ralan', 'ranap'].includes(normalizedStatus)
+      ? normalizedStatus === 'ralan'
+        ? `
+            SELECT COUNT(DISTINCT ro.no_resep) AS total
+            FROM reg_periksa rp
+            INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+            INNER JOIN resep_dokter_racikan rdr ON rdr.no_resep = ro.no_resep
+            WHERE rp.no_rkm_medis = ?
+              AND LOWER(COALESCE(ro.status, '')) = ?
+              AND rp.status_lanjut IN ('Ralan', 'Ranap')
+          `
+        : `
+            SELECT COUNT(DISTINCT ro.no_resep) AS total
+            FROM reg_periksa rp
+            INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+            INNER JOIN resep_dokter_racikan rdr ON rdr.no_resep = ro.no_resep
+            WHERE rp.no_rkm_medis = ?
+              AND LOWER(COALESCE(ro.status, '')) = ?
+              AND rp.status_lanjut = 'Ranap'
+          `
+      : '';
+
+    const nonCompoundCountQuery = ['ralan', 'ranap'].includes(normalizedStatus)
+      ? normalizedStatus === 'ralan'
+        ? `
+            SELECT COUNT(DISTINCT ro.no_resep) AS total
+            FROM reg_periksa rp
+            INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+            INNER JOIN resep_dokter rd ON rd.no_resep = ro.no_resep
+            WHERE rp.no_rkm_medis = ?
+              AND LOWER(COALESCE(ro.status, '')) = ?
+              AND rp.status_lanjut IN ('Ralan', 'Ranap')
+          `
+        : `
+            SELECT COUNT(DISTINCT ro.no_resep) AS total
+            FROM reg_periksa rp
+            INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+            INNER JOIN resep_dokter rd ON rd.no_resep = ro.no_resep
+            WHERE rp.no_rkm_medis = ?
+              AND LOWER(COALESCE(ro.status, '')) = ?
+              AND rp.status_lanjut = 'Ranap'
+          `
+      : '';
+
+    const countQuery = normalizedStatus === 'pulang'
+      ? `
+          SELECT COUNT(DISTINCT rdp.no_resep) AS total
+          FROM reg_periksa reg
+          INNER JOIN resep_pulang rp ON rp.no_rawat = reg.no_rawat
+          INNER JOIN resep_dokter_pulang rdp ON rdp.no_resep = rp.no_resep
+          WHERE reg.no_rkm_medis = ?
+            AND reg.status_lanjut = 'Ranap'
+        `
+      : normalizedStatus === 'ralan'
+        ? `
+            SELECT COUNT(DISTINCT ro.no_resep) AS total
+            FROM reg_periksa rp
+            INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+            WHERE rp.no_rkm_medis = ?
+              AND LOWER(COALESCE(ro.status, '')) = ?
+              AND rp.status_lanjut IN ('Ralan', 'Ranap')
+          `
+      : `
+          SELECT COUNT(DISTINCT ro.no_resep) AS total
+          FROM reg_periksa rp
+          INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+          WHERE rp.no_rkm_medis = ?
+            AND LOWER(COALESCE(ro.status, '')) = ?
+            AND rp.status_lanjut = 'Ranap'
+        `;
+
+    const prescRequestQuery = normalizedStatus === 'pulang'
+      ? `
+          SELECT DISTINCT
+            rdp.no_resep,
+            rp.no_rawat,
+            rdp.tgl_peresepan,
+            rdp.jam_peresepan,
+            rdp.kd_dokter,
+            COALESCE(d.nm_dokter, '') AS nm_dokter
+          FROM reg_periksa reg
+          INNER JOIN resep_pulang rp ON rp.no_rawat = reg.no_rawat
+          INNER JOIN resep_dokter_pulang rdp ON rdp.no_resep = rp.no_resep
+          LEFT JOIN dokter d ON d.kd_dokter = rdp.kd_dokter
+          WHERE reg.no_rkm_medis = ?
+            AND reg.status_lanjut = 'Ranap'
+          ORDER BY rdp.tgl_peresepan DESC, rdp.jam_peresepan DESC
+          ${historyMode === 'latest' ? 'LIMIT 1' : ''}
+        `
+      : normalizedStatus === 'ralan'
+        ? `
+            SELECT DISTINCT
+              ro.no_resep,
+              ro.no_rawat,
+              ro.tgl_peresepan,
+              ro.jam_peresepan,
+              ro.kd_dokter,
+              COALESCE(d.nm_dokter, '') AS nm_dokter
+            FROM reg_periksa rp
+            INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+            LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
+            WHERE rp.no_rkm_medis = ?
+              AND LOWER(COALESCE(ro.status, '')) = ?
+              AND rp.status_lanjut IN ('Ralan', 'Ranap')
+            ORDER BY ro.tgl_peresepan DESC, ro.jam_peresepan DESC
+            ${historyMode === 'latest' ? 'LIMIT 1' : ''}
+          `
+      : `
+          SELECT DISTINCT
+            ro.no_resep,
+            ro.no_rawat,
+            ro.tgl_peresepan,
+            ro.jam_peresepan,
+            ro.kd_dokter,
+            COALESCE(d.nm_dokter, '') AS nm_dokter
+          FROM reg_periksa rp
+          INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+          LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
+          WHERE rp.no_rkm_medis = ?
+            AND LOWER(COALESCE(ro.status, '')) = ?
+            AND rp.status_lanjut = 'Ranap'
+          ORDER BY ro.tgl_peresepan DESC, ro.jam_peresepan DESC
+          ${historyMode === 'latest' ? 'LIMIT 1' : ''}
+        `;
+
+    const [[countRows], [prescRequestRows], [compoundCountRows], [nonCompoundCountRows]] = await Promise.all([
+      db.execute(
+        countQuery,
+        normalizedStatus === 'pulang' ? [normalizedNoRm] : [normalizedNoRm, normalizedStatus]
+      ),
+      db.execute(
+        prescRequestQuery,
+        normalizedStatus === 'pulang' ? [normalizedNoRm] : [normalizedNoRm, normalizedStatus]
+      ),
+      compoundCountQuery
+        ? db.execute(compoundCountQuery, [normalizedNoRm, normalizedStatus])
+        : Promise.resolve([[{ total: 0 }]]),
+      nonCompoundCountQuery
+        ? db.execute(nonCompoundCountQuery, [normalizedNoRm, normalizedStatus])
+        : Promise.resolve([[{ total: 0 }]])
+    ]);
+    const total = Number(countRows?.[0]?.total) || 0;
+    const compoundTotal = Number(compoundCountRows?.[0]?.total) || 0;
+    const nonCompoundTotal = Number(nonCompoundCountRows?.[0]?.total) || 0;
+    const medicationsRequest = [];
+
+    for (const prescRequestRow of prescRequestRows) {
+      if (!prescRequestRow.tgl_peresepan || !prescRequestRow.jam_peresepan) {
+        continue;
+      }
+
+      const stockBangsalCode = await this.resolveMedicationStockBangsalCode(
+        String(prescRequestRow.no_rawat || '').trim(),
+        normalizedStatus
+      );
+
+      const detailRequestQuery = normalizedStatus === 'pulang'
+        ? `
+            SELECT
+              rp.kode_brng,
+              rp.jml_barang AS jml,
+              rp.dosis AS aturan_pakai,
+              ob.nama_brng,
+              ob.kode_sat AS satuan,
+              COALESCE(SUM(gb.stok), 0) AS stok
+            FROM resep_pulang rp
+            LEFT JOIN databarang ob ON rp.kode_brng = ob.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = rp.kode_brng AND gb.kd_bangsal = ?
+            WHERE rp.no_resep = ?
+            GROUP BY rp.kode_brng, rp.jml_barang, rp.dosis, ob.nama_brng, ob.kode_sat
+            ORDER BY ob.nama_brng
+          `
+        : `
+            SELECT
+              dro.kode_brng,
+              dro.jml,
+              dro.aturan_pakai,
+              ob.nama_brng,
+              ob.kode_sat AS satuan,
+              COALESCE(SUM(gb.stok), 0) AS stok
+            FROM resep_dokter dro
+            LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = dro.kode_brng AND gb.kd_bangsal = ?
+            WHERE dro.no_resep = ?
+            GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat
+            ORDER BY ob.nama_brng
+          `;
+      const compoundQuery = `
+        SELECT
+          rdr.no_racik,
+          rdr.nama_racik,
+          rdr.kd_racik,
+          rdr.jml_dr,
+          rdr.aturan_pakai,
+          rdr.keterangan,
+          mr.nm_racik
+        FROM resep_dokter_racikan rdr
+        LEFT JOIN metode_racik mr ON mr.kd_racik = rdr.kd_racik
+        WHERE rdr.no_resep = ?
+        ORDER BY rdr.no_racik ASC
+      `;
+
+      const [detailRequestRows, compoundRows] = await Promise.all([
+        db.execute(detailRequestQuery, [stockBangsalCode, prescRequestRow.no_resep]).then(([rows]) => rows),
+        normalizedStatus === 'pulang'
+          ? Promise.resolve([])
+          : db.execute(compoundQuery, [prescRequestRow.no_resep]).then(([rows]) => rows)
+      ]);
+
+      const obatList = detailRequestRows.map((row) => ({
+        kode_brng: row.kode_brng || '',
+        nama: row.nama_brng || '-',
+        jumlah: row.jml || '-',
+        aturan_pakai: row.aturan_pakai || '-',
+        satuan: row.satuan || '',
+        stok: Number(row.stok) || 0
+      }));
+
+      const compounds = [];
+      for (const compoundRow of compoundRows) {
+        const [compoundDetailRows] = await db.execute(
+          `
+            SELECT
+              rdrd.kode_brng,
+              rdrd.kandungan,
+              rdrd.jml,
+              db.nama_brng,
+              db.kode_sat AS satuan,
+              COALESCE(SUM(gb.stok), 0) AS stok
+            FROM resep_dokter_racikan_detail rdrd
+            LEFT JOIN databarang db ON db.kode_brng = rdrd.kode_brng
+            LEFT JOIN gudangbarang gb ON gb.kode_brng = rdrd.kode_brng AND gb.kd_bangsal = ?
+            WHERE rdrd.no_resep = ? AND rdrd.no_racik = ?
+            GROUP BY rdrd.kode_brng, rdrd.kandungan, rdrd.jml, db.nama_brng, db.kode_sat
+            ORDER BY db.nama_brng ASC
+          `,
+          [stockBangsalCode, prescRequestRow.no_resep, compoundRow.no_racik]
+        );
+
+        compounds.push({
+          no_racik: compoundRow.no_racik,
+          nama_racik: compoundRow.nama_racik || '',
+          kd_racik: compoundRow.kd_racik || '',
+          nm_racik: compoundRow.nm_racik || '',
+          jml_dr: compoundRow.jml_dr || '',
+          aturan_pakai: compoundRow.aturan_pakai || '',
+          keterangan: compoundRow.keterangan || '',
+          details: compoundDetailRows.map((detailRow) => ({
+            kode_brng: detailRow.kode_brng || '',
+            nama_brng: detailRow.nama_brng || '-',
+            kandungan: detailRow.kandungan || '',
+            jml: detailRow.jml || '',
+            satuan: detailRow.satuan || '',
+            stok: Number(detailRow.stok) || 0
+          }))
+        });
+      }
+
+      const packageMatch = compounds.length === 0
+        ? await this.findMatchingMedicationPackage(obatList)
+        : null;
+
+      if (obatList.length > 0 || compounds.length > 0) {
+        medicationsRequest.push({
+          tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
+          no_resep: prescRequestRow.no_resep,
+          no_rawat: String(prescRequestRow.no_rawat || '').trim(),
+          kd_dokter: prescRequestRow.kd_dokter || '',
+          nm_dokter: prescRequestRow.nm_dokter || '',
+          obat: obatList,
+          compounds,
+          is_package: Boolean(packageMatch),
+          package_id: packageMatch?.id_paket || '',
+          package_name: packageMatch?.nama_paket || '',
+          package_code: packageMatch?.kd_paket || ''
+        });
+      }
+    }
+
+    return {
+      items: medicationsRequest,
+      hasMore: total > medicationsRequest.length,
+      compoundHasMore: historyMode === 'latest' ? compoundTotal > 1 : false,
+      nonCompoundHasMore: historyMode === 'latest' ? nonCompoundTotal > 1 : false,
+      compoundTotal,
+      nonCompoundTotal
+    };
   }
 
   // Helper function to fetch lab results request
@@ -1243,6 +1585,10 @@ class GetMedicalRecordService {
   }
 
   static normalizeOptions(options = {}) {
+    const focusedMedicationHistoryMode = String(options.focusedMedicationHistoryMode || '').trim().toLowerCase() === 'all'
+      ? 'all'
+      : 'latest';
+
     return {
       limit: Math.min(this.parsePositiveInteger(options.limit, this.DEFAULT_LIMIT), 20),
       outpatientPage: this.parsePositiveInteger(options.outpatientPage, 1),
@@ -1255,6 +1601,7 @@ class GetMedicalRecordService {
       includeFocusedMedications: options.includeFocusedMedications === true,
       includeFocusedLaboratory: options.includeFocusedLaboratory === true,
       includeFocusedRadiology: options.includeFocusedRadiology === true,
+      focusedMedicationHistoryMode,
       focusNoRawat: typeof options.focusNoRawat === 'string' && options.focusNoRawat.trim()
         ? options.focusNoRawat.trim()
         : null
@@ -1608,6 +1955,7 @@ class GetMedicalRecordService {
         includeFocusedMedications,
         includeFocusedLaboratory,
         includeFocusedRadiology,
+        focusedMedicationHistoryMode,
         focusNoRawat
       } = this.normalizeOptions(options);
 
@@ -1621,6 +1969,7 @@ class GetMedicalRecordService {
         inpatientPageResult,
         focusedRalanExaminations,
         focusedRanapExaminations,
+        focusedEkstrapiramidal,
         focusedRalanProcedures,
         focusedRanapProcedures,
         focusedRalanMedicationRequests,
@@ -1711,12 +2060,13 @@ class GetMedicalRecordService {
           : Promise.resolve(null),
         focusNoRawat && includeFocusedExaminations ? this.fetchExaminations(focusNoRawat, 'ralan') : Promise.resolve([]),
         focusNoRawat && includeFocusedExaminations ? this.fetchExaminations(focusNoRawat, 'ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedExaminations ? this.fetchEkstrapiramidal(focusNoRawat) : Promise.resolve(null),
         focusNoRawat && includeFocusedProcedures ? this.fetchProcedures(focusNoRawat, 'ralan') : Promise.resolve([]),
         focusNoRawat && includeFocusedProcedures ? this.fetchProcedures(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat && includeFocusedMedications ? this.fetchMedicationsRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
-        focusNoRawat && includeFocusedMedications ? this.fetchMedicationsRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat && includeFocusedMedications ? this.fetchMedicationsRequest(focusNoRawat, 'pulang') : Promise.resolve([]),
-        focusNoRawat && includeFocusedMedications ? this.fetchMedicationsRequest(focusNoRawat, 'ibs') : Promise.resolve([]),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedicationRequestsByNoRm(no_rm, 'ralan', { historyMode: focusedMedicationHistoryMode }) : Promise.resolve({ items: [], hasMore: false }),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedicationRequestsByNoRm(no_rm, 'ranap', { historyMode: focusedMedicationHistoryMode }) : Promise.resolve({ items: [], hasMore: false }),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedicationRequestsByNoRm(no_rm, 'pulang', { historyMode: focusedMedicationHistoryMode }) : Promise.resolve({ items: [], hasMore: false }),
+        focusNoRawat && includeFocusedMedications ? this.fetchMedicationRequestsByNoRm(no_rm, 'ibs', { historyMode: focusedMedicationHistoryMode }) : Promise.resolve({ items: [], hasMore: false }),
         focusNoRawat && includeFocusedMedications ? this.fetchMedications(focusNoRawat, 'ralan') : Promise.resolve([]),
         focusNoRawat && includeFocusedMedications ? this.fetchMedications(focusNoRawat, 'ranap') : Promise.resolve([]),
         focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratoryRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
@@ -1815,7 +2165,8 @@ class GetMedicalRecordService {
           focused_examinations: {
             ralan: focusedRalanExaminations,
             ranap: focusedRanapExaminations
-          }
+          },
+          focused_ekstrapiramidal: focusedEkstrapiramidal
         } : {}),
         ...(includeFocusedProcedures ? {
           focused_procedures: {
@@ -1824,12 +2175,26 @@ class GetMedicalRecordService {
           }
         } : {}),
         ...(includeFocusedMedications ? {
-          focused_medications_request: {
-            ralan: focusedRalanMedicationRequests,
-            ranap: focusedRanapMedicationRequests,
-            pulang: focusedPulangMedicationRequests,
-            ibs: focusedIbsMedicationRequests
+            focused_medications_request: {
+              ralan: focusedRalanMedicationRequests.items,
+            ranap: focusedRanapMedicationRequests.items,
+              pulang: focusedPulangMedicationRequests.items,
+              ibs: focusedIbsMedicationRequests.items
           },
+            focused_medications_request_meta: {
+              ralan_has_more: focusedRalanMedicationRequests.hasMore,
+              ralan_racikan_has_more: focusedRalanMedicationRequests.compoundHasMore,
+              ralan_umum_has_more: focusedRalanMedicationRequests.nonCompoundHasMore,
+              ralan_racikan_total: focusedRalanMedicationRequests.compoundTotal,
+              ralan_umum_total: focusedRalanMedicationRequests.nonCompoundTotal,
+              ranap_has_more: focusedRanapMedicationRequests.hasMore,
+              ranap_racikan_has_more: focusedRanapMedicationRequests.compoundHasMore,
+              ranap_umum_has_more: focusedRanapMedicationRequests.nonCompoundHasMore,
+              ranap_racikan_total: focusedRanapMedicationRequests.compoundTotal,
+              ranap_umum_total: focusedRanapMedicationRequests.nonCompoundTotal,
+              pulang_has_more: focusedPulangMedicationRequests.hasMore,
+              ibs_has_more: focusedIbsMedicationRequests.hasMore
+            },
           focused_medications: {
             ralan: focusedRalanMedications,
             ranap: focusedRanapMedications
