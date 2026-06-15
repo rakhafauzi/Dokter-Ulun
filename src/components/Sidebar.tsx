@@ -258,6 +258,21 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, canView
             </Collapsible>
           </div>
 
+          <Link
+            to="/panduan"
+            className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              isActive('/panduan')
+                ? 'bg-primary/10 text-primary'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+            onClick={onClose}
+          >
+            <span className={`mr-3 ${isActive('/panduan') ? 'text-primary' : 'text-gray-500'}`}>
+              <HelpCircle className="h-5 w-5" />
+            </span>
+            Panduan
+          </Link>
+
         </nav>
       </div>
       
