@@ -1688,7 +1688,7 @@ class GetMedicalRecordService {
         ki.*,
         b.nm_bangsal,
         CASE
-          WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) NOT IN ('pindah kamar', '-')
+          WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) <> 'pindah kamar'
           THEN b.nm_bangsal
           ELSE NULL
         END AS display_nm_bangsal
@@ -1698,7 +1698,7 @@ class GetMedicalRecordService {
       WHERE ki.no_rawat IN (${noRawats.map(() => '?').join(',')})
       ORDER BY
         CASE
-          WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) NOT IN ('pindah kamar', '-') THEN 0
+          WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) <> 'pindah kamar' THEN 0
           ELSE 1
         END,
         ki.tgl_masuk DESC,
@@ -2148,7 +2148,7 @@ class GetMedicalRecordService {
             ki.*,
             b.nm_bangsal,
             CASE
-              WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) NOT IN ('pindah kamar', '-')
+              WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) <> 'pindah kamar'
               THEN b.nm_bangsal
               ELSE NULL
             END AS display_nm_bangsal
@@ -2158,7 +2158,7 @@ class GetMedicalRecordService {
           WHERE ki.no_rawat IN (${inpatientNoRawats.map(() => '?').join(',')})
           ORDER BY
             CASE
-              WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) NOT IN ('pindah kamar', '-') THEN 0
+              WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) <> 'pindah kamar' THEN 0
               ELSE 1
             END,
             ki.tgl_masuk DESC,
