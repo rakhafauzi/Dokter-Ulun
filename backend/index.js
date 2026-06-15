@@ -38,6 +38,7 @@ import ResumePasienDataService from './services/resumePasienDataService.js';
 import SaveExaminationService from './services/saveExaminationService.js';
 import TriageIgdService from './services/triageIgdService.js';
 import WhatsappOtpService from './services/whatsappOtpService.js';
+import { getAuditHistory, getAuditHistoryAccessInfo, initCrudAuditStorage, logCrudActivity } from './services/crudAuditService.js';
 import statisticsDataRoutes from './routes/statisticsData.js';
 import updateExaminationRoute from './routes/updateExamination.js';
 import clinicalPathwayRoutes from './routes/clinicalPathway.js';
@@ -49,6 +50,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, '.env') });
+initCrudAuditStorage();
 
 // #region debug-point A:save-exam-route-reporter
 const reportSaveExaminationDebug = (hypothesisId, location, msg, data = {}, runId = 'pre-fix') => {
@@ -97,6 +99,30 @@ app.use((req, res, next) => {
   next();
 });
 
+const auditCrudSuccess = async (req, entity, action, result, meta = {}) => {
+  await logCrudActivity({
+    req,
+    entity,
+    action,
+    status: 'success',
+    payload: req.body,
+    result,
+    meta
+  });
+};
+
+const auditCrudFailure = async (req, entity, action, error, meta = {}) => {
+  await logCrudActivity({
+    req,
+    entity,
+    action,
+    status: 'error',
+    payload: req.body,
+    error,
+    meta
+  });
+};
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -106,6 +132,34 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/api/audit-history/access/:username', async (req, res) => {
+  try {
+    const result = await getAuditHistoryAccessInfo(req.params.username);
+    res.json(result);
+  } catch (error) {
+    console.error('Audit history access error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memeriksa akses riwayat audit'
+    });
+  }
+});
+
+app.get('/api/audit-history', async (req, res) => {
+  try {
+    const { username = '', page = '1', limit = '50', action = '', status = '', entity = '', search = '' } = req.query;
+    const result = await getAuditHistory(username, { page, limit, action, status, entity, search });
+    res.json(result);
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 500;
+    console.error('Audit history error:', error);
+    res.status(statusCode).json({
+      success: false,
+      error: error.message || 'Gagal mengambil riwayat audit'
+    });
+  }
 });
 
 // Register clinical pathway routes early to avoid conflicts
@@ -131,6 +185,7 @@ app.post('/api/save-examination', async (req, res) => {
     // #endregion
     
     const result = await SaveExaminationService.saveExamination(examinationData);
+    await auditCrudSuccess(req, 'examination', result?.data?.action || 'create', result);
     // #region debug-point A:save-exam-route-success
     reportSaveExaminationDebug('A', 'backend/index.js:/api/save-examination', '[DEBUG] save examination route success', {
       success: result?.success ?? null,
@@ -140,6 +195,7 @@ app.post('/api/save-examination', async (req, res) => {
     // #endregion
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'examination', 'upsert', error);
     // #region debug-point D:save-exam-route-error
     reportSaveExaminationDebug('D', 'backend/index.js:/api/save-examination', '[DEBUG] save examination route error', {
       name: error?.name || 'Error',
@@ -184,8 +240,10 @@ app.get('/api/triase-igd/:no_rawat', async (req, res) => {
 app.post('/api/triase-igd', async (req, res) => {
   try {
     const result = await TriageIgdService.saveTriage(req.body || {});
+    await auditCrudSuccess(req, 'triase_igd', 'upsert', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'triase_igd', 'upsert', error);
     console.error('Error saving triase IGD:', error);
     res.status(500).json({
       success: false,
@@ -251,8 +309,10 @@ app.delete('/api/examination/:no_rawat/:tgl_perawatan/:jam_rawat/:status_rawat',
     }
 
     const result = await SaveExaminationService.deleteExamination(no_rawat, tgl_perawatan, jam_rawat, status_rawat);
+    await auditCrudSuccess(req, 'examination', 'delete', result, { no_rawat, reference_id: no_rawat });
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'examination', 'delete', error, { no_rawat: req.params.no_rawat, reference_id: req.params.no_rawat });
     console.error('Delete examination error:', error);
     res.status(500).json({
       success: false,
@@ -371,8 +431,10 @@ app.post('/api/auth/change-password', async (req, res) => {
 
   try {
     const result = await AuthService.changePassword(username, currentPassword, newPassword);
+    await auditCrudSuccess(req, 'auth_password', 'update', result, { reference_id: username });
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'auth_password', 'update', error, { reference_id: username });
     console.error('Change password error:', error);
     res.status(400).json({
       success: false,
@@ -752,8 +814,10 @@ app.get('/api/operation-reports/:no_rawat', async (req, res) => {
 app.post('/api/operation-reports', async (req, res) => {
   try {
     const result = await OperationReportService.createReport(req.body);
+    await auditCrudSuccess(req, 'operation_report', 'create', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'operation_report', 'create', error);
     console.error('Error creating operation report:', error);
     res.status(400).json({
       success: false,
@@ -765,8 +829,10 @@ app.post('/api/operation-reports', async (req, res) => {
 app.put('/api/operation-reports', async (req, res) => {
   try {
     const result = await OperationReportService.updateReport(req.body);
+    await auditCrudSuccess(req, 'operation_report', 'update', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'operation_report', 'update', error);
     console.error('Error updating operation report:', error);
     res.status(400).json({
       success: false,
@@ -778,8 +844,10 @@ app.put('/api/operation-reports', async (req, res) => {
 app.delete('/api/operation-reports', async (req, res) => {
   try {
     const result = await OperationReportService.deleteReport(req.body);
+    await auditCrudSuccess(req, 'operation_report', 'delete', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'operation_report', 'delete', error);
     console.error('Error deleting operation report:', error);
     res.status(400).json({
       success: false,
@@ -821,8 +889,15 @@ app.get('/api/assesmen-rehab-medik/:no_rawat', async (req, res) => {
 app.post('/api/assesmen-rehab-medik', async (req, res) => {
   try {
     const result = await AssesmenRehabMedikService.saveAssessment(req.body);
+    await auditCrudSuccess(
+      req,
+      'assesmen_rehab_medik',
+      String(result?.message || '').toLowerCase().includes('diperbarui') ? 'update' : 'create',
+      result
+    );
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'assesmen_rehab_medik', 'upsert', error);
     const statusCode = Number(error?.statusCode) || 400;
     console.error('Error in assesmen-rehab-medik POST endpoint:', error);
     res.status(statusCode).json({
@@ -837,8 +912,10 @@ app.delete('/api/assesmen-rehab-medik/:no_rawat', async (req, res) => {
     const { no_rawat } = req.params;
     const username = String(req.query.username || '').trim();
     const result = await AssesmenRehabMedikService.deleteAssessment(no_rawat, username);
+    await auditCrudSuccess(req, 'assesmen_rehab_medik', 'delete', result, { no_rawat, reference_id: no_rawat });
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'assesmen_rehab_medik', 'delete', error, { no_rawat: req.params.no_rawat, reference_id: req.params.no_rawat });
     const statusCode = Number(error?.statusCode) || 400;
     console.error('Error in assesmen-rehab-medik DELETE endpoint:', error);
     res.status(statusCode).json({
@@ -873,8 +950,10 @@ app.get('/api/patient-notes/:no_rawat', async (req, res) => {
 app.post('/api/patient-notes', async (req, res) => {
   try {
     const result = await PatientNotesService.createNote(req.body);
+    await auditCrudSuccess(req, 'patient_note', 'create', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'patient_note', 'create', error);
     console.error('Error in patient-notes POST endpoint:', error);
     res.status(500).json({
       success: false,
@@ -886,8 +965,10 @@ app.post('/api/patient-notes', async (req, res) => {
 app.put('/api/patient-notes', async (req, res) => {
   try {
     const result = await PatientNotesService.updateNote(req.body);
+    await auditCrudSuccess(req, 'patient_note', 'update', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'patient_note', 'update', error);
     console.error('Error in patient-notes PUT endpoint:', error);
     res.status(500).json({
       success: false,
@@ -899,8 +980,10 @@ app.put('/api/patient-notes', async (req, res) => {
 app.delete('/api/patient-notes', async (req, res) => {
   try {
     const result = await PatientNotesService.deleteNote(req.body);
+    await auditCrudSuccess(req, 'patient_note', 'delete', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'patient_note', 'delete', error);
     console.error('Error in patient-notes DELETE endpoint:', error);
     res.status(500).json({
       success: false,
@@ -912,8 +995,10 @@ app.delete('/api/patient-notes', async (req, res) => {
 app.put('/api/patient-contact', async (req, res) => {
   try {
     const result = await PatientContactService.updatePatientWhatsapp(req.body);
+    await auditCrudSuccess(req, 'patient_contact', 'update', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'patient_contact', 'update', error);
     console.error('Error in patient-contact PUT endpoint:', error);
     res.status(400).json({
       success: false,
@@ -954,8 +1039,10 @@ app.get('/api/balance-cairan/:no_rawat', async (req, res) => {
 app.post('/api/balance-cairan', async (req, res) => {
   try {
     const result = await BalanceCairanService.createOuttake(req.body);
+    await auditCrudSuccess(req, 'balance_cairan', 'create', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'balance_cairan', 'create', error);
     console.error('Error in balance-cairan POST endpoint:', error);
     res.status(400).json({
       success: false,
@@ -967,8 +1054,10 @@ app.post('/api/balance-cairan', async (req, res) => {
 app.post('/api/ekstrapiramidal', async (req, res) => {
   try {
     const result = await EkstrapiramidalService.save(req.body);
+    await auditCrudSuccess(req, 'ekstrapiramidal', 'upsert', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'ekstrapiramidal', 'upsert', error);
     console.error('Error in ekstrapiramidal POST endpoint:', error);
     res.status(400).json({
       success: false,
@@ -1002,8 +1091,10 @@ app.get('/api/internal-referrals/:no_rawat', async (req, res) => {
 app.post('/api/internal-referrals', async (req, res) => {
   try {
     const result = await InternalReferralService.createReferral(req.body);
+    await auditCrudSuccess(req, 'internal_referral', 'create', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'internal_referral', 'create', error);
     console.error('Error in internal-referrals POST endpoint:', error);
     res.status(400).json({
       success: false,
@@ -1015,8 +1106,10 @@ app.post('/api/internal-referrals', async (req, res) => {
 app.put('/api/internal-referrals', async (req, res) => {
   try {
     const result = await InternalReferralService.updateReferral(req.body);
+    await auditCrudSuccess(req, 'internal_referral', 'update', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'internal_referral', 'update', error);
     console.error('Error in internal-referrals PUT endpoint:', error);
     res.status(400).json({
       success: false,
@@ -1028,8 +1121,10 @@ app.put('/api/internal-referrals', async (req, res) => {
 app.delete('/api/internal-referrals', async (req, res) => {
   try {
     const result = await InternalReferralService.deleteReferral(req.body);
+    await auditCrudSuccess(req, 'internal_referral', 'delete', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'internal_referral', 'delete', error);
     console.error('Error in internal-referrals DELETE endpoint:', error);
     res.status(400).json({
       success: false,
@@ -1069,8 +1164,10 @@ app.get('/api/procedure-options', async (req, res) => {
 app.post('/api/save-procedures', async (req, res) => {
   try {
     const result = await ProcedureService.saveProcedures(req.body);
+    await auditCrudSuccess(req, 'procedure', 'create', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'procedure', 'create', error);
     console.error('Error in save-procedures endpoint:', error);
     res.status(500).json({
       success: false,
@@ -1082,8 +1179,10 @@ app.post('/api/save-procedures', async (req, res) => {
 app.post('/api/delete-procedure', async (req, res) => {
   try {
     const result = await ProcedureService.deleteProcedure(req.body);
+    await auditCrudSuccess(req, 'procedure', 'delete', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'procedure', 'delete', error);
     console.error('Error in delete-procedure endpoint:', error);
     res.status(500).json({
       success: false,
@@ -1097,8 +1196,10 @@ app.post('/api/delete-examination', async (req, res) => {
   try {
     const { no_rawat, status_rawat, tgl_perawatan, jam_rawat, username } = req.body;
     const data = await DeleteExaminationService.deleteExamination(no_rawat, status_rawat, tgl_perawatan, jam_rawat, username);
+    await auditCrudSuccess(req, 'examination', 'delete', data);
     res.json(data);
   } catch (error) {
+    await auditCrudFailure(req, 'examination', 'delete', error);
     console.error('Delete examination error:', error);
     res.status(500).json({ error: error.message });
   }
@@ -1129,8 +1230,10 @@ app.get('/api/icd-management/:no_rawat', async (req, res) => {
 app.post('/api/icd-management', async (req, res) => {
   try {
     const data = await IcdDataService.savePatientIcdData(req.body);
+    await auditCrudSuccess(req, 'icd_management', 'upsert', data);
     res.json(data);
   } catch (error) {
+    await auditCrudFailure(req, 'icd_management', 'upsert', error);
     console.error('ICD management save error:', error);
     res.status(500).json({ error: error.message });
   }
@@ -1139,8 +1242,10 @@ app.post('/api/icd-management', async (req, res) => {
 app.delete('/api/icd-management', async (req, res) => {
   try {
     const data = await IcdDataService.deletePatientIcdItem(req.body);
+    await auditCrudSuccess(req, 'icd_management', 'delete', data);
     res.json(data);
   } catch (error) {
+    await auditCrudFailure(req, 'icd_management', 'delete', error);
     console.error('ICD management delete error:', error);
     res.status(500).json({ error: error.message });
   }
@@ -1300,9 +1405,11 @@ app.post('/api/laboratory-data', async (req, res) => {
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }
-    
+    await auditCrudSuccess(req, 'laboratory_request', action === 'update_lab_request' ? 'update' : 'create', result);
     res.json(result);
   } catch (error) {
+    const auditAction = String(req.query?.action || '').trim() === 'update_lab_request' ? 'update' : 'create';
+    await auditCrudFailure(req, 'laboratory_request', auditAction, error);
     console.error('Laboratory data error:', error);
     res.status(500).json({
       success: false,
@@ -1321,11 +1428,13 @@ app.delete('/api/laboratory-data', async (req, res) => {
       }
       
       const result = await LaboratoryDataService.deleteLabRequest(noorder, username);
+      await auditCrudSuccess(req, 'laboratory_request', 'delete', result, { reference_id: noorder });
       res.json(result);
     } else {
       res.status(400).json({ error: 'Invalid action' });
     }
   } catch (error) {
+    await auditCrudFailure(req, 'laboratory_request', 'delete', error, { reference_id: req.query?.noorder });
     console.error('Laboratory data error:', error);
     res.status(500).json({
       success: false,
@@ -1530,8 +1639,10 @@ app.get('/api/allergy-data', async (req, res) => {
 app.post('/api/allergy-data', async (req, res) => {
   try {
     const result = await AllergyDataService.saveAllergy(req.body || {});
+    await auditCrudSuccess(req, 'allergy', 'create', result);
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'allergy', 'create', error);
     console.error('Allergy save error:', error);
     res.status(500).json({
       success: false,
@@ -1604,9 +1715,11 @@ app.post('/api/radiology-data', async (req, res) => {
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }
-
+    await auditCrudSuccess(req, 'radiology_request', action === 'update_radiology_request' ? 'update' : 'create', result);
     res.json(result);
   } catch (error) {
+    const auditAction = String(req.query?.action || '').trim() === 'update_radiology_request' ? 'update' : 'create';
+    await auditCrudFailure(req, 'radiology_request', auditAction, error);
     console.error('Radiology data error:', error);
     res.status(500).json({
       success: false,
@@ -1625,11 +1738,13 @@ app.delete('/api/radiology-data', async (req, res) => {
       }
 
       const result = await RadiologyDataService.deleteRadiologyRequest(noorder, username);
+      await auditCrudSuccess(req, 'radiology_request', 'delete', result, { reference_id: noorder });
       res.json(result);
     } else {
       res.status(400).json({ error: 'Invalid action' });
     }
   } catch (error) {
+    await auditCrudFailure(req, 'radiology_request', 'delete', error, { reference_id: req.query?.noorder });
     console.error('Radiology data error:', error);
     res.status(500).json({
       success: false,
@@ -1747,9 +1862,20 @@ app.post('/api/prescription-data', async (req, res) => {
           error: 'Invalid action. Supported actions: create_prescription, update_prescription, delete_prescription'
         });
     }
-    
+    const auditAction = action === 'update_prescription'
+      ? 'update'
+      : action === 'delete_prescription'
+        ? 'delete'
+        : 'create';
+    await auditCrudSuccess(req, 'prescription', auditAction, result);
     res.json(result);
   } catch (error) {
+    const auditAction = req.body?.action === 'update_prescription'
+      ? 'update'
+      : req.body?.action === 'delete_prescription'
+        ? 'delete'
+        : 'create';
+    await auditCrudFailure(req, 'prescription', auditAction, error);
     console.error('Prescription data error:', error);
     res.status(500).json({
       success: false,
@@ -1830,8 +1956,10 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
     }
 
     const result = await ResumePasienDataService.saveResume(no_rawat, resumeData, statusRawat);
+    await auditCrudSuccess(req, 'resume_pasien', 'upsert', result, { no_rawat, reference_id: no_rawat });
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'resume_pasien', 'upsert', error, { no_rawat: req.params.no_rawat, reference_id: req.params.no_rawat });
     console.error('Save resume error:', error);
     res.status(500).json({
       success: false,
@@ -1853,8 +1981,10 @@ app.post('/api/resume-pasien-data/:no_rawat/verification', async (req, res) => {
     }
 
     const result = await ResumePasienDataService.setResumeVerification(no_rawat, kd_dokter, Boolean(verified));
+    await auditCrudSuccess(req, 'resume_verification', 'update', result, { no_rawat, reference_id: no_rawat });
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'resume_verification', 'update', error, { no_rawat: req.params.no_rawat, reference_id: req.params.no_rawat });
     console.error('Resume verification error:', error);
     res.status(500).json({
       success: false,
@@ -1876,8 +2006,10 @@ app.delete('/api/resume-pasien-data/:no_rawat', async (req, res) => {
     }
 
     const result = await ResumePasienDataService.deleteResume(no_rawat, status_rawat, kd_dokter);
+    await auditCrudSuccess(req, 'resume_pasien', 'delete', result, { no_rawat, reference_id: no_rawat });
     res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'resume_pasien', 'delete', error, { no_rawat: req.params.no_rawat, reference_id: req.params.no_rawat });
     console.error('Delete resume error:', error);
     res.status(500).json({
       success: false,

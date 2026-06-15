@@ -1,7 +1,32 @@
 import express from 'express';
 import { updateExaminationData } from '../services/updateExaminationService.js';
+import { logCrudActivity } from '../services/crudAuditService.js';
 
 const router = express.Router();
+
+const auditCrudSuccess = async (req, entity, action, result, meta = {}) => {
+  await logCrudActivity({
+    req,
+    entity,
+    action,
+    status: 'success',
+    payload: req.body,
+    result,
+    meta
+  });
+};
+
+const auditCrudFailure = async (req, entity, action, error, meta = {}) => {
+  await logCrudActivity({
+    req,
+    entity,
+    action,
+    status: 'error',
+    payload: req.body,
+    error,
+    meta
+  });
+};
 
 // GET /api/update-examination/info - Get information about update examination endpoint
 router.get('/info', (req, res) => {
@@ -105,6 +130,7 @@ router.put('/', async (req, res) => {
     });
 
     console.log('✅ Examination updated successfully');
+    await auditCrudSuccess(req, 'examination', 'update', result, { no_rawat, reference_id: no_rawat });
     
     res.json({
       success: true,
@@ -114,6 +140,10 @@ router.put('/', async (req, res) => {
     });
 
   } catch (error) {
+    await auditCrudFailure(req, 'examination', 'update', error, {
+      no_rawat: req.body?.no_rawat,
+      reference_id: req.body?.no_rawat
+    });
     console.error('❌ Error updating examination:', error);
     res.status(500).json({
       success: false,

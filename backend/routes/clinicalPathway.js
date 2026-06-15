@@ -3,9 +3,34 @@ import { ClinicalPathwayService } from '../services/clinicalPathwayService.js';
 import medicalScribeService from '../services/medicalScribeService.js';
 import { body, param, validationResult } from 'express-validator';
 import { executeQuery } from '../config/database.js';
+import { logCrudActivity } from '../services/crudAuditService.js';
 
 const router = express.Router();
 const clinicalPathwayService = new ClinicalPathwayService();
+
+const auditCrudSuccess = async (req, entity, action, result, meta = {}) => {
+  await logCrudActivity({
+    req,
+    entity,
+    action,
+    status: 'success',
+    payload: req.body,
+    result,
+    meta
+  });
+};
+
+const auditCrudFailure = async (req, entity, action, error, meta = {}) => {
+  await logCrudActivity({
+    req,
+    entity,
+    action,
+    status: 'error',
+    payload: req.body,
+    error,
+    meta
+  });
+};
 
 // Middleware untuk validasi parameter
 const validatePatientParams = [
@@ -186,8 +211,14 @@ router.post('/monitoring/:patientId/execution/:executionId/status', validateMoni
       return res.status(400).json(result);
     }
 
+    await auditCrudSuccess(req, 'clinical_pathway_execution', 'update', result, {
+      reference_id: req.params.executionId
+    });
     return res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_execution', 'update', error, {
+      reference_id: req.params.executionId
+    });
     console.error('Error in clinical pathway update execution status route:', error);
     return res.status(500).json({
       success: false,
@@ -221,8 +252,14 @@ router.post('/monitoring/:patientId/status', validateMonitoringPatientStatusPayl
       return res.status(400).json(result);
     }
 
+    await auditCrudSuccess(req, 'clinical_pathway_patient_status', 'update', result, {
+      reference_id: req.params.patientId
+    });
     return res.json(result);
   } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_patient_status', 'update', error, {
+      reference_id: req.params.patientId
+    });
     console.error('Error in clinical pathway update patient status route:', error);
     return res.status(500).json({
       success: false,
@@ -333,6 +370,10 @@ router.post('/save', validateClinicalPathwayData, async (req, res) => {
     }
 
     console.log('Clinical pathway saved successfully');
+    await auditCrudSuccess(req, 'clinical_pathway', 'upsert', result, {
+      no_rawat: req.body?.no_rawat,
+      no_rkm_medis: req.body?.no_rkm_medis
+    });
     
     res.json({
       success: true,
@@ -341,6 +382,10 @@ router.post('/save', validateClinicalPathwayData, async (req, res) => {
     });
 
   } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway', 'upsert', error, {
+      no_rawat: req.body?.no_rawat,
+      no_rkm_medis: req.body?.no_rkm_medis
+    });
     console.error('Error in save clinical pathway route:', error);
     res.status(500).json({
       success: false,

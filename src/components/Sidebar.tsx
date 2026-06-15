@@ -27,6 +27,7 @@ interface SidebarProps {
   doctorName: string;
   doctorId: string;
   gender: 'L' | 'P'; 
+  canViewAuditHistory?: boolean;
   onClose?: () => void;
   onLogout?: () => void;
 }
@@ -37,7 +38,7 @@ interface SubmenuItem {
   exact?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose, onLogout }) => {
+const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, canViewAuditHistory = false, onClose, onLogout }) => {
   const location = useLocation();
   const [pasienOpen, setPasienOpen] = useState(true);
   const [statistikOpen, setStatistikOpen] = useState(true);
@@ -60,6 +61,7 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
   const menuItems = [
     { name: 'Dashboard', path: '/', icon: <BarChart2 className="h-5 w-5" /> },
     { name: 'AI Asisten', path: '/ai-assistant', icon: <Bot className="h-5 w-5" />, badge: 'Beta' },
+    ...(canViewAuditHistory ? [{ name: 'Riwayat Audit', path: '/riwayat-audit', icon: <Book className="h-5 w-5" /> }] : []),
     { name: 'Presensi', path: '/presensi', icon: <FileCheck className="h-5 w-5" /> },
     { name: 'Booking Operasi', path: '/booking', icon: <CalendarClock className="h-5 w-5" /> },
     { name: 'Tarif INA-CBGs', path: '/tarif', icon: <DollarSign className="h-5 w-5" /> },

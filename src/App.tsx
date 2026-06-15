@@ -20,6 +20,7 @@ import ClinicalPathway from "./pages/ClinicalPathway";
 import StatisticsCare from "./pages/StatisticsCare";
 import AIAssistant from "./pages/AIAssistant";
 import Settings from "./pages/Settings";
+import AuditHistory from "./pages/AuditHistory";
 import Sidebar from "./components/Sidebar";
 
 // Helper function to format no_rawat
@@ -36,6 +37,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import MedicalRecordSearchModal from "./components/modals/MedicalRecordSearchModal";
 import PwaInstallPrompt from "./components/PwaInstallPrompt";
+import { API_URLS } from "./config/api";
 
 const queryClient = new QueryClient();
 
@@ -68,6 +70,7 @@ const AppContent = () => {
   const isTabletOrMobile = useIsTabletOrMobile();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [medicalRecordSearchOpen, setMedicalRecordSearchOpen] = React.useState(false);
+  const [canViewAuditHistory, setCanViewAuditHistory] = React.useState(false);
   const { user, isAuthenticated, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -81,6 +84,30 @@ const AppContent = () => {
     }, 800);
     return () => clearTimeout(timer);
   }, []);
+
+  React.useEffect(() => {
+    const username = String(user?.username || '').trim();
+    if (!username || !isAuthenticated) {
+      setCanViewAuditHistory(false);
+      return;
+    }
+
+    const checkAuditAccess = async () => {
+      try {
+        const response = await fetch(`${API_URLS.AUDIT_HISTORY_ACCESS}/${encodeURIComponent(username)}`);
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result?.error || 'Gagal memeriksa akses riwayat audit');
+        }
+
+        setCanViewAuditHistory(Boolean(result?.can_access));
+      } catch {
+        setCanViewAuditHistory(false);
+      }
+    };
+
+    void checkAuditAccess();
+  }, [isAuthenticated, user?.username]);
 
   if (loading) {
     return (
@@ -120,6 +147,7 @@ const AppContent = () => {
               doctorName={user?.name || ""} 
               doctorId={user?.username || ""}
               gender={user?.jk || "L"}
+              canViewAuditHistory={canViewAuditHistory}
               onLogout={logout}
             />
           </div>
@@ -148,6 +176,7 @@ const AppContent = () => {
             <Route path="/icd9" element={<MasterICD />} />
             <Route path="/igd" element={<Index />} />
             <Route path="/ai-assistant" element={<AIAssistant />} />
+            <Route path="/riwayat-audit" element={<AuditHistory />} />
             <Route path="/pengaturan" element={<Settings />} />
             <Route path="/rekam-medik" element={<MedicalRecord />} />
             <Route path="/rekam-medik/:no_rkm_medis" element={<MedicalRecordReadonly />} />
@@ -165,6 +194,7 @@ const AppContent = () => {
                 doctorName={user?.name || ""} 
                 doctorId={user?.username || ""} 
                 gender={user?.jk || "L"}
+                canViewAuditHistory={canViewAuditHistory}
                 onClose={() => setSidebarOpen(false)}
                 onLogout={logout}
               />
