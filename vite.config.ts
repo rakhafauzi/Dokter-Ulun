@@ -70,6 +70,11 @@ export default defineConfig(({ mode }) => ({
     mode === 'development' &&
     componentTagger(),
   ].filter(Boolean),
+  build: {
+    // Di beberapa shared hosting, panel/server menaruh file seperti `.user.ini`
+    // ke dalam `dist` dan file tersebut tidak boleh dihapus oleh proses build.
+    emptyOutDir: false,
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
