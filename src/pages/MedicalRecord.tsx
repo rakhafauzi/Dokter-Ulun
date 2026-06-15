@@ -8025,7 +8025,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               <p className="font-medium">{formatLongDateSafe(visit.tanggal_masuk)}</p>
                             </div>
                             <div>
-                              <p className="text-sm text-muted-foreground">Poliklinik</p>
+                              <p className="text-sm text-muted-foreground">Poliklinik/Ruangan</p>
                               <p className="font-medium">{visit.poliklinik}</p>
                             </div>
                             <div>

@@ -1684,12 +1684,25 @@ class GetMedicalRecordService {
     }
 
     const inpatientQuery = `
-      SELECT ki.*, b.nm_bangsal
+      SELECT
+        ki.*,
+        b.nm_bangsal,
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) NOT IN ('pindah kamar', '-')
+          THEN b.nm_bangsal
+          ELSE NULL
+        END AS display_nm_bangsal
       FROM kamar_inap ki
       LEFT JOIN kamar k ON ki.kd_kamar = k.kd_kamar
       LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
       WHERE ki.no_rawat IN (${noRawats.map(() => '?').join(',')})
-      ORDER BY ki.tgl_masuk DESC
+      ORDER BY
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) NOT IN ('pindah kamar', '-') THEN 0
+          ELSE 1
+        END,
+        ki.tgl_masuk DESC,
+        ki.jam_masuk DESC
     `;
     const [inpatientRows] = await db.execute(inpatientQuery, noRawats);
     return inpatientRows;
@@ -1719,7 +1732,7 @@ class GetMedicalRecordService {
       ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
       kamar: inpatientDetail?.kd_kamar || '',
       kd_poli: visit.kd_poli || '',
-      poliklinik: visit.nm_poli || '',
+      poliklinik: inpatientDetail?.display_nm_bangsal || visit.nm_poli || '',
       dokter: visit.nm_dokter || '',
       status: visit.stts || '',
       status_lanjut: visit.status_lanjut || 'Ranap',
@@ -1821,7 +1834,7 @@ class GetMedicalRecordService {
       ruangan: inpatientDetail?.nm_bangsal || inpatientDetail?.kd_kamar || '',
       kamar: inpatientDetail?.kd_kamar || '',
       kd_poli: visit.kd_poli || '',
-      poliklinik: visit.nm_poli || '',
+      poliklinik: inpatientDetail?.display_nm_bangsal || visit.nm_poli || '',
       diagnosa_icd10: String(icd10Map.get(visit.no_rawat) || ''),
       icd_details: icdDetails,
       dokter: visit.nm_dokter || '',
@@ -2131,12 +2144,25 @@ class GetMedicalRecordService {
       if (inpatientVisitRefs.length > 0) {
         const inpatientNoRawats = inpatientVisitRefs.map(row => row.no_rawat);
         const inpatientQuery = `
-          SELECT ki.*, b.nm_bangsal
+          SELECT
+            ki.*,
+            b.nm_bangsal,
+            CASE
+              WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) NOT IN ('pindah kamar', '-')
+              THEN b.nm_bangsal
+              ELSE NULL
+            END AS display_nm_bangsal
           FROM kamar_inap ki 
           LEFT JOIN kamar k ON ki.kd_kamar = k.kd_kamar
           LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
           WHERE ki.no_rawat IN (${inpatientNoRawats.map(() => '?').join(',')})
-          ORDER BY ki.tgl_masuk DESC
+          ORDER BY
+            CASE
+              WHEN LOWER(TRIM(COALESCE(ki.stts_pulang, ''))) NOT IN ('pindah kamar', '-') THEN 0
+              ELSE 1
+            END,
+            ki.tgl_masuk DESC,
+            ki.jam_masuk DESC
         `;
         const [inpatientRows] = await db.execute(inpatientQuery, inpatientNoRawats);
         inpatientDetails = inpatientRows;
