@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,10 +19,17 @@ import {
 import { format } from 'date-fns';
 import PatientTable from '@/components/PatientTable';
 import { DateRange } from 'react-day-picker';
-import { cn } from '@/lib/utils';
 import { formatDateWIB, formatDateTimeWIB } from '@/lib/date-utils';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   if (!value) return fallback;
@@ -74,13 +81,16 @@ const HemodialisaTabs = () => {
   
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || "all");
   const [statusBayarFilter, setStatusBayarFilter] = useState<string>(searchParams.get('statusBayar') || "all");
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [pendingStatusFilter, setPendingStatusFilter] = useState<string>(searchParams.get('status') || "all");
+  const [pendingStatusBayarFilter, setPendingStatusBayarFilter] = useState<string>(searchParams.get('statusBayar') || "all");
   const [hemodialisaPatients, setHemodialisaPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   
-  const fetchHemodialisaPatients = async () => {
+  const fetchHemodialisaPatients = async (overrides: Record<string, string> = {}) => {
     if (!date?.from || !date?.to) {
       console.log('Missing date range:', { date });
       return;
@@ -91,10 +101,10 @@ const HemodialisaTabs = () => {
       let requestBody = {
         startDate: formatDateWIB(date.from),
         endDate: formatDateWIB(date.to),
-        status: statusFilter,
-        statusBayar: statusBayarFilter,
-        page: currentPage.toString(),
-        itemsPerPage: itemsPerPage.toString()
+        status: overrides.status ?? statusFilter,
+        statusBayar: overrides.statusBayar ?? statusBayarFilter,
+        page: overrides.page ?? currentPage.toString(),
+        itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString()
       };
 
       console.log('Request dates (WIB):', {
@@ -155,6 +165,15 @@ const HemodialisaTabs = () => {
   }, [date?.from, date?.to, currentPage, itemsPerPage, statusFilter, statusBayarFilter]);
 
   useEffect(() => {
+    if (!isFilterModalOpen) {
+      return;
+    }
+
+    setPendingStatusFilter(statusFilter);
+    setPendingStatusBayarFilter(statusBayarFilter);
+  }, [isFilterModalOpen, statusFilter, statusBayarFilter]);
+
+  useEffect(() => {
     const params = new URLSearchParams(searchParams);
 
     params.set('page', String(currentPage));
@@ -196,12 +215,22 @@ const HemodialisaTabs = () => {
   ]);
   
   const handleFilterApply = () => {
+    const nextStatusFilter = pendingStatusFilter || "all";
+    const nextStatusBayarFilter = pendingStatusBayarFilter || "all";
+
+    setStatusFilter(nextStatusFilter);
+    setStatusBayarFilter(nextStatusBayarFilter);
+    setIsFilterModalOpen(false);
+
     if (currentPage !== 1) {
       setCurrentPage(1);
       return;
     }
 
-    fetchHemodialisaPatients();
+    fetchHemodialisaPatients({
+      status: nextStatusFilter,
+      statusBayar: nextStatusBayarFilter
+    });
   };
 
   const handleClearFilters = () => {
@@ -211,6 +240,9 @@ const HemodialisaTabs = () => {
     });
     setStatusFilter("all");
     setStatusBayarFilter("all");
+    setPendingStatusFilter("all");
+    setPendingStatusBayarFilter("all");
+    setIsFilterModalOpen(false);
     setSearchQuery("");
     setCurrentPage(1);
   };
@@ -302,8 +334,8 @@ const HemodialisaTabs = () => {
       <Card>
         <CardHeader className="pb-2 w-full">
           <CardTitle>Daftar Pasien Hemodialisa</CardTitle>
-          <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
-            <div className="relative w-full sm:w-full">
+          <div className="mb-4 flex w-full flex-col items-start gap-2 lg:flex-row lg:flex-nowrap lg:items-center">
+            <div className="relative w-full lg:min-w-0 lg:flex-[1.8_1_0%]">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
@@ -314,7 +346,7 @@ const HemodialisaTabs = () => {
               />
             </div>
             
-            <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none">
               <DatePickerPopover
                 triggerId="date"
                 mode="range"
@@ -336,33 +368,10 @@ const HemodialisaTabs = () => {
                   )
                 ) : undefined}
               />
-              
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-48">
-                  <SelectValue placeholder="Status Pasien" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Status</SelectItem>
-                  <SelectItem value="Belum">Belum</SelectItem>
-                  <SelectItem value="Sudah">Sudah</SelectItem>
-                  <SelectItem value="Batal">Batal</SelectItem>
-                </SelectContent>
-              </Select>
-              
-              <Select value={statusBayarFilter} onValueChange={setStatusBayarFilter}>
-                <SelectTrigger className="w-full sm:w-48">
-                  <SelectValue placeholder="Status Bayar" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Status Bayar</SelectItem>
-                  <SelectItem value="Sudah Bayar">Sudah Bayar</SelectItem>
-                  <SelectItem value="Belum Bayar">Belum Bayar</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             
-            <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-              <Button variant="secondary" onClick={handleFilterApply} className="w-full sm:w-auto">
+            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none lg:shrink-0">
+              <Button variant="secondary" onClick={() => setIsFilterModalOpen(true)} className="w-full sm:w-auto">
                 <Filter className="mr-2 h-4 w-4" />
                 Filter
               </Button>
@@ -372,6 +381,54 @@ const HemodialisaTabs = () => {
               </Button>
             </div>
           </div>
+          <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Filter Pasien Hemodialisa</DialogTitle>
+                <DialogDescription>
+                  Atur filter status pasien dan status bayar, lalu tekan Terapkan Filter.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-2">
+                <div className="grid gap-2">
+                  <div className="text-sm font-medium">Status</div>
+                  <Select value={pendingStatusFilter} onValueChange={setPendingStatusFilter}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Status Pasien" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Status</SelectItem>
+                      <SelectItem value="Belum">Belum</SelectItem>
+                      <SelectItem value="Sudah">Sudah</SelectItem>
+                      <SelectItem value="Batal">Batal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <div className="text-sm font-medium">Status Bayar</div>
+                  <Select value={pendingStatusBayarFilter} onValueChange={setPendingStatusBayarFilter}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Status Bayar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Status Bayar</SelectItem>
+                      <SelectItem value="Sudah Bayar">Sudah Bayar</SelectItem>
+                      <SelectItem value="Belum Bayar">Belum Bayar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsFilterModalOpen(false)}>
+                  Batal
+                </Button>
+                <Button variant="secondary" onClick={handleFilterApply}>
+                  Terapkan Filter
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent>
           {loading ? (

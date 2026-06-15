@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { formatNoRawat } from '@/App';
@@ -29,6 +29,14 @@ import { DateRange } from 'react-day-picker';
 import { formatDateWIB, formatDateTimeWIB } from '@/lib/date-utils';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   if (!value) return fallback;
@@ -96,6 +104,10 @@ const RawatJalanTabs = () => {
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || "all");
   const [statusBayarFilter, setStatusBayarFilter] = useState<string>(searchParams.get('statusBayar') || "all");
   const [doctorFilter, setDoctorFilter] = useState<string>(searchParams.get('doctor') || "all");
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [pendingStatusFilter, setPendingStatusFilter] = useState<string>(searchParams.get('status') || "all");
+  const [pendingStatusBayarFilter, setPendingStatusBayarFilter] = useState<string>(searchParams.get('statusBayar') || "all");
+  const [pendingDoctorFilter, setPendingDoctorFilter] = useState<string>(searchParams.get('doctor') || "all");
   const [doctorOptions, setDoctorOptions] = useState<Array<{ kd_dokter: string; nm_dokter: string }>>([]);
   const [rawatJalanPatients, setRawatJalanPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -152,12 +164,12 @@ const RawatJalanTabs = () => {
     endDate: date?.to ? formatDateWIB(date.to) : '',
     username: user?.username,
     search: searchQuery.trim() || '',
-    status: statusFilter,
-    statusBayar: statusBayarFilter,
-    kd_dokter: requestDoctorFilter,
+    status: overrides.status ?? statusFilter,
+    statusBayar: overrides.statusBayar ?? statusBayarFilter,
+    kd_dokter: overrides.kd_dokter ?? requestDoctorFilter,
     tabFilter,
-    page: currentPage.toString(),
-    itemsPerPage: itemsPerPage.toString(),
+    page: overrides.page ?? currentPage.toString(),
+    itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString(),
     ...overrides
   });
 
@@ -208,7 +220,7 @@ const RawatJalanTabs = () => {
     }
   };
 
-  const fetchRawatJalanPatients = async (tabFilter?: RawatJalanTab) => {
+  const fetchRawatJalanPatients = async (tabFilter?: RawatJalanTab, overrides: Record<string, string> = {}) => {
     if (!user?.kd_poli || !date?.from || !date?.to) {
       console.log('Missing required data:', { kd_poli: user?.kd_poli, date });
       return;
@@ -216,7 +228,7 @@ const RawatJalanTabs = () => {
     
     setLoading(true);
     try {
-      const requestBody = buildRequestBody(tabFilter || activeTab);
+      const requestBody = buildRequestBody(tabFilter || activeTab, overrides);
 
       console.log('Request dates (WIB):', {
         startDate: formatDateWIB(date.from),
@@ -296,6 +308,16 @@ const RawatJalanTabs = () => {
   }, [searchQuery]);
 
   useEffect(() => {
+    if (!isFilterModalOpen) {
+      return;
+    }
+
+    setPendingStatusFilter(statusFilter);
+    setPendingStatusBayarFilter(statusBayarFilter);
+    setPendingDoctorFilter(effectiveDoctorFilter);
+  }, [isFilterModalOpen, statusFilter, statusBayarFilter, effectiveDoctorFilter]);
+
+  useEffect(() => {
     const params = new URLSearchParams(searchParams);
 
     params.set('tab', activeTab);
@@ -350,12 +372,25 @@ const RawatJalanTabs = () => {
       return;
     }
 
+    const nextStatusFilter = pendingStatusFilter || "all";
+    const nextStatusBayarFilter = pendingStatusBayarFilter || "all";
+    const nextDoctorFilter = pendingDoctorFilter || "all";
+
+    setStatusFilter(nextStatusFilter);
+    setStatusBayarFilter(nextStatusBayarFilter);
+    setDoctorFilter(nextDoctorFilter);
+    setIsFilterModalOpen(false);
+
     if (currentPage !== 1) {
       setCurrentPage(1);
       return;
     }
 
-    fetchRawatJalanPatients();
+    fetchRawatJalanPatients(activeTab, {
+      status: nextStatusFilter,
+      statusBayar: nextStatusBayarFilter,
+      kd_dokter: nextDoctorFilter
+    });
   };
 
   const handleClearFilters = () => {
@@ -366,6 +401,10 @@ const RawatJalanTabs = () => {
     setStatusFilter("all");
     setStatusBayarFilter("all");
     setDoctorFilter("all");
+    setPendingStatusFilter("all");
+    setPendingStatusBayarFilter("all");
+    setPendingDoctorFilter("all");
+    setIsFilterModalOpen(false);
     setSearchQuery("");
     setCurrentPage(1);
   };
@@ -503,8 +542,8 @@ const RawatJalanTabs = () => {
                 {tabValue === 'internal_lanjutan' && 'Internal Lanjutan'}
                 {tabValue === 'internal_lanjutan_sore' && 'Internal Lanjutan Sore'}
               </CardTitle>
-              <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
-                <div className="relative w-full sm:w-full">
+              <div className="mb-4 flex w-full flex-col items-start gap-2 lg:flex-row lg:flex-nowrap lg:items-center">
+                <div className="relative w-full lg:min-w-0 lg:flex-[1.8_1_0%]">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     type="search"
@@ -515,7 +554,7 @@ const RawatJalanTabs = () => {
                   />
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none">
                   <DatePickerPopover
                     triggerId="date"
                     mode="range"
@@ -537,47 +576,10 @@ const RawatJalanTabs = () => {
                       )
                     ) : undefined}
                   />
-                  
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-full sm:w-48">
-                      <SelectValue placeholder="Status Pasien" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Semua Status</SelectItem>
-                      <SelectItem value="Belum">Belum</SelectItem>
-                      <SelectItem value="Sudah">Sudah</SelectItem>
-                      <SelectItem value="Batal">Batal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  
-                  <Select value={statusBayarFilter} onValueChange={setStatusBayarFilter}>
-                    <SelectTrigger className="w-full sm:w-48">
-                      <SelectValue placeholder="Status Bayar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Semua Status Bayar</SelectItem>
-                      <SelectItem value="Sudah Bayar">Sudah Bayar</SelectItem>
-                      <SelectItem value="Belum Bayar">Belum Bayar</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={effectiveDoctorFilter} onValueChange={setDoctorFilter}>
-                    <SelectTrigger className="w-full sm:w-56">
-                      <SelectValue placeholder="Dokter" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Semua Dokter</SelectItem>
-                      {doctorOptions.map((doctor) => (
-                        <SelectItem key={doctor.kd_dokter} value={doctor.kd_dokter}>
-                          {doctor.nm_dokter}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                  <Button variant="secondary" onClick={handleFilterApply} className="w-full sm:w-auto">
+                <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none lg:shrink-0">
+                  <Button variant="secondary" onClick={() => setIsFilterModalOpen(true)} className="w-full sm:w-auto">
                     <Filter className="mr-2 h-4 w-4" />
                     Filter
                   </Button>
@@ -587,6 +589,71 @@ const RawatJalanTabs = () => {
                   </Button>
                 </div>
               </div>
+              <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Filter Pasien Rawat Jalan</DialogTitle>
+                    <DialogDescription>
+                      Atur filter status pasien, status bayar, dan dokter. Perubahan diterapkan saat tombol Terapkan Filter ditekan.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-2">
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">Status</div>
+                      <Select value={pendingStatusFilter} onValueChange={setPendingStatusFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Status Pasien" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Status</SelectItem>
+                          <SelectItem value="Belum">Belum</SelectItem>
+                          <SelectItem value="Sudah">Sudah</SelectItem>
+                          <SelectItem value="Batal">Batal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">Status Bayar</div>
+                      <Select value={pendingStatusBayarFilter} onValueChange={setPendingStatusBayarFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Status Bayar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Status Bayar</SelectItem>
+                          <SelectItem value="Sudah Bayar">Sudah Bayar</SelectItem>
+                          <SelectItem value="Belum Bayar">Belum Bayar</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">Dokter</div>
+                      <Select value={pendingDoctorFilter} onValueChange={setPendingDoctorFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Dokter" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Dokter</SelectItem>
+                          {doctorOptions.map((doctor) => (
+                            <SelectItem key={doctor.kd_dokter} value={doctor.kd_dokter}>
+                              {doctor.nm_dokter}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsFilterModalOpen(false)}>
+                      Batal
+                    </Button>
+                    <Button variant="secondary" onClick={handleFilterApply}>
+                      Terapkan Filter
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent>
               {loading ? (

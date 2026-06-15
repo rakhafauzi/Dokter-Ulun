@@ -61,6 +61,14 @@ import HemodialisaTabs from '@/components/HemodialisaTabs';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
 import { StatusPill } from '@/components/StatusPill';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 import MedicalRecord from './MedicalRecord';
 import {
   CLOSE_ALL_MEDICAL_RECORD_TABS_EVENT,
@@ -174,6 +182,9 @@ const BookingTabs = () => {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [doctorFilter, setDoctorFilter] = useState<string>("all");
   const [doctorOpen, setDoctorOpen] = useState(false);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [pendingStatusFilter, setPendingStatusFilter] = useState<string>("all");
+  const [pendingDoctorFilter, setPendingDoctorFilter] = useState<string>("all");
   const [doctors, setDoctors] = useState<any[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -181,17 +192,17 @@ const BookingTabs = () => {
   const [totalSore, setTotalSore] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  const fetchBookingData = async (tabValue: 'pagi' | 'sore' = activeTab) => {
+  const fetchBookingData = async (tabValue: 'pagi' | 'sore' = activeTab, overrides: Record<string, string> = {}) => {
     setLoading(true);
     try {
       const requestBody = {
         action: 'getAll',
         startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : null,
         endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : null,
-        status: statusFilter,
+        status: overrides.status ?? statusFilter,
         sessionFilter: tabValue,
-        page: currentPage.toString(),
-        itemsPerPage: itemsPerPage.toString()
+        page: overrides.page ?? currentPage.toString(),
+        itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString()
       };
 
       console.log('Fetching booking data with:', requestBody);
@@ -204,7 +215,7 @@ const BookingTabs = () => {
         credentials: 'include',
         body: JSON.stringify({
           ...requestBody,
-          kd_dokter: doctorFilter !== 'all' ? doctorFilter : undefined
+          kd_dokter: (overrides.kd_dokter ?? doctorFilter) !== 'all' ? (overrides.kd_dokter ?? doctorFilter) : undefined
         })
       });
 
@@ -252,8 +263,19 @@ const BookingTabs = () => {
   };
 
   const handleFilterApply = () => {
+    const nextStatusFilter = pendingStatusFilter || 'all';
+    const nextDoctorFilter = pendingDoctorFilter || 'all';
+
+    setStatusFilter(nextStatusFilter);
+    setDoctorFilter(nextDoctorFilter);
+    setDoctorOpen(false);
+    setIsFilterModalOpen(false);
     setCurrentPage(1);
-    fetchBookingData();
+    fetchBookingData(activeTab, {
+      status: nextStatusFilter,
+      kd_dokter: nextDoctorFilter,
+      page: '1'
+    });
   };
 
   const fetchDoctors = async () => {
@@ -289,6 +311,10 @@ const BookingTabs = () => {
     });
     setStatusFilter("all");
     setDoctorFilter("all");
+    setPendingStatusFilter("all");
+    setPendingDoctorFilter("all");
+    setDoctorOpen(false);
+    setIsFilterModalOpen(false);
     setSearchQuery("");
     setCurrentPage(1);
     fetchBookingData();
@@ -304,6 +330,166 @@ const BookingTabs = () => {
     fetchBookingData();
     fetchDoctors();
   }, [currentPage, itemsPerPage, activeTab]);
+
+  useEffect(() => {
+    if (!isFilterModalOpen) {
+      return;
+    }
+
+    setPendingStatusFilter(statusFilter);
+    setPendingDoctorFilter(doctorFilter);
+  }, [isFilterModalOpen, statusFilter, doctorFilter]);
+
+  const renderBookingFilterBar = () => (
+    <>
+      <div className="mb-4 flex w-full flex-col items-start gap-2 lg:flex-row lg:flex-nowrap lg:items-center">
+        <div className="relative w-full lg:min-w-0 lg:flex-[1.8_1_0%]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Cari pasien..."
+            className="w-full pl-8"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none">
+          <DatePickerPopover
+            triggerId="date"
+            mode="range"
+            defaultMonth={dateRange?.from}
+            selected={dateRange}
+            onSelect={setDateRange}
+            numberOfMonths={2}
+            locale={indonesianLocale}
+            calendarClassName="min-w-[600px]"
+            buttonClassName="w-[350px]"
+            placeholder="Pilih rentang tanggal"
+            displayValue={dateRange?.from ? (
+              dateRange.to ? (
+                <>
+                  {format(dateRange.from, "LLL dd, y")} -{" "}
+                  {format(dateRange.to, "LLL dd, y")}
+                </>
+              ) : (
+                format(dateRange.from, "LLL dd, y")
+              )
+            ) : undefined}
+          />
+        </div>
+
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none lg:shrink-0">
+          <Button variant="secondary" onClick={() => setIsFilterModalOpen(true)} className="w-full sm:w-auto">
+            <Filter className="mr-2 h-4 w-4" />
+            Filter
+          </Button>
+          <Button variant="outline" onClick={handleClearFilters} className="w-full sm:w-auto">
+            <X className="mr-2 h-4 w-4" />
+            Clear
+          </Button>
+        </div>
+      </div>
+
+      <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Filter Booking Pasien</DialogTitle>
+            <DialogDescription>
+              Atur filter status dan dokter, lalu tekan Terapkan Filter.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <div className="text-sm font-medium">Status</div>
+              <Select value={pendingStatusFilter} onValueChange={setPendingStatusFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="Terdaftar">Terdaftar</SelectItem>
+                  <SelectItem value="Belum">Belum</SelectItem>
+                  <SelectItem value="Batal">Batal</SelectItem>
+                  <SelectItem value="Dokter Berhalangan">Dokter Berhalangan</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <div className="text-sm font-medium">Dokter</div>
+              <Popover open={doctorOpen} onOpenChange={setDoctorOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={doctorOpen}
+                    className="w-full justify-between"
+                  >
+                    {pendingDoctorFilter !== "all"
+                      ? doctors.find((doctor) => doctor.kd_dokter === pendingDoctorFilter)?.nm_dokter
+                      : "Semua Dokter"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                  <Command>
+                    <CommandInput placeholder="Cari dokter..." />
+                    <CommandList>
+                      <CommandEmpty>Tidak ada dokter ditemukan.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="all"
+                          onSelect={() => {
+                            setPendingDoctorFilter("all");
+                            setDoctorOpen(false);
+                          }}
+                        >
+                          <CheckIcon
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              pendingDoctorFilter === "all" ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          Semua Dokter
+                        </CommandItem>
+                        {doctors.map((doctor) => (
+                          <CommandItem
+                            key={doctor.kd_dokter}
+                            value={doctor.nm_dokter}
+                            onSelect={() => {
+                              setPendingDoctorFilter(doctor.kd_dokter);
+                              setDoctorOpen(false);
+                            }}
+                          >
+                            <CheckIcon
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                pendingDoctorFilter === doctor.kd_dokter ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {doctor.nm_dokter}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsFilterModalOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="secondary" onClick={handleFilterApply}>
+              Terapkan Filter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -322,126 +508,7 @@ const BookingTabs = () => {
         <Card>
           <CardHeader className="pb-2 w-full">
             <CardTitle>Booking Pasien - Sesi Pagi</CardTitle>
-            <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
-              <div className="relative w-full sm:w-full">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Cari pasien..."
-                  className="w-full pl-8"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                <DatePickerPopover
-                  triggerId="date"
-                  mode="range"
-                  defaultMonth={dateRange?.from}
-                  selected={dateRange}
-                  onSelect={setDateRange}
-                  numberOfMonths={2}
-                  locale={indonesianLocale}
-                  calendarClassName="min-w-[600px]"
-                  buttonClassName="w-[350px]"
-                  placeholder="Pilih rentang tanggal"
-                  displayValue={dateRange?.from ? (
-                    dateRange.to ? (
-                      <>
-                        {format(dateRange.from, "LLL dd, y")} -{" "}
-                        {format(dateRange.to, "LLL dd, y")}
-                      </>
-                    ) : (
-                      format(dateRange.from, "LLL dd, y")
-                    )
-                  ) : undefined}
-                />
-                
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Status</SelectItem>
-                    <SelectItem value="Terdaftar">Terdaftar</SelectItem>
-                    <SelectItem value="Belum">Belum</SelectItem>
-                    <SelectItem value="Batal">Batal</SelectItem>
-                    <SelectItem value="Dokter Berhalangan">Dokter Berhalangan</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                <Popover open={doctorOpen} onOpenChange={setDoctorOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={doctorOpen}
-                      className="w-full sm:w-48 justify-between"
-                    >
-                      {doctorFilter !== "all"
-                        ? doctors.find((doctor) => doctor.kd_dokter === doctorFilter)?.nm_dokter
-                        : "Pilih Dokter"}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[200px] p-0">
-                    <Command>
-                      <CommandInput placeholder="Cari dokter..." />
-                      <CommandList>
-                        <CommandEmpty>Tidak ada dokter ditemukan.</CommandEmpty>
-                        <CommandGroup>
-                          <CommandItem
-                            value="all"
-                            onSelect={() => {
-                              setDoctorFilter("all");
-                              setDoctorOpen(false);
-                            }}
-                          >
-                            <CheckIcon
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                doctorFilter === "all" ? "opacity-100" : "opacity-0"
-                              )}
-                            />
-                            Semua Dokter
-                          </CommandItem>
-                          {doctors.map((doctor) => (
-                            <CommandItem
-                              key={doctor.kd_dokter}
-                              value={doctor.nm_dokter}
-                              onSelect={() => {
-                                setDoctorFilter(doctor.kd_dokter);
-                                setDoctorOpen(false);
-                              }}
-                            >
-                              <CheckIcon
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  doctorFilter === doctor.kd_dokter ? "opacity-100" : "opacity-0"
-                                )}
-                              />
-                              {doctor.nm_dokter}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                <Button variant="secondary" onClick={handleFilterApply} className="w-full sm:w-auto">
-                  <Filter className="mr-2 h-4 w-4" />
-                  Filter
-                </Button>
-                <Button variant="outline" onClick={handleClearFilters} className="w-full sm:w-auto">
-                  <X className="mr-2 h-4 w-4" />
-                  Clear
-                </Button>
-              </div>
-            </div>
+            {renderBookingFilterBar()}
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -486,126 +553,7 @@ const BookingTabs = () => {
         <Card>
           <CardHeader className="pb-2 w-full">
             <CardTitle>Booking Pasien - Sesi Sore</CardTitle>
-            <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
-              <div className="relative w-full sm:w-full">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Cari pasien..."
-                  className="w-full pl-8"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                <DatePickerPopover
-                  triggerId="date"
-                  mode="range"
-                  defaultMonth={dateRange?.from}
-                  selected={dateRange}
-                  onSelect={setDateRange}
-                  numberOfMonths={2}
-                  locale={indonesianLocale}
-                  calendarClassName="min-w-[600px]"
-                  buttonClassName="w-[350px]"
-                  placeholder="Pilih rentang tanggal"
-                  displayValue={dateRange?.from ? (
-                    dateRange.to ? (
-                      <>
-                        {format(dateRange.from, "LLL dd, y")} -{" "}
-                        {format(dateRange.to, "LLL dd, y")}
-                      </>
-                    ) : (
-                      format(dateRange.from, "LLL dd, y")
-                    )
-                  ) : undefined}
-                />
-                
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Status</SelectItem>
-                    <SelectItem value="Terdaftar">Terdaftar</SelectItem>
-                    <SelectItem value="Belum">Belum</SelectItem>
-                    <SelectItem value="Batal">Batal</SelectItem>
-                    <SelectItem value="Dokter Berhalangan">Dokter Berhalangan</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                <Popover open={doctorOpen} onOpenChange={setDoctorOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={doctorOpen}
-                      className="w-full sm:w-48 justify-between"
-                    >
-                      {doctorFilter !== "all"
-                        ? doctors.find((doctor) => doctor.kd_dokter === doctorFilter)?.nm_dokter
-                        : "Pilih Dokter"}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[200px] p-0">
-                    <Command>
-                      <CommandInput placeholder="Cari dokter..." />
-                      <CommandList>
-                        <CommandEmpty>Tidak ada dokter ditemukan.</CommandEmpty>
-                        <CommandGroup>
-                          <CommandItem
-                            value="all"
-                            onSelect={() => {
-                              setDoctorFilter("all");
-                              setDoctorOpen(false);
-                            }}
-                          >
-                            <CheckIcon
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                doctorFilter === "all" ? "opacity-100" : "opacity-0"
-                              )}
-                            />
-                            Semua Dokter
-                          </CommandItem>
-                          {doctors.map((doctor) => (
-                            <CommandItem
-                              key={doctor.kd_dokter}
-                              value={doctor.nm_dokter}
-                              onSelect={() => {
-                                setDoctorFilter(doctor.kd_dokter);
-                                setDoctorOpen(false);
-                              }}
-                            >
-                              <CheckIcon
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  doctorFilter === doctor.kd_dokter ? "opacity-100" : "opacity-0"
-                                )}
-                              />
-                              {doctor.nm_dokter}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                <Button variant="secondary" onClick={handleFilterApply} className="w-full sm:w-auto">
-                  <Filter className="mr-2 h-4 w-4" />
-                  Filter
-                </Button>
-                <Button variant="outline" onClick={handleClearFilters} className="w-full sm:w-auto">
-                  <X className="mr-2 h-4 w-4" />
-                  Clear
-                </Button>
-              </div>
-            </div>
+            {renderBookingFilterBar()}
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -1057,6 +1005,13 @@ const RawatInapTabs = () => {
     from: parseDateParam(searchParams.get('from'), defaultRawatInapFrom),
     to: parseDateParam(searchParams.get('to'), defaultRawatInapTo)
   });
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [pendingStatusPulangRawatInap, setPendingStatusPulangRawatInap] = useState(searchParams.get('statusPulangRawatInap') || "masih-dirawat");
+  const [pendingStatusPulangResume, setPendingStatusPulangResume] = useState(searchParams.get('statusPulangResume') || "sudah-pulang");
+  const [pendingResumeStatus, setPendingResumeStatus] = useState(searchParams.get('resumeStatus') || "belum_resume");
+  const [pendingRawatBersamaResumeStatus, setPendingRawatBersamaResumeStatus] = useState(
+    searchParams.get('rawatBersamaResumeStatus') || "belum_ada_resume"
+  );
   const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
@@ -1171,27 +1126,27 @@ const RawatInapTabs = () => {
     tabValue: RawatInapListTab,
     overrides: Partial<RawatInapRequestBody> = {}
   ): RawatInapRequestBody => ({
-    page: currentPage.toString(),
-    itemsPerPage: itemsPerPage.toString(),
-    search: searchQuery,
-    statusPulang: statusPulangRawatInap,
+    page: overrides.page ?? currentPage.toString(),
+    itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString(),
+    search: overrides.search ?? searchQuery,
+    statusPulang: overrides.statusPulang ?? statusPulangRawatInap,
     username: user?.username || '',
     tab: tabValue,
-    startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
-    endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
-    rawatBersamaResumeStatus,
+    startDate: overrides.startDate ?? (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
+    endDate: overrides.endDate ?? (dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
+    rawatBersamaResumeStatus: overrides.rawatBersamaResumeStatus ?? rawatBersamaResumeStatus,
     ...overrides
   });
 
   const buildResumeRequestBody = (overrides: Partial<Record<string, string>> = {}) => ({
-    page: currentPage.toString(),
-    itemsPerPage: itemsPerPage.toString(),
-    search: searchQuery,
-    statusPulang: statusPulangResume,
+    page: overrides.page ?? currentPage.toString(),
+    itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString(),
+    search: overrides.search ?? searchQuery,
+    statusPulang: overrides.statusPulang ?? statusPulangResume,
     username: user?.username || '',
-    resumeStatus,
-    startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
-    endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
+    resumeStatus: overrides.resumeStatus ?? resumeStatus,
+    startDate: overrides.startDate ?? (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
+    endDate: overrides.endDate ?? (dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
     ...overrides
   });
 
@@ -1206,6 +1161,19 @@ const RawatInapTabs = () => {
     }
 
     setStatusPulangRawatInap(value);
+  };
+
+  const getPendingStatusPulangByTab = (tab: string) => (
+    tab === 'resume-pasien' ? pendingStatusPulangResume : pendingStatusPulangRawatInap
+  );
+
+  const setPendingStatusPulangByTab = (tab: string, value: string) => {
+    if (tab === 'resume-pasien') {
+      setPendingStatusPulangResume(value);
+      return;
+    }
+
+    setPendingStatusPulangRawatInap(value);
   };
 
   useEffect(() => {
@@ -1337,10 +1305,13 @@ const RawatInapTabs = () => {
     }
   };
 
-  const fetchRawatInapData = async (tabValue: RawatInapListTab = activeTab as RawatInapListTab) => {
+  const fetchRawatInapData = async (
+    tabValue: RawatInapListTab = activeTab as RawatInapListTab,
+    overrides: Partial<RawatInapRequestBody> = {}
+  ) => {
     setLoading(true);
     try {
-      const requestBody = buildRawatInapRequestBody(tabValue);
+      const requestBody = buildRawatInapRequestBody(tabValue, overrides);
       requestBody.includeTabCounts = false;
 
       console.log('Fetching Rawat Inap data:', requestBody);
@@ -1387,10 +1358,10 @@ const RawatInapTabs = () => {
     }
   };
 
-  const fetchResumeData = async () => {
+  const fetchResumeData = async (overrides: Partial<Record<string, string>> = {}) => {
     setLoading(true);
     try {
-      const requestBody = buildResumeRequestBody();
+      const requestBody = buildResumeRequestBody(overrides);
 
       console.log('Fetching Resume Pasien data:', requestBody);
 
@@ -1431,15 +1402,32 @@ const RawatInapTabs = () => {
   };
 
   const handleFilterApply = (tab: string) => {
+    const nextStatusPulangRawatInap = pendingStatusPulangRawatInap || "masih-dirawat";
+    const nextStatusPulangResume = pendingStatusPulangResume || "sudah-pulang";
+    const nextResumeStatus = pendingResumeStatus || "belum_resume";
+    const nextRawatBersamaResumeStatus = pendingRawatBersamaResumeStatus || "belum_ada_resume";
+
+    setStatusPulangRawatInap(nextStatusPulangRawatInap);
+    setStatusPulangResume(nextStatusPulangResume);
+    setResumeStatus(nextResumeStatus);
+    setRawatBersamaResumeStatus(nextRawatBersamaResumeStatus);
+    setIsFilterModalOpen(false);
+
     if (currentPage !== 1) {
       setCurrentPage(1);
       return;
     }
 
     if (tab === 'resume-pasien') {
-      fetchResumeData();
+      fetchResumeData({
+        statusPulang: nextStatusPulangResume,
+        resumeStatus: nextResumeStatus
+      });
     } else {
-      fetchRawatInapData(tab as 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung');
+      fetchRawatInapData(tab as 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung', {
+        statusPulang: nextStatusPulangRawatInap,
+        rawatBersamaResumeStatus: nextRawatBersamaResumeStatus
+      });
     }
   };
 
@@ -1448,6 +1436,11 @@ const RawatInapTabs = () => {
     setStatusPulangByTab(tab, tab === 'resume-pasien' ? "sudah-pulang" : "masih-dirawat");
     setResumeStatus("belum_resume");
     setRawatBersamaResumeStatus("belum_ada_resume");
+    setPendingStatusPulangRawatInap("masih-dirawat");
+    setPendingStatusPulangResume("sudah-pulang");
+    setPendingResumeStatus("belum_resume");
+    setPendingRawatBersamaResumeStatus("belum_ada_resume");
+    setIsFilterModalOpen(false);
     setDateRange({
       from: defaultRawatInapFrom,
       to: defaultRawatInapTo
@@ -1462,6 +1455,23 @@ const RawatInapTabs = () => {
       fetchRawatInapData(activeTab);
     }
   }, [activeTab, currentPage, itemsPerPage]);
+
+  useEffect(() => {
+    if (!isFilterModalOpen) {
+      return;
+    }
+
+    setPendingStatusPulangRawatInap(statusPulangRawatInap);
+    setPendingStatusPulangResume(statusPulangResume);
+    setPendingResumeStatus(resumeStatus);
+    setPendingRawatBersamaResumeStatus(rawatBersamaResumeStatus);
+  }, [
+    isFilterModalOpen,
+    statusPulangRawatInap,
+    statusPulangResume,
+    resumeStatus,
+    rawatBersamaResumeStatus
+  ]);
 
   // Use the global rawatInapColumns definition
 
@@ -1520,98 +1530,122 @@ const RawatInapTabs = () => {
   };
 
   const renderFilterSection = (tab: string) => (
-    <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
-      <div className="relative w-full sm:w-full">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          type="search"
-          placeholder="Cari pasien..."
-          className="w-full pl-8"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+    <>
+      <div className="mb-4 flex w-full flex-col items-start gap-2 lg:flex-row lg:flex-nowrap lg:items-center">
+        <div className="relative w-full lg:min-w-0 lg:flex-[1.8_1_0%]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Cari pasien..."
+            className="w-full pl-8"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none">
+          <DatePickerPopover
+            mode="range"
+            defaultMonth={dateRange?.from}
+            selected={dateRange}
+            onSelect={setDateRange}
+            numberOfMonths={2}
+            locale={indonesianLocale}
+            calendarClassName="min-w-[600px]"
+            buttonClassName="w-[350px]"
+            placeholder="Pilih rentang tanggal"
+            displayValue={dateRange?.from ? (
+              dateRange.to ? (
+                <>
+                  {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
+                </>
+              ) : (
+                format(dateRange.from, "LLL dd, y")
+              )
+            ) : undefined}
+          />
+        </div>
+
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none lg:shrink-0">
+          <Button variant="secondary" onClick={() => setIsFilterModalOpen(true)} className="w-full sm:w-auto">
+            <Filter className="mr-2 h-4 w-4" />
+            Filter
+          </Button>
+          <Button variant="outline" onClick={() => handleClearFilters(tab)} className="w-full sm:w-auto">
+            <X className="mr-2 h-4 w-4" />
+            Reset
+          </Button>
+        </div>
       </div>
-      
-      <div className="flex flex-col sm:flex-row gap-2">
-        <DatePickerPopover
-          mode="range"
-          defaultMonth={dateRange?.from}
-          selected={dateRange}
-          onSelect={setDateRange}
-          numberOfMonths={2}
-          locale={indonesianLocale}
-          calendarClassName="min-w-[600px]"
-          buttonClassName="w-[350px]"
-          placeholder="Pilih rentang tanggal"
-          displayValue={dateRange?.from ? (
-            dateRange.to ? (
-              <>
-                {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
-              </>
-            ) : (
-              format(dateRange.from, "LLL dd, y")
-            )
-          ) : undefined}
-        />
 
-        <Select value={getStatusPulangByTab(tab)} onValueChange={(value) => setStatusPulangByTab(tab, value)}>
-          <SelectTrigger className="w-full sm:w-auto min-w-[160px]">
-            <SelectValue placeholder="Status Rawat" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="masih-dirawat">Masih Dirawat (-)</SelectItem>
-            <SelectItem value="pindah-kamar">Pindah Kamar</SelectItem>
-            <SelectItem value="sudah-pulang">Sudah Pulang</SelectItem>
-          </SelectContent>
-        </Select>
+      <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Filter Pasien Rawat Inap</DialogTitle>
+            <DialogDescription>
+              Atur filter sesuai tab aktif lalu tekan Terapkan Filter.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <div className="text-sm font-medium">Status Rawat</div>
+              <Select value={getPendingStatusPulangByTab(tab)} onValueChange={(value) => setPendingStatusPulangByTab(tab, value)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Status Rawat" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="masih-dirawat">Masih Dirawat (-)</SelectItem>
+                  <SelectItem value="pindah-kamar">Pindah Kamar</SelectItem>
+                  <SelectItem value="sudah-pulang">Sudah Pulang</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        {tab === 'resume-pasien' ? (
-          <Select value={resumeStatus} onValueChange={setResumeStatus}>
-            <SelectTrigger className="w-full sm:w-auto min-w-[170px]">
-              <SelectValue placeholder="Status Resume" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Resume</SelectItem>
-              <SelectItem value="belum_resume">Belum Resume</SelectItem>
-              <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : null}
+            {tab === 'resume-pasien' ? (
+              <div className="grid gap-2">
+                <div className="text-sm font-medium">Status Resume</div>
+                <Select value={pendingResumeStatus} onValueChange={setPendingResumeStatus}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Status Resume" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Resume</SelectItem>
+                    <SelectItem value="belum_resume">Belum Resume</SelectItem>
+                    <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
-        {tab === 'rawat-bersama' && getStatusPulangByTab(tab) === 'sudah-pulang' ? (
-          <Select value={rawatBersamaResumeStatus} onValueChange={setRawatBersamaResumeStatus}>
-            <SelectTrigger className="w-full sm:w-auto min-w-[210px]">
-              <SelectValue placeholder="Mode Resume Bersama" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="belum_ada_resume">Belum Ada Resume</SelectItem>
-              <SelectItem value="belum_resume_dokter">Belum Resume Dokter</SelectItem>
-              <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
-              <SelectItem value="all">Semua Resume</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : null}
-
-        <Button 
-          variant="secondary"
-          onClick={() => handleFilterApply(tab)}
-          className="w-full sm:w-auto"
-        >
-          <Filter className="mr-2 h-4 w-4" />
-          Filter
-        </Button>
-
-        <Button 
-          variant="outline"
-          onClick={() => handleClearFilters(tab)}
-          className="w-full sm:w-auto"
-        >
-          <X className="mr-2 h-4 w-4" />
-          Reset
-        </Button>
-      </div>
-    </div>
+            {tab === 'rawat-bersama' && getPendingStatusPulangByTab(tab) === 'sudah-pulang' ? (
+              <div className="grid gap-2">
+                <div className="text-sm font-medium">Mode Resume Bersama</div>
+                <Select value={pendingRawatBersamaResumeStatus} onValueChange={setPendingRawatBersamaResumeStatus}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Mode Resume Bersama" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="belum_ada_resume">Belum Ada Resume</SelectItem>
+                    <SelectItem value="belum_resume_dokter">Belum Resume Dokter</SelectItem>
+                    <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
+                    <SelectItem value="all">Semua Resume</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsFilterModalOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="secondary" onClick={() => handleFilterApply(tab)}>
+              Terapkan Filter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 
   return (
@@ -1793,6 +1827,9 @@ const IGDTabs = () => {
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || "");
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || "all");
   const [triaseLevel, setTriaseLevel] = useState(normalizeIgdTriaseFilter(searchParams.get('triase')));
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [pendingStatusFilter, setPendingStatusFilter] = useState(searchParams.get('status') || "all");
+  const [pendingTriaseLevel, setPendingTriaseLevel] = useState(normalizeIgdTriaseFilter(searchParams.get('triase')));
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: parseDateParam(searchParams.get('from'), defaultIGDDate),
     to: parseDateParam(searchParams.get('to'), defaultIGDDate)
@@ -1802,17 +1839,17 @@ const IGDTabs = () => {
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   const [tabCounts, setTabCounts] = useState(emptyIgdTabCounts);
 
-  const fetchIGDData = async (tab: string) => {
+  const fetchIGDData = async (tab: string, overrides: Record<string, string> = {}) => {
     setLoading(true);
     try {
       const requestParams = {
-        page: currentPage.toString(),
-        itemsPerPage: itemsPerPage.toString(),
-        search: searchQuery,
-        status: statusFilter,
-        triase_level: triaseLevel,
-        date_from: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
-        date_to: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
+        page: overrides.page ?? currentPage.toString(),
+        itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString(),
+        search: overrides.search ?? searchQuery,
+        status: overrides.status ?? statusFilter,
+        triase_level: overrides.triase_level ?? triaseLevel,
+        date_from: overrides.date_from ?? (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
+        date_to: overrides.date_to ?? (dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
         tab: tab
       };
 
@@ -1944,19 +1981,41 @@ const IGDTabs = () => {
     fetchIGDData(activeTab);
   }, [activeTab, currentPage, itemsPerPage, searchQuery, statusFilter, triaseLevel, dateRange?.from, dateRange?.to]);
 
+  useEffect(() => {
+    if (!isFilterModalOpen) {
+      return;
+    }
+
+    setPendingStatusFilter(statusFilter);
+    setPendingTriaseLevel(triaseLevel);
+  }, [isFilterModalOpen, statusFilter, triaseLevel]);
+
   const handleFilterApply = (tab: string) => {
+    const nextStatusFilter = pendingStatusFilter || "all";
+    const nextTriaseLevel = pendingTriaseLevel || "all";
+
+    setStatusFilter(nextStatusFilter);
+    setTriaseLevel(nextTriaseLevel);
+    setIsFilterModalOpen(false);
+
     if (currentPage !== 1) {
       setCurrentPage(1);
       return;
     }
 
-    fetchIGDData(tab);
+    fetchIGDData(tab, {
+      status: nextStatusFilter,
+      triase_level: nextTriaseLevel
+    });
   };
 
   const handleClearFilters = () => {
     setSearchQuery("");
     setStatusFilter("all");
     setTriaseLevel("all");
+    setPendingStatusFilter("all");
+    setPendingTriaseLevel("all");
+    setIsFilterModalOpen(false);
     setDateRange({
       from: defaultIGDDate,
       to: defaultIGDDate
@@ -2048,85 +2107,106 @@ const IGDTabs = () => {
   ];
 
   const renderFilterSection = (tab: string) => (
-    <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
-      <div className="relative w-full sm:w-full">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          type="search"
-          placeholder="Cari pasien..."
-          className="w-full pl-8"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+    <>
+      <div className="mb-4 flex w-full flex-col items-start gap-2 lg:flex-row lg:flex-nowrap lg:items-center">
+        <div className="relative w-full lg:min-w-0 lg:flex-[1.8_1_0%]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Cari pasien..."
+            className="w-full pl-8"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none">
+          <DatePickerPopover
+            mode="range"
+            defaultMonth={dateRange?.from}
+            selected={dateRange}
+            onSelect={setDateRange}
+            numberOfMonths={2}
+            locale={indonesianLocale}
+            calendarClassName="min-w-[600px]"
+            buttonClassName="w-[350px]"
+            placeholder="Pilih rentang tanggal"
+            displayValue={dateRange?.from ? (
+              dateRange.to ? (
+                <>
+                  {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
+                </>
+              ) : (
+                format(dateRange.from, "LLL dd, y")
+              )
+            ) : undefined}
+          />
+        </div>
+
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none lg:shrink-0">
+          <Button variant="secondary" onClick={() => setIsFilterModalOpen(true)} className="w-full sm:w-auto">
+            <Filter className="mr-2 h-4 w-4" />
+            Filter
+          </Button>
+          <Button variant="outline" onClick={handleClearFilters} className="w-full sm:w-auto">
+            <X className="mr-2 h-4 w-4" />
+            Reset
+          </Button>
+        </div>
       </div>
-      
-      <div className="flex flex-col sm:flex-row gap-2">
-        <DatePickerPopover
-          mode="range"
-          defaultMonth={dateRange?.from}
-          selected={dateRange}
-          onSelect={setDateRange}
-          numberOfMonths={2}
-          locale={indonesianLocale}
-          calendarClassName="min-w-[600px]"
-          buttonClassName="w-[350px]"
-          placeholder="Pilih rentang tanggal"
-          displayValue={dateRange?.from ? (
-            dateRange.to ? (
-              <>
-                {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
-              </>
-            ) : (
-              format(dateRange.from, "LLL dd, y")
-            )
-          ) : undefined}
-        />
 
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-auto min-w-[140px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="Menunggu">Menunggu</SelectItem>
-            <SelectItem value="Triase">Triase</SelectItem>
-            <SelectItem value="Selesai">Selesai</SelectItem>
-          </SelectContent>
-        </Select>
+      <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Filter Pasien IGD</DialogTitle>
+            <DialogDescription>
+              Atur status dan level triase, lalu tekan Terapkan Filter.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <div className="text-sm font-medium">Status</div>
+              <Select value={pendingStatusFilter} onValueChange={setPendingStatusFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="Menunggu">Menunggu</SelectItem>
+                  <SelectItem value="Triase">Triase</SelectItem>
+                  <SelectItem value="Selesai">Selesai</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        <Select value={triaseLevel} onValueChange={setTriaseLevel}>
-          <SelectTrigger className="w-full sm:w-auto min-w-[140px]">
-            <SelectValue placeholder="Level Triase" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Level</SelectItem>
-            <SelectItem value="KL01">Merah</SelectItem>
-            <SelectItem value="KL02">Merah Muda</SelectItem>
-            <SelectItem value="KL03">Kuning</SelectItem>
-            <SelectItem value="KL04">Hijau Muda</SelectItem>
-            <SelectItem value="KL05">Hijau</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Button 
-          variant="secondary"
-          onClick={() => handleFilterApply(tab)}
-          className="w-full sm:w-auto"
-        >
-          <Filter className="mr-2 h-4 w-4" />
-          Filter
-        </Button>
-
-        <Button 
-          variant="outline"
-          onClick={handleClearFilters}
-          className="w-full sm:w-auto"
-        >
-          <X className="mr-2 h-4 w-4" />
-          Reset
-        </Button>
-      </div>
-    </div>
+            <div className="grid gap-2">
+              <div className="text-sm font-medium">Level Triase</div>
+              <Select value={pendingTriaseLevel} onValueChange={setPendingTriaseLevel}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Level Triase" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Level</SelectItem>
+                  <SelectItem value="KL01">Merah</SelectItem>
+                  <SelectItem value="KL02">Merah Muda</SelectItem>
+                  <SelectItem value="KL03">Kuning</SelectItem>
+                  <SelectItem value="KL04">Hijau Muda</SelectItem>
+                  <SelectItem value="KL05">Hijau</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsFilterModalOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="secondary" onClick={() => handleFilterApply(tab)}>
+              Terapkan Filter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 
   return (
