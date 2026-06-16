@@ -51,3 +51,69 @@ export const formatIndonesianDate = (date: Date | undefined): string => {
     day: 'numeric',
   });
 };
+
+export const parseDateLike = (value: string | Date | number | null | undefined): Date | null => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'number') {
+    const parsedFromNumber = new Date(value);
+    return Number.isNaN(parsedFromNumber.getTime()) ? null : parsedFromNumber;
+  }
+
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const directDate = new Date(normalized);
+  if (!Number.isNaN(directDate.getTime())) {
+    return directDate;
+  }
+
+  const mysqlLikeValue = normalized
+    .replace(/Z$/, '')
+    .replace(' ', 'T');
+  const fallbackDate = new Date(mysqlLikeValue);
+
+  return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+};
+
+export const formatDateTimeIndonesia = (
+  value: string | Date | number | null | undefined,
+  options?: Intl.DateTimeFormatOptions
+): string => {
+  const parsedDate = parseDateLike(value);
+  if (!parsedDate) {
+    return '-';
+  }
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    ...options
+  }).format(parsedDate);
+};
+
+export const formatDateIndonesia = (
+  value: string | Date | number | null | undefined,
+  options?: Intl.DateTimeFormatOptions
+): string => {
+  const parsedDate = parseDateLike(value);
+  if (!parsedDate) {
+    return '-';
+  }
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    ...options
+  }).format(parsedDate);
+};

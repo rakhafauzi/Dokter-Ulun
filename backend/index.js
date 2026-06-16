@@ -1715,6 +1715,35 @@ app.get('/api/doctor-notifications', async (req, res) => {
   }
 });
 
+app.get('/api/doctor-notifications/result', async (req, res) => {
+  try {
+    const { type, reference_id: referenceId } = req.query;
+
+    if (!type) {
+      return res.status(400).json({
+        success: false,
+        error: 'type is required'
+      });
+    }
+
+    if (!referenceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'reference_id is required'
+      });
+    }
+
+    const result = await DoctorNotificationService.getNotificationResult(type, referenceId);
+    res.json(result);
+  } catch (error) {
+    console.error('Doctor notification result error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/allergy-data', async (req, res) => {
   try {
     const { action, no_rkm_medis, category, search, limit } = req.query;

@@ -26,7 +26,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
-import { formatDateTimeWIB } from "@/lib/date-utils";
+import { formatDateIndonesia, formatDateTimeIndonesia, formatDateTimeWIB, parseDateLike } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { API_CONFIG, API_URLS } from '@/config/api';
@@ -6652,34 +6652,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   // Safe date formatter that handles various date formats and null values
   const formatDateSafe = (dateStr: string | null | undefined): string => {
     if (!dateStr) return '-';
-    
-    // If already formatted properly, return as is
-    if (typeof dateStr === 'string' && dateStr.includes(' ') && !dateStr.includes('T') && !dateStr.includes('Z')) {
-      return dateStr;
-    }
-    
+
     try {
-      // Handle various date formats
-      let date: Date;
-      
-      if (typeof dateStr === 'string') {
-        // Remove 'Z' suffix if present (UTC indicator)
-        const cleanDateStr = dateStr.replace(/Z$/, '');
-        
-        // Try to parse the date
-        date = new Date(cleanDateStr);
-        
-        // Check if date is valid
-        if (isNaN(date.getTime())) {
-          console.warn('Invalid date:', dateStr);
-          return '-';
-        }
-        
-        // Format to WIB timezone
-        return formatDateTimeWIB(date);
+      const date = parseDateLike(dateStr);
+
+      if (!date) {
+        console.warn('Invalid date:', dateStr);
+        return '-';
       }
-      
-      return '-';
+
+      return formatDateTimeIndonesia(date);
     } catch (error) {
       console.error('Error formatting date:', dateStr, error);
       return '-';
@@ -6690,23 +6672,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (!dateStr) return '-';
 
     try {
-      const trimmedValue = String(dateStr).trim().replace(/Z$/, '');
-      const normalizedValue = trimmedValue.includes('T')
-        ? trimmedValue
-        : trimmedValue.includes(' ')
-          ? trimmedValue.replace(' ', 'T')
-          : `${trimmedValue}T00:00:00`;
-      const date = new Date(normalizedValue);
+      const date = parseDateLike(dateStr);
 
-      if (isNaN(date.getTime())) {
+      if (!date) {
         return '-';
       }
 
-      return new Intl.DateTimeFormat('id-ID', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-      }).format(date);
+      return formatDateIndonesia(date);
     } catch (error) {
       console.error('Error formatting long date:', dateStr, error);
       return '-';
@@ -6716,21 +6688,21 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const formatDateTimeToMinute = (dateStr: string | null | undefined): string => {
     if (!dateStr) return '-';
 
-    if (typeof dateStr === 'string' && dateStr.includes(' ') && !dateStr.includes('T') && !dateStr.includes('Z')) {
-      const [datePart, timePart = ''] = dateStr.split(' ');
-      const minutePart = timePart.split(':').slice(0, 2).join(':');
-      return minutePart ? `${datePart} ${minutePart}` : datePart;
-    }
-
     try {
-      const cleanDateStr = String(dateStr).replace(/Z$/, '');
-      const date = new Date(cleanDateStr);
+      const date = parseDateLike(dateStr);
 
-      if (isNaN(date.getTime())) {
+      if (!date) {
         return '-';
       }
 
-      return format(date, 'yyyy-MM-dd HH:mm');
+      return formatDateTimeIndonesia(date, {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
     } catch (error) {
       console.error('Error formatting date to minute:', dateStr, error);
       return '-';

@@ -5,10 +5,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { API_URLS } from '@/config/api';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import logoImg from '@/assets/logo.png'; // Add this import
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { formatDateTimeIndonesia } from '@/lib/date-utils';
 import {
   NOTIFICATION_PREFERENCES_CHANGED_EVENT,
   type NotificationPreferences,
@@ -43,6 +46,29 @@ interface DoctorNotificationItem {
   processed_at?: string;
 }
 
+interface NotificationLabResult {
+  tanggal: string;
+  no_rawat: string;
+  lab_type?: string;
+  pemeriksaan: Array<{
+    nama?: string;
+    pemeriksaan?: string;
+    hasil?: string;
+    rujukan?: string;
+    keterangan?: string;
+  }>;
+}
+
+interface NotificationRadiologyResult {
+  tanggal: string;
+  no_rawat: string;
+  pemeriksaan: string;
+  judul?: string;
+  hasil?: string;
+  saran?: string;
+  kesan?: string;
+}
+
 interface DoctorNotificationSummary {
   active: number;
   menunggu: number;
@@ -62,15 +88,14 @@ const formatNotificationTime = (value?: string) => {
     return '-';
   }
 
-  const parsedDate = new Date(normalized.replace(' ', 'T'));
-  if (Number.isNaN(parsedDate.getTime())) {
-    return normalized;
-  }
-
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(parsedDate);
+  return formatDateTimeIndonesia(normalized, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
 };
 
 const getNotificationTypeLabel = (type: DoctorNotificationItem['type']) => {
@@ -234,6 +259,64 @@ const buildNotificationSummary = (items: DoctorNotificationItem[]): DoctorNotifi
   radiology: items.filter((item) => item.type === 'radiology' && item.status !== 'selesai').length
 });
 
+const getNotificationResultTimestamp = (value?: string) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return 0;
+  }
+
+  const parsedDate = new Date(normalized);
+  if (!Number.isNaN(parsedDate.getTime())) {
+    return parsedDate.getTime();
+  }
+
+  const fallbackDate = new Date(normalized.replace(/Z$/, '').replace(' ', 'T'));
+  return Number.isNaN(fallbackDate.getTime()) ? 0 : fallbackDate.getTime();
+};
+
+const flattenNotificationLabResults = (payload: any, noRawat: string): NotificationLabResult[] => {
+  return [...(payload?.ralan || []), ...(payload?.ranap || [])]
+    .map((record: any, index: number) => ({
+      tanggal: String(record?.tanggal || '').trim(),
+      no_rawat: String(record?.no_rawat || noRawat || '').trim(),
+      lab_type: String(record?.lab_type || '').trim(),
+      pemeriksaan: Array.isArray(record?.pemeriksaan) ? record.pemeriksaan : [],
+      __timestamp: getNotificationResultTimestamp(record?.tanggal),
+      __index: index
+    }))
+    .sort((left, right) => {
+      if (right.__timestamp !== left.__timestamp) {
+        return right.__timestamp - left.__timestamp;
+      }
+
+      return left.__index - right.__index;
+    })
+    .map(({ __timestamp, __index, ...item }) => item);
+};
+
+const flattenNotificationRadiologyResults = (payload: any, noRawat: string): NotificationRadiologyResult[] => {
+  return [...(payload?.ralan || []), ...(payload?.ranap || [])]
+    .map((record: any, index: number) => ({
+      tanggal: String(record?.tanggal || '').trim(),
+      no_rawat: String(record?.no_rawat || noRawat || '').trim(),
+      pemeriksaan: String(record?.pemeriksaan || '').trim(),
+      judul: String(record?.judul || '').trim(),
+      hasil: String(record?.hasil || '').trim(),
+      saran: String(record?.saran || '').trim(),
+      kesan: String(record?.kesan || '').trim(),
+      __timestamp: getNotificationResultTimestamp(record?.tanggal),
+      __index: index
+    }))
+    .sort((left, right) => {
+      if (right.__timestamp !== left.__timestamp) {
+        return right.__timestamp - left.__timestamp;
+      }
+
+      return left.__index - right.__index;
+    })
+    .map(({ __timestamp, __index, ...item }) => item);
+};
+
 const Header: React.FC<HeaderProps> = ({ 
   hospitalName, 
   isMobile = false, 
@@ -259,6 +342,12 @@ const Header: React.FC<HeaderProps> = ({
   const hasLoadedNotificationsRef = React.useRef(false);
   const fetchNotificationsRef = React.useRef<((showLoading?: boolean) => Promise<void>) | null>(null);
   const audioContextRef = React.useRef<AudioContext | null>(null);
+  const [notificationResultItem, setNotificationResultItem] = React.useState<DoctorNotificationItem | null>(null);
+  const [notificationResultOpen, setNotificationResultOpen] = React.useState(false);
+  const [notificationResultLoading, setNotificationResultLoading] = React.useState(false);
+  const [notificationResultError, setNotificationResultError] = React.useState('');
+  const [notificationLabResults, setNotificationLabResults] = React.useState<NotificationLabResult[]>([]);
+  const [notificationRadiologyResults, setNotificationRadiologyResults] = React.useState<NotificationRadiologyResult[]>([]);
   const soundEnabled = notificationPreferences.sound;
 
   React.useEffect(() => {
@@ -457,6 +546,12 @@ const Header: React.FC<HeaderProps> = ({
   );
 
   const handleOpenNotification = (item: DoctorNotificationItem) => {
+    if (item.type === 'laboratory' || item.type === 'radiology') {
+      setNotificationResultItem(item);
+      setNotificationResultOpen(true);
+      return;
+    }
+
     if (!item.no_rkm_medis) {
       return;
     }
@@ -467,6 +562,74 @@ const Header: React.FC<HeaderProps> = ({
       }
     });
   };
+
+  React.useEffect(() => {
+    if (!notificationResultOpen || !notificationResultItem) {
+      return;
+    }
+
+    if (notificationResultItem.type !== 'laboratory' && notificationResultItem.type !== 'radiology') {
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchNotificationResult = async () => {
+      try {
+        setNotificationResultLoading(true);
+        setNotificationResultError('');
+        setNotificationLabResults([]);
+        setNotificationRadiologyResults([]);
+
+        const params = new URLSearchParams({
+          type: notificationResultItem.type,
+          reference_id: notificationResultItem.reference_id
+        });
+        const response = await fetch(`${API_URLS.DOCTOR_NOTIFICATION_RESULT}?${params.toString()}`, {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error ${response.status}`);
+        }
+
+        const responseJson = await response.json();
+        if (responseJson?.success === false) {
+          throw new Error(responseJson?.error || 'Gagal memuat hasil pemeriksaan dari notifikasi.');
+        }
+
+        const responseData = responseJson?.data;
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (notificationResultItem.type === 'laboratory') {
+          setNotificationLabResults(Array.isArray(responseData?.results) ? responseData.results : []);
+        } else {
+          setNotificationRadiologyResults(Array.isArray(responseData?.results) ? responseData.results : []);
+        }
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setNotificationResultError(
+          error instanceof Error ? error.message : 'Gagal memuat hasil pemeriksaan dari notifikasi.'
+        );
+      } finally {
+        if (isMounted) {
+          setNotificationResultLoading(false);
+        }
+      }
+    };
+
+    void fetchNotificationResult();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [notificationResultItem, notificationResultOpen]);
 
   const notificationsByTab = React.useMemo<Record<NotificationTab, DoctorNotificationItem[]>>(() => ({
     prescription: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'prescription')),
@@ -569,7 +732,163 @@ const Header: React.FC<HeaderProps> = ({
     });
   };
 
+  const renderNotificationResultContent = () => {
+    if (notificationResultLoading) {
+      return (
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Memuat hasil pemeriksaan...
+        </div>
+      );
+    }
+
+    if (notificationResultError) {
+      return (
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-6 text-sm text-destructive">
+          {notificationResultError}
+        </div>
+      );
+    }
+
+    if (notificationResultItem?.type === 'laboratory') {
+      if (notificationLabResults.length === 0) {
+        return (
+          <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+            Belum ada hasil laboratorium yang tersedia untuk pasien ini.
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          {notificationLabResults.map((labResult, index) => {
+            const groupedTests = labResult.pemeriksaan.reduce((groups, test) => {
+              const key = String(test?.nama || '-').trim() || '-';
+              if (!groups[key]) {
+                groups[key] = [];
+              }
+              groups[key].push(test);
+              return groups;
+            }, {} as Record<string, NotificationLabResult['pemeriksaan']>);
+
+            return (
+              <div key={`${labResult.no_rawat}-${labResult.tanggal}-${index}`} className="rounded-lg border p-4">
+                <div className="mb-4 grid gap-4 md:grid-cols-3">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Tanggal Hasil</p>
+                    <p className="font-medium">{formatNotificationTime(labResult.tanggal)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">No. Rawat</p>
+                    <p className="font-medium">{labResult.no_rawat || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Jenis Lab</p>
+                    <p className="font-medium uppercase">{labResult.lab_type || 'pk'}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {Object.entries(groupedTests).map(([groupName, tests]) => (
+                    <div key={groupName} className="rounded-lg border bg-muted/20 p-3">
+                      <p className="mb-3 font-semibold">{groupName}</p>
+                      <div className="space-y-2">
+                        {tests.map((test, testIndex) => (
+                          <div
+                            key={`${groupName}-${testIndex}`}
+                            className={cn(
+                              'grid gap-4 rounded-r border-l-2 border-primary bg-background px-3 py-2 md:grid-cols-4',
+                              test.keterangan === 'H' && 'bg-red-100 text-red-900',
+                              test.keterangan === 'L' && 'bg-yellow-100 text-yellow-900'
+                            )}
+                          >
+                            <div>
+                              <p className="text-xs text-muted-foreground">Pemeriksaan</p>
+                              <p className="font-medium">{test.pemeriksaan || '-'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Hasil</p>
+                              <p className="font-medium">{test.hasil || '-'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Rujukan</p>
+                              <p className="font-medium">{test.rujukan || '-'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Keterangan</p>
+                              <p className="font-medium">{test.keterangan || '-'}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (notificationResultItem?.type === 'radiology') {
+      if (notificationRadiologyResults.length === 0) {
+        return (
+          <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+            Belum ada hasil radiologi yang tersedia untuk pasien ini.
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          {notificationRadiologyResults.map((radiologyResult, index) => (
+            <div key={`${radiologyResult.no_rawat}-${radiologyResult.tanggal}-${index}`} className="rounded-lg border p-4">
+              <div className="mb-4 grid gap-4 md:grid-cols-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">Tanggal Hasil</p>
+                  <p className="font-medium">{formatNotificationTime(radiologyResult.tanggal)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">No. Rawat</p>
+                  <p className="font-medium">{radiologyResult.no_rawat || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Pemeriksaan</p>
+                  <p className="font-medium">{radiologyResult.judul || radiologyResult.pemeriksaan || '-'}</p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Hasil</p>
+                  <p className="whitespace-pre-wrap font-medium break-words">{radiologyResult.hasil || '-'}</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Kesan</p>
+                    <p className="whitespace-pre-wrap font-medium break-words">{radiologyResult.kesan || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Saran</p>
+                    <p className="whitespace-pre-wrap font-medium break-words">{radiologyResult.saran || '-'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+        Belum ada hasil pemeriksaan yang bisa ditampilkan.
+      </div>
+    );
+  };
+
   return (
+    <>
     <header className="fixed top-0 left-0 right-0 bg-primary h-16 w-full shadow-md z-50">
       <div className="h-full flex items-center justify-between px-4 md:px-6">
         <div className="flex items-center">
@@ -805,6 +1124,47 @@ const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
     </header>
+    <Dialog
+      open={notificationResultOpen}
+      onOpenChange={(open) => {
+        setNotificationResultOpen(open);
+
+        if (!open) {
+          setNotificationResultItem(null);
+          setNotificationResultError('');
+          setNotificationLabResults([]);
+          setNotificationRadiologyResults([]);
+          setNotificationResultLoading(false);
+        }
+      }}
+    >
+      <DialogContent className="max-h-[88vh] max-w-5xl">
+        <DialogHeader>
+          <DialogTitle className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div>{notificationResultItem ? `Hasil ${getNotificationTypeLabel(notificationResultItem.type)}` : 'Hasil Pemeriksaan'}</div>
+              <div className="mt-1 text-sm font-normal text-muted-foreground">
+                {notificationResultItem?.patient_name || 'Pasien'} • No. RM {notificationResultItem?.no_rkm_medis || '-'} • No. Rawat {notificationResultItem?.no_rawat || '-'}
+              </div>
+            </div>
+            {notificationResultItem ? (
+              <span className={cn('w-fit rounded-full px-2 py-1 text-[10px] font-semibold', getNotificationStatusClassName(notificationResultItem.status))}>
+                {notificationResultItem.status_label}
+              </span>
+            ) : null}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="rounded-lg bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+          Referensi notifikasi: <span className="font-semibold text-foreground">{notificationResultItem?.reference_id || '-'}</span>
+        </div>
+        <ScrollArea className="max-h-[62vh] pr-4">
+          <div className="space-y-4">
+            {renderNotificationResultContent()}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
 

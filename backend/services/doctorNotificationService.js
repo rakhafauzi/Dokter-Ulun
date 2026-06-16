@@ -9,6 +9,17 @@ class DoctorNotificationService {
   }
 
   normalizeDate(dateValue) {
+    if (dateValue instanceof Date) {
+      if (Number.isNaN(dateValue.getTime())) {
+        return '';
+      }
+
+      const year = dateValue.getUTCFullYear();
+      const month = String(dateValue.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(dateValue.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
     const normalized = String(dateValue || '').trim();
     if (!normalized || normalized === ZERO_DATE) {
       return '';
@@ -18,6 +29,18 @@ class DoctorNotificationService {
   }
 
   normalizeTime(timeValue) {
+    if (timeValue instanceof Date) {
+      if (Number.isNaN(timeValue.getTime())) {
+        return '';
+      }
+
+      const hours = String(timeValue.getUTCHours()).padStart(2, '0');
+      const minutes = String(timeValue.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(timeValue.getUTCSeconds()).padStart(2, '0');
+      const normalizedDateTime = `${hours}:${minutes}:${seconds}`;
+      return normalizedDateTime === ZERO_TIME ? '' : normalizedDateTime;
+    }
+
     const normalized = String(timeValue || '').trim();
     if (!normalized || normalized === ZERO_TIME) {
       return '';
@@ -255,6 +278,229 @@ class DoctorNotificationService {
         result_at: this.buildDateTime(row.tgl_hasil, row.jam_hasil),
       };
     });
+  }
+
+  async getLaboratoryNotificationResult(referenceId) {
+    const normalizedReferenceId = String(referenceId || '').trim();
+    if (!normalizedReferenceId) {
+      throw new Error('referenceId is required');
+    }
+
+    const requestRows = await executeQuery(
+      `
+        SELECT
+          pl.noorder AS reference_id,
+          pl.no_rawat,
+          rp.no_rkm_medis,
+          p.nm_pasien,
+          d.nm_dokter,
+          pl.tgl_permintaan,
+          pl.jam_permintaan,
+          pl.tgl_sampel,
+          pl.jam_sampel,
+          pl.tgl_hasil,
+          pl.jam_hasil
+        FROM permintaan_lab pl
+        LEFT JOIN reg_periksa rp ON rp.no_rawat = pl.no_rawat
+        LEFT JOIN pasien p ON p.no_rkm_medis = rp.no_rkm_medis
+        LEFT JOIN dokter d ON d.kd_dokter = pl.dokter_perujuk
+        WHERE pl.noorder = ?
+        LIMIT 1
+      `,
+      [normalizedReferenceId]
+    );
+
+    const request = requestRows?.[0];
+    if (!request) {
+      throw new Error('Data notifikasi laboratorium tidak ditemukan');
+    }
+
+    const resultRows = await executeQuery(
+      `
+        SELECT
+          pl.noorder AS reference_id,
+          pl.no_rawat,
+          periksa.tgl_periksa,
+          periksa.jam,
+          jpl.nm_perawatan,
+          tl.Pemeriksaan AS pemeriksaan,
+          dpl.nilai,
+          dpl.nilai_rujukan,
+          dpl.keterangan
+        FROM permintaan_lab pl
+        INNER JOIN permintaan_pemeriksaan_lab ppl ON ppl.noorder = pl.noorder
+        INNER JOIN periksa_lab periksa
+          ON periksa.no_rawat = pl.no_rawat
+         AND periksa.kd_jenis_prw = ppl.kd_jenis_prw
+         AND periksa.tgl_periksa = pl.tgl_hasil
+         AND periksa.jam = pl.jam_hasil
+        LEFT JOIN jns_perawatan_lab jpl ON jpl.kd_jenis_prw = periksa.kd_jenis_prw
+        LEFT JOIN detail_periksa_lab dpl
+          ON dpl.no_rawat = periksa.no_rawat
+         AND dpl.kd_jenis_prw = periksa.kd_jenis_prw
+         AND dpl.tgl_periksa = periksa.tgl_periksa
+         AND dpl.jam = periksa.jam
+        LEFT JOIN template_laboratorium tl ON tl.id_template = dpl.id_template
+        WHERE pl.noorder = ?
+        ORDER BY periksa.tgl_periksa DESC, periksa.jam DESC, jpl.nm_perawatan ASC, tl.Pemeriksaan ASC
+      `,
+      [normalizedReferenceId]
+    );
+
+    const groupedByDate = new Map();
+
+    resultRows.forEach((row) => {
+      const dateKey = this.buildDateTime(
+        row.tgl_periksa || request.tgl_hasil,
+        row.jam || request.jam_hasil
+      ) || this.buildDateTime(request.tgl_hasil, request.jam_hasil);
+      if (!groupedByDate.has(dateKey)) {
+        groupedByDate.set(dateKey, {
+          reference_id: normalizedReferenceId,
+          tanggal: dateKey,
+          no_rawat: String(row.no_rawat || request.no_rawat || '').trim(),
+          pemeriksaan: []
+        });
+      }
+
+      groupedByDate.get(dateKey).pemeriksaan.push({
+        nama: String(row.nm_perawatan || '').trim(),
+        pemeriksaan: String(row.pemeriksaan || '').trim(),
+        hasil: String(row.nilai || '').trim(),
+        rujukan: String(row.nilai_rujukan || '').trim(),
+        keterangan: String(row.keterangan || '').trim()
+      });
+    });
+
+    return {
+      success: true,
+      data: {
+        type: 'laboratory',
+        reference_id: normalizedReferenceId,
+        no_rawat: String(request.no_rawat || '').trim(),
+        no_rkm_medis: String(request.no_rkm_medis || '').trim(),
+        patient_name: String(request.nm_pasien || '').trim(),
+        doctor_name: String(request.nm_dokter || '').trim(),
+        created_at: this.buildDateTime(request.tgl_permintaan, request.jam_permintaan),
+        sampled_at: this.buildDateTime(request.tgl_sampel, request.jam_sampel),
+        result_at: this.buildDateTime(request.tgl_hasil, request.jam_hasil),
+        results: Array.from(groupedByDate.values())
+      }
+    };
+  }
+
+  async getRadiologyNotificationResult(referenceId) {
+    const normalizedReferenceId = String(referenceId || '').trim();
+    if (!normalizedReferenceId) {
+      throw new Error('referenceId is required');
+    }
+
+    const requestRows = await executeQuery(
+      `
+        SELECT
+          pr.noorder AS reference_id,
+          pr.no_rawat,
+          rp.no_rkm_medis,
+          p.nm_pasien,
+          d.nm_dokter,
+          pr.tgl_permintaan,
+          pr.jam_permintaan,
+          pr.tgl_sampel,
+          pr.jam_sampel,
+          pr.tgl_hasil,
+          pr.jam_hasil
+        FROM permintaan_radiologi pr
+        LEFT JOIN reg_periksa rp ON rp.no_rawat = pr.no_rawat
+        LEFT JOIN pasien p ON p.no_rkm_medis = rp.no_rkm_medis
+        LEFT JOIN dokter d ON d.kd_dokter = pr.dokter_perujuk
+        WHERE pr.noorder = ?
+        LIMIT 1
+      `,
+      [normalizedReferenceId]
+    );
+
+    const request = requestRows?.[0];
+    if (!request) {
+      throw new Error('Data notifikasi radiologi tidak ditemukan');
+    }
+
+    const resultRows = await executeQuery(
+      `
+        SELECT
+          req.noorder AS reference_id,
+          req.no_rawat,
+          periksa.tgl_periksa,
+          periksa.jam,
+          jpr.nm_perawatan,
+          hasil.hasil,
+          skr.judul,
+          skr.saran,
+          skr.kesan
+        FROM permintaan_radiologi req
+        INNER JOIN permintaan_pemeriksaan_radiologi ppr ON ppr.noorder = req.noorder
+        INNER JOIN periksa_radiologi periksa
+          ON periksa.no_rawat = req.no_rawat
+         AND periksa.kd_jenis_prw = ppr.kd_jenis_prw
+         AND periksa.tgl_periksa = req.tgl_hasil
+         AND periksa.jam = req.jam_hasil
+        LEFT JOIN jns_perawatan_radiologi jpr ON jpr.kd_jenis_prw = periksa.kd_jenis_prw
+        LEFT JOIN hasil_radiologi hasil
+          ON hasil.no_rawat = periksa.no_rawat
+         AND hasil.tgl_periksa = periksa.tgl_periksa
+         AND hasil.jam = periksa.jam
+        LEFT JOIN saran_kesan_rad skr
+          ON skr.no_rawat = periksa.no_rawat
+         AND skr.tgl_periksa = periksa.tgl_periksa
+         AND skr.jam = periksa.jam
+        WHERE req.noorder = ?
+        ORDER BY periksa.tgl_periksa DESC, periksa.jam DESC, jpr.nm_perawatan ASC
+      `,
+      [normalizedReferenceId]
+    );
+
+    const mappedRows = resultRows.map((row) => ({
+      reference_id: normalizedReferenceId,
+      tanggal: this.buildDateTime(
+        row.tgl_periksa || request.tgl_hasil,
+        row.jam || request.jam_hasil
+      ) || this.buildDateTime(request.tgl_hasil, request.jam_hasil),
+      no_rawat: String(row.no_rawat || request.no_rawat || '').trim(),
+      pemeriksaan: String(row.nm_perawatan || row.judul || '').trim(),
+      judul: String(row.judul || '').trim(),
+      hasil: String(row.hasil || '').trim(),
+      saran: String(row.saran || '').trim(),
+      kesan: String(row.kesan || '').trim()
+    }));
+
+    return {
+      success: true,
+      data: {
+        type: 'radiology',
+        reference_id: normalizedReferenceId,
+        no_rawat: String(request.no_rawat || '').trim(),
+        no_rkm_medis: String(request.no_rkm_medis || '').trim(),
+        patient_name: String(request.nm_pasien || '').trim(),
+        doctor_name: String(request.nm_dokter || '').trim(),
+        created_at: this.buildDateTime(request.tgl_permintaan, request.jam_permintaan),
+        sampled_at: this.buildDateTime(request.tgl_sampel, request.jam_sampel),
+        result_at: this.buildDateTime(request.tgl_hasil, request.jam_hasil),
+        results: mappedRows
+      }
+    };
+  }
+
+  async getNotificationResult(type, referenceId) {
+    const normalizedType = String(type || '').trim().toLowerCase();
+
+    if (normalizedType === 'laboratory') {
+      return this.getLaboratoryNotificationResult(referenceId);
+    }
+
+    if (normalizedType === 'radiology') {
+      return this.getRadiologyNotificationResult(referenceId);
+    }
+
+    throw new Error('Unsupported notification result type');
   }
 
   async getDoctorNotifications(doctorId, limit = 8) {
