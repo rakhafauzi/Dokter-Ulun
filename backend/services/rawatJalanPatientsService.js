@@ -2,6 +2,16 @@ import db from '../config/database.js';
 import { AuthService } from './authService.js';
 
 class RawatJalanPatientsService {
+  static getIgdPoliCodes() {
+    const rawValue = String(process.env.IGD_POLI_CODES || '').trim();
+    const parsedCodes = rawValue
+      .split(',')
+      .map((code) => code.trim())
+      .filter(Boolean);
+
+    return parsedCodes.length ? parsedCodes : ['B0054', 'IGDK', 'IGD01'];
+  }
+
   static validateAndFormatDate(dateStr) {
     // Validate format YYYY-MM-DD
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -111,16 +121,33 @@ class RawatJalanPatientsService {
         .split(',')
         .map(code => code.trim())
         .filter(Boolean);
+      const igdPoliCodes = new Set(this.getIgdPoliCodes());
+      const nonIgdPoliCodes = poliCodes.filter((code) => !igdPoliCodes.has(code));
 
       if (poliCodes.length === 0) {
         throw new Error('Minimal satu kd_poli wajib dikirim');
       }
 
+      if (nonIgdPoliCodes.length === 0) {
+        return {
+          success: true,
+          data: [],
+          doctors: [],
+          total: 0,
+          limit: parseInt(itemsPerPage || '10', 10),
+          offset: 0,
+          page: parseInt(page || '1', 10),
+          totalPages: 0
+        };
+      }
+
       const normalizedTabFilter = this.normalizeTabFilter(tabFilter);
       const serverPoliAssignments = await AuthService.getSessionPoliAssignments(username);
-      const normalizedJenisPoli = String(jenis_poli || serverPoliAssignments.jenis_poli || '').trim();
-      const normalizedJenisPoliSore = String(jenis_poli_sore || serverPoliAssignments.jenis_poli_sore || '').trim();
-      const sessionPoliGroups = await this.getSessionPoliGroups(poliCodes);
+      const normalizedJenisPoliCandidate = String(jenis_poli || serverPoliAssignments.jenis_poli || '').trim();
+      const normalizedJenisPoliSoreCandidate = String(jenis_poli_sore || serverPoliAssignments.jenis_poli_sore || '').trim();
+      const normalizedJenisPoli = igdPoliCodes.has(normalizedJenisPoliCandidate) ? '' : normalizedJenisPoliCandidate;
+      const normalizedJenisPoliSore = igdPoliCodes.has(normalizedJenisPoliSoreCandidate) ? '' : normalizedJenisPoliSoreCandidate;
+      const sessionPoliGroups = await this.getSessionPoliGroups(nonIgdPoliCodes);
       const soreScopedTabs = ['sore', 'rujukan_internal_sore', 'pasien_lanjutan_sore', 'internal_lanjutan_sore'];
       const pagiScopedTabs = ['pagi', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'];
       const selectedPoliCodes = normalizedTabFilter === 'pagi'
@@ -152,7 +179,7 @@ class RawatJalanPatientsService {
 
       const filteredPoliCodes = effectivePoliCodes.length > 0
         ? effectivePoliCodes
-        : poliCodes;
+        : nonIgdPoliCodes;
       const poliPlaceholders = filteredPoliCodes.map(() => '?').join(',');
       const isInternalTab = ['rujukan_internal', 'rujukan_internal_sore', 'internal_lanjutan', 'internal_lanjutan_sore'].includes(normalizedTabFilter);
       const isLanjutanTab = ['pasien_lanjutan', 'pasien_lanjutan_sore', 'internal_lanjutan', 'internal_lanjutan_sore'].includes(normalizedTabFilter);
