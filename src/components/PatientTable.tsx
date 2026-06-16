@@ -31,6 +31,7 @@ interface PatientTableProps {
   type?: 'active' | 'queue';
   columns?: Array<Column>;
   loading?: boolean;
+  getRowClassName?: (row: Patient) => string;
   pagination?: {
     currentPage: number;
     totalPages: number;
@@ -47,6 +48,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
   type = 'active',
   columns,
   loading = false,
+  getRowClassName,
   pagination
 }) => {
   const isMobile = useIsMobile();
@@ -235,7 +237,10 @@ const PatientTable: React.FC<PatientTableProps> = ({
               displayData.map((patient, rowIndex) => (
                 <TableRow 
                   key={patient.id || rowIndex} 
-                  className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  className={cn(
+                    "hover:bg-gray-50 transition-colors cursor-pointer",
+                    getRowClassName ? getRowClassName(patient) : ""
+                  )}
                   onClick={() => handleRowClick(patient)}
                 >
                   {columns.map((column, colIndex) => (

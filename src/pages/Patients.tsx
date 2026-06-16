@@ -1515,28 +1515,21 @@ const RawatInapTabs = () => {
   // Use the global rawatInapColumns definition
 
   const resumeColumns = [
+    { accessor: 'no_rkm_medis', header: 'No. RM' },
+    { accessor: 'nm_pasien', header: 'Nama Pasien' },
     {
-      accessor: 'no_rkm_medis',
-      header: 'No. RM',
+      accessor: 'ket_verifikasi',
+      header: 'Status Verifikasi',
       render: (row: any) => {
-        const isResumeFinished = String(row?.ket_dilanjutkan || '').trim().toLowerCase() === 'selesai';
-
+        const isVerified = String(row?.ket_dilanjutkan || '').trim().toLowerCase() === 'selesai';
         return (
-          <div className="inline-flex items-center gap-2">
-            <span>{row.no_rkm_medis || '-'}</span>
-            {isResumeFinished ? (
-              <span
-                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-white"
-                title="Resume selesai"
-              >
-                <Check size={12} strokeWidth={3} />
-              </span>
-            ) : null}
-          </div>
+          <StatusPill
+            label={isVerified ? 'Sudah Verifikasi' : 'Belum Verifikasi'}
+            tone={isVerified ? 'blue' : 'amber'}
+          />
         );
       }
     },
-    { accessor: 'nm_pasien', header: 'Nama Pasien' },
     { accessor: 'jenis_kelamin', header: 'JK' },
     { accessor: 'tgl_masuk', header: 'Tgl Masuk' },
     { accessor: 'tgl_keluar', header: 'Tgl Keluar' },
