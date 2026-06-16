@@ -1414,7 +1414,10 @@ app.get('/api/igd-data', async (req, res) => {
 app.get('/api/laboratory-data', async (req, res) => {
   try {
     const { action, no_rawat, noorder, kd_jenis_prw, username = '' } = req.query;
-    DiagnosticAccessService.ensureAccess('laboratorium', username);
+    const restrictedLabActions = new Set(['get_daily_patients', 'get_patient_detail']);
+    if (restrictedLabActions.has(String(action || '').trim())) {
+      DiagnosticAccessService.ensureAccess('laboratorium', username);
+    }
     
     let result;
     
@@ -1481,7 +1484,9 @@ app.post('/api/laboratory-data', async (req, res) => {
   try {
     const { action } = req.query;
     const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat, username, klinis } = req.body;
-    DiagnosticAccessService.ensureAccess('laboratorium', username);
+    if (String(action || '').trim() === 'save_lab_review') {
+      DiagnosticAccessService.ensureAccess('laboratorium', username);
+    }
     
     let result;
     
@@ -1536,7 +1541,6 @@ app.post('/api/laboratory-data', async (req, res) => {
 app.delete('/api/laboratory-data', async (req, res) => {
   try {
     const { action, noorder, username } = req.query;
-    DiagnosticAccessService.ensureAccess('laboratorium', username);
     
     if (action === 'delete_lab_request') {
       if (!noorder) {
@@ -1771,7 +1775,14 @@ app.post('/api/allergy-data', async (req, res) => {
 app.get('/api/radiology-data', async (req, res) => {
   try {
     const { action, no_rawat, noorder, username = '' } = req.query;
-    DiagnosticAccessService.ensureAccess('radiologi', username);
+    const restrictedRadiologyActions = new Set([
+      'get_daily_patients',
+      'get_patient_detail',
+      'get_patient_pacs_detail'
+    ]);
+    if (restrictedRadiologyActions.has(String(action || '').trim())) {
+      DiagnosticAccessService.ensureAccess('radiologi', username);
+    }
 
     let result;
 
@@ -1838,7 +1849,9 @@ app.post('/api/radiology-data', async (req, res) => {
   try {
     const { action } = req.query;
     const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat, username, klinis } = req.body;
-    DiagnosticAccessService.ensureAccess('radiologi', username);
+    if (String(action || '').trim() === 'save_radiology_review') {
+      DiagnosticAccessService.ensureAccess('radiologi', username);
+    }
 
     let result;
 
@@ -1899,7 +1912,6 @@ app.post('/api/radiology-data', async (req, res) => {
 app.delete('/api/radiology-data', async (req, res) => {
   try {
     const { action, noorder, username } = req.query;
-    DiagnosticAccessService.ensureAccess('radiologi', username);
 
     if (action === 'delete_radiology_request') {
       if (!noorder) {

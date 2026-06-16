@@ -5820,11 +5820,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [formattedNoRawat, procedureStatusRawat]);
 
   const fetchLabServiceOptions = useCallback(async () => {
+    if (!currentUsername) {
+      setLabServiceOptions([]);
+      return;
+    }
+
     try {
       setLabServiceSearchLoading(true);
 
       const params = new URLSearchParams({
-        action: 'get_lab_services'
+        action: 'get_lab_services',
+        username: currentUsername
       });
       const response = await fetch(`${API_URLS.LABORATORY_DATA}?${params.toString()}`);
       const responseJson = await response.json().catch(() => null);
@@ -5842,12 +5848,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setLabServiceSearchLoading(false);
     }
-  }, []);
+  }, [currentUsername]);
 
   const fetchLabTemplates = useCallback(async (index: number, kdJenisPrw: string) => {
     const normalizedKode = String(kdJenisPrw || '').trim();
 
-    if (!normalizedKode) {
+    if (!normalizedKode || !currentUsername) {
       setLabTemplatesByIndex((previous) => ({ ...previous, [index]: [] }));
       return;
     }
@@ -5857,7 +5863,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
       const params = new URLSearchParams({
         action: 'get_lab_templates',
-        kd_jenis_prw: normalizedKode
+        kd_jenis_prw: normalizedKode,
+        username: currentUsername
       });
       const response = await fetch(`${API_URLS.LABORATORY_DATA}?${params.toString()}`);
       const responseJson = await response.json().catch(() => null);
@@ -5878,7 +5885,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setLabTemplateLoadingByIndex((previous) => ({ ...previous, [index]: false }));
     }
-  }, []);
+  }, [currentUsername]);
 
   const addRadTest = () => {
     setRadTests([...radTests, {
@@ -5938,7 +5945,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       setRadiologySearchLoading(true);
 
       const params = new URLSearchParams({
-        action: 'get_radiology_services'
+        action: 'get_radiology_services',
+        username: currentUsername
       });
       const response = await fetch(`${API_URLS.RADIOLOGY_DATA}?${params.toString()}`);
       const responseJson = await response.json().catch(() => null);
@@ -5956,7 +5964,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setRadiologySearchLoading(false);
     }
-  }, []);
+  }, [currentUsername]);
 
   const handleCopyLabRequest = (lab: any) => {
     const tests = Array.isArray(lab?.pemeriksaan) ? lab.pemeriksaan : [];
