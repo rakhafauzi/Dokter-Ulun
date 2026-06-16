@@ -505,6 +505,14 @@ const getDefaultExaminationForm = () => ({
   nip: ''
 });
 
+const normalizeMedicalIdentity = (value?: string | null) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^dr\.\s*/i, '')
+    .replace(/^dr\s+/i, '')
+    .replace(/[^a-z0-9]/g, '');
+
 const getDefaultIgdTriageForm = (): IgdTriageForm => ({
   ...getCurrentExaminationDateTime(),
   kd_level: '',
@@ -1066,6 +1074,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [aiScribeResult, setAiScribeResult] = useState('');
   const { toast } = useToast();
   const { user } = useAuth();
+  const currentUsername = String(user?.username || '').trim();
   const allVisits = useMemo(
     () => [
       ...(medicalData?.outpatient_visits || []),
@@ -1276,6 +1285,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreExaminationRef = useRef<HTMLDivElement | null>(null);
+  const examinationFormRef = useRef<HTMLDivElement | null>(null);
   const pacsPreviewRequestRef = useRef(0);
   const prefetchedPacsPreviewUrlsRef = useRef<Set<string>>(new Set());
   const medicalRecordRequestRef = useRef<{ visits: number; focused: number }>({
@@ -1459,6 +1469,51 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return examinationHistoryData.inpatient;
   }, [examinationHistoryData.inpatient, formattedNoRawat, medicalData?.focused_examinations?.ranap]);
+  const currentDoctorIdentityCandidates = useMemo(() => {
+    return Array.from(
+      new Set(
+        [currentUsername, user?.kd_dokter, user?.name]
+          .map((value) => normalizeMedicalIdentity(value))
+          .filter(Boolean)
+      )
+    );
+  }, [currentUsername, user?.kd_dokter, user?.name]);
+  const isExaminationOwnedByCurrentDoctor = useCallback((item: any) => {
+    if (!currentDoctorIdentityCandidates.length) {
+      return false;
+    }
+
+    const examinationIdentityCandidates = [
+      item?.exam?.nip,
+      item?.exam?.pegawai,
+      item?.exam?.nama,
+      item?.visit?.dokter,
+      item?.visit?.nm_dokter
+    ]
+      .map((value) => normalizeMedicalIdentity(value))
+      .filter(Boolean);
+
+    return examinationIdentityCandidates.some((value) => currentDoctorIdentityCandidates.includes(value));
+  }, [currentDoctorIdentityCandidates]);
+  const latestDoctorOutpatientExamination = useMemo(
+    () => outpatientExaminationHistory.find((item) => isExaminationOwnedByCurrentDoctor(item)) || null,
+    [isExaminationOwnedByCurrentDoctor, outpatientExaminationHistory]
+  );
+  const latestDoctorInpatientExamination = useMemo(
+    () => inpatientExaminationHistory.find((item) => isExaminationOwnedByCurrentDoctor(item)) || null,
+    [inpatientExaminationHistory, isExaminationOwnedByCurrentDoctor]
+  );
+  const defaultDoctorExaminationItem = useMemo(() => {
+    if (defaultExaminationStatusRawat === 'Ranap') {
+      return latestDoctorInpatientExamination || latestDoctorOutpatientExamination;
+    }
+
+    return latestDoctorOutpatientExamination || latestDoctorInpatientExamination;
+  }, [
+    defaultExaminationStatusRawat,
+    latestDoctorInpatientExamination,
+    latestDoctorOutpatientExamination
+  ]);
   const filteredOutpatientExaminationHistory = useMemo(() => {
     if (examinationRoleFilter === 'all') {
       return outpatientExaminationHistory;
@@ -1922,7 +1977,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const isFocusedRadiologyLoaded = !formattedNoRawat || (
     medicalData?.focused_radiology_request !== undefined && medicalData?.focused_radiology !== undefined
   );
-  const currentUsername = String(user?.username || '').trim();
   const shouldShowIgdTriageSection = Boolean(activeIgdTriageNoRawat && focusedVisit?.is_igd_visit);
   const selectedIgdTriageOptions = useMemo(
     () => igdTriageMasterOptions.filter((item) => item.kd_level === igdTriageForm.kd_level),
@@ -6284,6 +6338,63 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   };
 
+  const focusExaminationForm = useCallback(() => {
+    window.setTimeout(() => {
+      const formElement = examinationFormRef.current;
+      if (!formElement) {
+        return;
+      }
+
+      formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      formElement.focus({ preventScroll: true });
+    }, 120);
+  }, []);
+
+  const buildExaminationFormFromRecord = useCallback((examination?: any, rawatType?: 'Ralan' | 'Ranap') => {
+    const shouldIncludeIE = rawatType === 'Ranap';
+
+    return {
+      ...getDefaultExaminationForm(),
+      suhu: examination?.suhu_tubuh || examination?.suhu || '',
+      tensi: examination?.tensi || examination?.tekanan_darah || '',
+      nadi: examination?.nadi || '',
+      respirasi: examination?.respirasi || '',
+      tinggi: examination?.tinggi || '',
+      berat: examination?.berat || '',
+      spo2: examination?.spo2 || '',
+      gcs: examination?.gcs || '',
+      kesadaran: examination?.kesadaran || '',
+      keluhan: examination?.keluhan || examination?.s || '',
+      pemeriksaan: examination?.pemeriksaan || examination?.o || '',
+      rtl: examination?.rtl || examination?.p || '',
+      penilaian: examination?.penilaian || examination?.a || '',
+      instruksi: shouldIncludeIE ? (examination?.instruksi || examination?.i || '') : '',
+      evaluasi: shouldIncludeIE ? (examination?.evaluasi || examination?.e || '') : '',
+      nip: currentUsername || examination?.nip || examination?.pegawai || ''
+    };
+  }, [currentUsername]);
+
+  const resetExaminationFormToDoctorDefault = useCallback(() => {
+    const rawatType = defaultDoctorExaminationItem?.rawatType || defaultExaminationStatusRawat;
+
+    setExaminationForm(
+      buildExaminationFormFromRecord(defaultDoctorExaminationItem?.exam, rawatType as 'Ralan' | 'Ranap')
+    );
+    setStatusRawat(rawatType === 'Ranap' ? 'Ranap' : 'Ralan');
+  }, [
+    buildExaminationFormFromRecord,
+    defaultDoctorExaminationItem,
+    defaultExaminationStatusRawat
+  ]);
+
+  useEffect(() => {
+    if (editingExamination) {
+      return;
+    }
+
+    resetExaminationFormToDoctorDefault();
+  }, [editingExamination, resetExaminationFormToDoctorDefault]);
+
   const handleEditExamination = (examination: any, visit: any) => {
     if (!canEditExamination(examination)) {
       toast({
@@ -6350,6 +6461,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       title: "Data Disalin",
       description: "TTV berhasil disalin ke form tambah pemeriksaan",
     });
+    focusExaminationForm();
   };
 
   const handleCopyExaminationAll = (examination: any, rawatType: 'Ralan' | 'Ranap') => {
@@ -6384,6 +6496,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       title: "Data Disalin",
       description: "TTV dan SOAPIE berhasil disalin ke form tambah pemeriksaan",
     });
+    focusExaminationForm();
   };
 
   const handleCopyExaminationSOAPIE = (examination: any, rawatType: 'Ralan' | 'Ranap') => {
@@ -6410,6 +6523,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       title: "Data Disalin",
       description: "SOAPIE berhasil disalin ke form tambah pemeriksaan",
     });
+    focusExaminationForm();
   };
 
   const handleDeleteExamination = async (examination: any, visit: any) => {
@@ -7088,8 +7202,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         
         // Reset form and editing state
         setEditingExamination(null);
-        setExaminationForm(getDefaultExaminationForm());
-        setStatusRawat(defaultExaminationStatusRawat);
+        resetExaminationFormToDoctorDefault();
 
         // Refresh medical record data
         fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
@@ -8806,7 +8919,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
               {/* Form Tambah Pemeriksaan */}
               <Collapsible open={isExaminationFormOpen} onOpenChange={setIsExaminationFormOpen}>
-                <div className="border rounded-lg p-4 mb-6 bg-muted/30">
+                <div
+                  ref={examinationFormRef}
+                  tabIndex={-1}
+                  className="border rounded-lg p-4 mb-6 bg-muted/30 outline-none"
+                >
                   <CollapsibleTrigger asChild>
                     <button className="w-full flex items-center justify-between text-lg font-semibold mb-4 hover:text-primary transition-colors">
                       <div className="flex items-center">
@@ -9079,8 +9196,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                    <Button 
                      variant="outline" 
                     onClick={() => {
-                      setExaminationForm(getDefaultExaminationForm());
-                      setStatusRawat(defaultExaminationStatusRawat);
+                      resetExaminationFormToDoctorDefault();
                     }}
                    >
                      Reset
@@ -9093,8 +9209,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         variant="outline" 
                         onClick={() => {
                           setEditingExamination(null);
-                          setExaminationForm(getDefaultExaminationForm());
-                          setStatusRawat(defaultExaminationStatusRawat);
+                          resetExaminationFormToDoctorDefault();
                         }}
                       >
                         Batal Edit

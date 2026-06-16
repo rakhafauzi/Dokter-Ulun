@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from "@/components/ui/button";
 import { 
@@ -9,7 +9,8 @@ import {
   ArrowRight, 
   Scissors,
   Plus,
-  X
+  X,
+  ChevronUp
 } from 'lucide-react';
 import { ICDModal } from './modals/ICDModal';
 import { PatientNotesModal } from './modals/PatientNotesModal';
@@ -29,6 +30,7 @@ export const FloatingButtonsModal: React.FC<FloatingButtonsModalProps> = ({
 }) => {
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
 
   const buttons = [
     {
@@ -76,51 +78,87 @@ export const FloatingButtonsModal: React.FC<FloatingButtonsModalProps> = ({
     setIsMenuOpen(false);
   };
 
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollToTop(window.scrollY > 240);
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  const handleScrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
+
   return (
     <>
       {/* Floating Action Button Group - Rendered via Portal */}
       {createPortal(
-        <div className="fixed bottom-6 right-6 z-[9999]">
-          {/* Drop-up Menu */}
-          {isMenuOpen && (
-            <div className="absolute bottom-16 right-0 flex flex-col gap-2 mb-2 items-end animate-scale-in">
-              {buttons.map((button, index) => {
-                const IconComponent = button.icon;
-                return (
-                  <div
-                    key={button.id}
-                    className="flex items-center gap-3 animate-fade-in"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <span className="bg-background border text-foreground px-3 py-1 rounded-lg text-sm whitespace-nowrap shadow-md">
-                      {button.label}
-                    </span>
-                    <Button
-                      onClick={() => handleMenuItemClick(button.id)}
-                      className={`${button.color} text-white shadow-lg hover:shadow-xl transition-all duration-200 w-12 h-12 rounded-full flex items-center justify-center`}
-                      size="sm"
-                    >
-                      <IconComponent className="h-5 w-5" />
-                    </Button>
-                  </div>
-                );
-              })}
+        <>
+          {showScrollToTop && (
+            <div className="fixed bottom-6 left-6 z-[9999]">
+              <Button
+                type="button"
+                onClick={handleScrollToTop}
+                className="h-12 w-12 rounded-full bg-red-600 text-white shadow-lg transition-all duration-300 hover:bg-red-700 hover:shadow-xl"
+                size="icon"
+                aria-label="Scroll ke atas"
+              >
+                <ChevronUp className="h-5 w-5" />
+              </Button>
             </div>
           )}
 
-          {/* Main FAB Button */}
-          <Button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-300 w-14 h-14 rounded-full flex items-center justify-center"
-            size="sm"
-          >
-            {isMenuOpen ? (
-              <X className="h-6 w-6 transition-transform duration-200" />
-            ) : (
-              <Plus className="h-6 w-6 transition-transform duration-200" />
+          <div className="fixed bottom-6 right-6 z-[9999]">
+            {/* Drop-up Menu */}
+            {isMenuOpen && (
+              <div className="absolute bottom-16 right-0 mb-2 flex flex-col items-end gap-2 animate-scale-in">
+                {buttons.map((button, index) => {
+                  const IconComponent = button.icon;
+                  return (
+                    <div
+                      key={button.id}
+                      className="flex items-center gap-3 animate-fade-in"
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      <span className="whitespace-nowrap rounded-lg border bg-background px-3 py-1 text-sm text-foreground shadow-md">
+                        {button.label}
+                      </span>
+                      <Button
+                        onClick={() => handleMenuItemClick(button.id)}
+                        className={`${button.color} flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg transition-all duration-200 hover:shadow-xl`}
+                        size="sm"
+                      >
+                        <IconComponent className="h-5 w-5" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-          </Button>
-        </div>,
+
+            {/* Main FAB Button */}
+            <Button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-all duration-300 hover:bg-primary/90 hover:shadow-xl"
+              size="sm"
+            >
+              {isMenuOpen ? (
+                <X className="h-6 w-6 transition-transform duration-200" />
+              ) : (
+                <Plus className="h-6 w-6 transition-transform duration-200" />
+              )}
+            </Button>
+          </div>
+        </>,
         document.body
       )}
 
