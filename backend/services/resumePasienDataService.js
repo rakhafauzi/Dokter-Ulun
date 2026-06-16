@@ -654,6 +654,7 @@ class ResumePasienDataService {
     username = "",
     resumeStatus = "all",
     jenisDpjp = "all",
+    verificationStatus = "all",
     startDate,
     endDate
   }) {
@@ -723,6 +724,13 @@ class ResumePasienDataService {
           whereConditions.push(`(rpr.no_rawat IS NULL OR (rpr.no_rawat IS NOT NULL AND NOT (${ketKeadaanLikeClause})))`);
           params.push(ketKeadaanLikeParam);
         }
+      }
+
+      const normalizedVerificationStatus = String(verificationStatus || 'all').trim().toLowerCase();
+      if (normalizedVerificationStatus === 'verified') {
+        whereConditions.push(`LOWER(COALESCE(rpr.ket_dilanjutkan, '')) = 'selesai'`);
+      } else if (normalizedVerificationStatus === 'unverified') {
+        whereConditions.push(`LOWER(COALESCE(rpr.ket_dilanjutkan, '')) <> 'selesai'`);
       }
 
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';

@@ -1008,6 +1008,7 @@ const RawatInapTabs = () => {
   const [statusPulangResume, setStatusPulangResume] = useState(searchParams.get('statusPulangResume') || "sudah-pulang");
   const [resumeStatus, setResumeStatus] = useState(searchParams.get('resumeStatus') || "belum_resume");
   const [resumeJenisDpjp, setResumeJenisDpjp] = useState(searchParams.get('resumeJenisDpjp') || "all");
+  const [resumeVerificationStatus, setResumeVerificationStatus] = useState(searchParams.get('resumeVerificationStatus') || "all");
   const [rawatBersamaResumeStatus, setRawatBersamaResumeStatus] = useState(
     searchParams.get('rawatBersamaResumeStatus') || "belum_ada_resume"
   );
@@ -1020,6 +1021,7 @@ const RawatInapTabs = () => {
   const [pendingStatusPulangResume, setPendingStatusPulangResume] = useState(searchParams.get('statusPulangResume') || "sudah-pulang");
   const [pendingResumeStatus, setPendingResumeStatus] = useState(searchParams.get('resumeStatus') || "belum_resume");
   const [pendingResumeJenisDpjp, setPendingResumeJenisDpjp] = useState(searchParams.get('resumeJenisDpjp') || "all");
+  const [pendingResumeVerificationStatus, setPendingResumeVerificationStatus] = useState(searchParams.get('resumeVerificationStatus') || "all");
   const [pendingRawatBersamaResumeStatus, setPendingRawatBersamaResumeStatus] = useState(
     searchParams.get('rawatBersamaResumeStatus') || "belum_ada_resume"
   );
@@ -1157,6 +1159,7 @@ const RawatInapTabs = () => {
     username: user?.username || '',
     resumeStatus: overrides.resumeStatus ?? resumeStatus,
     jenisDpjp: overrides.jenisDpjp ?? resumeJenisDpjp,
+    verificationStatus: overrides.verificationStatus ?? resumeVerificationStatus,
     startDate: overrides.startDate ?? (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
     endDate: overrides.endDate ?? (dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
     ...overrides
@@ -1198,6 +1201,7 @@ const RawatInapTabs = () => {
     params.set('statusPulangResume', statusPulangResume);
     params.set('resumeStatus', resumeStatus);
     params.set('resumeJenisDpjp', resumeJenisDpjp);
+    params.set('resumeVerificationStatus', resumeVerificationStatus);
     params.set('rawatBersamaResumeStatus', rawatBersamaResumeStatus);
     params.delete('statusPulang');
 
@@ -1230,6 +1234,7 @@ const RawatInapTabs = () => {
     statusPulangResume,
     resumeStatus,
     resumeJenisDpjp,
+    resumeVerificationStatus,
     rawatBersamaResumeStatus,
     searchQuery,
     dateRange?.from,
@@ -1426,12 +1431,14 @@ const RawatInapTabs = () => {
     const nextStatusPulangResume = pendingStatusPulangResume || "sudah-pulang";
     const nextResumeStatus = pendingResumeStatus || "belum_resume";
     const nextResumeJenisDpjp = pendingResumeJenisDpjp || "all";
+    const nextResumeVerificationStatus = pendingResumeVerificationStatus || "all";
     const nextRawatBersamaResumeStatus = pendingRawatBersamaResumeStatus || "belum_ada_resume";
 
     setStatusPulangRawatInap(nextStatusPulangRawatInap);
     setStatusPulangResume(nextStatusPulangResume);
     setResumeStatus(nextResumeStatus);
     setResumeJenisDpjp(nextResumeJenisDpjp);
+    setResumeVerificationStatus(nextResumeVerificationStatus);
     setRawatBersamaResumeStatus(nextRawatBersamaResumeStatus);
     setIsFilterModalOpen(false);
 
@@ -1444,7 +1451,8 @@ const RawatInapTabs = () => {
       fetchResumeData({
         statusPulang: nextStatusPulangResume,
         resumeStatus: nextResumeStatus,
-        jenisDpjp: nextResumeJenisDpjp
+        jenisDpjp: nextResumeJenisDpjp,
+        verificationStatus: nextResumeVerificationStatus
       });
     } else {
       fetchRawatInapData(tab as 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung', {
@@ -1459,11 +1467,13 @@ const RawatInapTabs = () => {
     setStatusPulangByTab(tab, tab === 'resume-pasien' ? "sudah-pulang" : "masih-dirawat");
     setResumeStatus("belum_resume");
     setResumeJenisDpjp("all");
+    setResumeVerificationStatus("all");
     setRawatBersamaResumeStatus("belum_ada_resume");
     setPendingStatusPulangRawatInap("masih-dirawat");
     setPendingStatusPulangResume("sudah-pulang");
     setPendingResumeStatus("belum_resume");
     setPendingResumeJenisDpjp("all");
+    setPendingResumeVerificationStatus("all");
     setPendingRawatBersamaResumeStatus("belum_ada_resume");
     setIsFilterModalOpen(false);
     setDateRange({
@@ -1490,6 +1500,7 @@ const RawatInapTabs = () => {
     setPendingStatusPulangResume(statusPulangResume);
     setPendingResumeStatus(resumeStatus);
     setPendingResumeJenisDpjp(resumeJenisDpjp);
+    setPendingResumeVerificationStatus(resumeVerificationStatus);
     setPendingRawatBersamaResumeStatus(rawatBersamaResumeStatus);
   }, [
     isFilterModalOpen,
@@ -1497,6 +1508,7 @@ const RawatInapTabs = () => {
     statusPulangResume,
     resumeStatus,
     resumeJenisDpjp,
+    resumeVerificationStatus,
     rawatBersamaResumeStatus
   ]);
 
@@ -1677,6 +1689,22 @@ const RawatInapTabs = () => {
                     <SelectItem value="all">Semua Resume</SelectItem>
                     <SelectItem value="belum_resume">Belum Resume</SelectItem>
                     <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+
+            {tab === 'resume-pasien' ? (
+              <div className="grid gap-2">
+                <div className="text-sm font-medium">Keterangan Verifikasi</div>
+                <Select value={pendingResumeVerificationStatus} onValueChange={setPendingResumeVerificationStatus}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Keterangan Verifikasi" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua</SelectItem>
+                    <SelectItem value="verified">Verifikasi</SelectItem>
+                    <SelectItem value="unverified">Belum Verifikasi</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

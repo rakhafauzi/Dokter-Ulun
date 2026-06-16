@@ -2179,6 +2179,7 @@ app.post('/api/resume-pasien-data', async (req, res) => {
       username = "",
       resumeStatus = "all",
       jenisDpjp = "all",
+      verificationStatus = "all",
       startDate,
       endDate
     } = req.body;
@@ -2191,6 +2192,7 @@ app.post('/api/resume-pasien-data', async (req, res) => {
       username,
       resumeStatus,
       jenisDpjp,
+      verificationStatus,
       startDate,
       endDate
     });
