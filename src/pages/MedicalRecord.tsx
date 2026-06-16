@@ -7810,6 +7810,60 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   </div>
                 </div>
               </div>
+              <div className="flex items-start space-x-4">
+                <Building className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-muted-foreground">No. RM</p>
+                  <p className="font-medium">{currentPatient.no_rm}</p>
+                </div>
+              </div>
+              <div className="flex items-start space-x-4">
+                <CreditCard className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Cara Bayar</p>
+                  <p className="font-medium">{visitCaraBayar || '-'}</p>
+                </div>
+              </div>
+              <div className="flex items-start space-x-4">
+                <Calendar className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Tanggal Lahir</p>
+                  <p className="font-medium">{currentPatient.tanggal_lahir || '-'}</p>
+                </div>
+              </div>
+              <div className="flex items-start space-x-4">
+                <User className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Jenis Kelamin</p>
+                  <p className="font-medium">{currentPatient.jenis_kelamin}</p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-start space-x-4">
+                <MapPin className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Alamat</p>
+                  <p className="font-medium">{currentPatient.alamat}</p>
+                </div>
+              </div>
+              <div className="flex items-start space-x-4">
+                <Phone className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Telepon</p>
+                  <a
+                    href="#"
+                    className="font-medium text-green-600 hover:text-green-700 hover:underline"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setWhatsappNumber(String(medicalData?.patient?.telepon || '').trim());
+                      setIsWhatsappModalOpen(true);
+                    }}
+                  >
+                    {currentPatient.telepon || 'Input nomor WhatsApp'}
+                  </a>
+                </div>
+              </div>
               {defaultExaminationStatusRawat === 'Ranap' ? (
                 <div className="flex items-start space-x-4">
                   <Stethoscope className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
@@ -7862,60 +7916,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   </div>
                 </div>
               ) : null}
-              <div className="flex items-start space-x-4">
-                <Building className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-muted-foreground">No. RM</p>
-                  <p className="font-medium">{currentPatient.no_rm}</p>
-                </div>
-              </div>
-              <div className="flex items-start space-x-4">
-                <Calendar className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Tanggal Lahir</p>
-                  <p className="font-medium">{currentPatient.tanggal_lahir || '-'}</p>
-                </div>
-              </div>
-              <div className="flex items-start space-x-4">
-                <User className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Jenis Kelamin</p>
-                  <p className="font-medium">{currentPatient.jenis_kelamin}</p>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div className="flex items-start space-x-4">
-                <CreditCard className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Cara Bayar</p>
-                  <p className="font-medium">{visitCaraBayar || '-'}</p>
-                </div>
-              </div>
-              <div className="flex items-start space-x-4">
-                <MapPin className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Alamat</p>
-                  <p className="font-medium">{currentPatient.alamat}</p>
-                </div>
-              </div>
-              <div className="flex items-start space-x-4">
-                <Phone className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Telepon</p>
-                  <a
-                    href="#"
-                    className="font-medium text-green-600 hover:text-green-700 hover:underline"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      setWhatsappNumber(String(medicalData?.patient?.telepon || '').trim());
-                      setIsWhatsappModalOpen(true);
-                    }}
-                  >
-                    {currentPatient.telepon || 'Input nomor WhatsApp'}
-                  </a>
-                </div>
-              </div>
               <div className="flex items-start space-x-4">
                 <Heart className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
