@@ -8130,6 +8130,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                           <span className="font-medium">{exam.suhu}</span>
                                         </div>
                                         <div className="flex justify-between">
+                                          <span>Tinggi Badan:</span>
+                                          <span className="font-medium">{exam.tinggi ? `${exam.tinggi} cm` : '-'}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span>Berat Badan:</span>
+                                          <span className="font-medium">{exam.berat ? `${exam.berat} kg` : '-'}</span>
+                                        </div>
+                                        <div className="flex justify-between">
                                           <span>GCS:</span>
                                           <span className="font-medium">{exam.gcs}</span>
                                         </div>
