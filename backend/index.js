@@ -1271,6 +1271,21 @@ app.get('/api/echocardiography/access/:username', async (req, res) => {
   }
 });
 
+app.get('/api/internal-referrals/doctors', async (req, res) => {
+  try {
+    const kd_poli = String(req.query.kd_poli || '').trim();
+    const date = String(req.query.date || '').trim();
+    const result = await InternalReferralService.getDoctorsBySchedule({ kd_poli, date });
+    res.json(result);
+  } catch (error) {
+    console.error('Error in internal-referrals doctors endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/internal-referrals/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
