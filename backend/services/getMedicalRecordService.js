@@ -620,6 +620,8 @@ class GetMedicalRecordService {
       nadi: row.nadi || '',
       respirasi: row.respirasi || '',
       suhu: row.suhu_tubuh || '',
+      tinggi: row.tinggi || '',
+      berat: row.berat || '',
       gcs: row.gcs || '',
       s: row.keluhan || '',
       o: row.pemeriksaan || '',
