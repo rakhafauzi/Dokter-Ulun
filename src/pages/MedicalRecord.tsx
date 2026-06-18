@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { API_CONFIG, API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import logoImg from '@/assets/logo.png';
 
 type PrescriptionStatus = 'Ralan' | 'Ranap' | 'Pulang' | 'IBS';
 
@@ -1033,6 +1034,91 @@ const buildFocusedLabItems = (
 
       return (a.__index || 0) - (b.__index || 0);
     });
+};
+
+const groupLaboratoryTestsByPanel = (labGroup: any) => {
+  if (!Array.isArray(labGroup?.pemeriksaan) || labGroup.pemeriksaan.length === 0) {
+    return [];
+  }
+
+  const groupedTests = (labGroup.pemeriksaan as LabTest[]).reduce((groups, test) => {
+    const key = String(test?.nama || '').trim() || 'Pemeriksaan Lainnya';
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+    groups[key].push(test);
+    return groups;
+  }, {} as Record<string, LabTest[]>);
+
+  return Object.entries(groupedTests).map(([groupName, tests]) => ({
+    groupName,
+    tests
+  }));
+};
+
+const formatLabSheetDateTime = (value?: string | null) => {
+  const normalizedValue = String(value || '').trim();
+  if (!normalizedValue) {
+    return '-';
+  }
+
+  const parsedDate = parseDateLike(normalizedValue);
+  if (!parsedDate) {
+    return normalizedValue;
+  }
+
+  return formatUIDateTime(parsedDate);
+};
+
+const formatLabSheetAge = (
+  birthDateValue?: string | null,
+  referenceDateValue?: string | null
+) => {
+  const birthDate = parseDateLike(String(birthDateValue || '').trim());
+  const referenceDate = parseDateLike(String(referenceDateValue || '').trim()) || new Date();
+
+  if (!birthDate) {
+    return '-';
+  }
+
+  let years = referenceDate.getFullYear() - birthDate.getFullYear();
+  let months = referenceDate.getMonth() - birthDate.getMonth();
+  let days = referenceDate.getDate() - birthDate.getDate();
+
+  if (days < 0) {
+    const previousMonth = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 0);
+    days += previousMonth.getDate();
+    months -= 1;
+  }
+
+  if (months < 0) {
+    months += 12;
+    years -= 1;
+  }
+
+  const parts: string[] = [];
+  if (years > 0) {
+    parts.push(`${years} th`);
+  }
+  if (months > 0) {
+    parts.push(`${months} bln`);
+  }
+  if (days > 0 || parts.length === 0) {
+    parts.push(`${Math.max(days, 0)} hr`);
+  }
+
+  return parts.join(' ');
+};
+
+const formatGenderLabel = (value?: string | null) => {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  if (normalizedValue === 'l' || normalizedValue === 'laki-laki') {
+    return 'Laki-laki';
+  }
+  if (normalizedValue === 'p' || normalizedValue === 'perempuan') {
+    return 'Perempuan';
+  }
+  return String(value || '-').trim() || '-';
 };
 
 const ekstrapiramidalQuestionLabels: Record<string, string> = {
@@ -3640,20 +3726,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     )});
   };
   const renderLaboratoryHistoryDetails = (labGroup: any) => {
-    if (!Array.isArray(labGroup.pemeriksaan) || labGroup.pemeriksaan.length === 0) {
+    const groupedPanels = groupLaboratoryTestsByPanel(labGroup);
+
+    if (groupedPanels.length === 0) {
       return <p className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan</p>;
     }
 
-    const groupedTests = (labGroup.pemeriksaan as LabTest[]).reduce((groups, test) => {
-      const key = test.nama?.trim() || '-';
-      if (!groups[key]) {
-        groups[key] = [];
-      }
-      groups[key].push(test);
-      return groups;
-    }, {} as Record<string, LabTest[]>);
-
-    return Object.entries(groupedTests).map(([groupName, tests], groupIdx) => (
+    return groupedPanels.map(({ groupName, tests }, groupIdx) => (
       <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
         <div>
           <p className="text-sm text-muted-foreground">Nama</p>
@@ -8179,6 +8258,51 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     prb: "",
     prb_program: ""
   };
+  const fullscreenLabVisit = useMemo(() => {
+    const fullscreenNoRawat = String(fullscreenLabHistory?.no_rawat || '').trim();
+    if (!fullscreenNoRawat) {
+      return focusedVisit;
+    }
+
+    return allVisits.find((visit: any) => String(visit?.no_rawat || '').trim() === fullscreenNoRawat) || focusedVisit;
+  }, [allVisits, focusedVisit, fullscreenLabHistory]);
+  const fullscreenLabPanels = useMemo(
+    () => groupLaboratoryTestsByPanel(fullscreenLabHistory),
+    [fullscreenLabHistory]
+  );
+  const fullscreenLabDoctorName = useMemo(
+    () => (
+      String(fullscreenLabVisit?.dokter || '').trim()
+      || String(dpjpMeta.dokterUtama?.nama || '').trim()
+      || String(user?.name || '').trim()
+      || '-'
+    ),
+    [dpjpMeta.dokterUtama?.nama, fullscreenLabVisit?.dokter, user?.name]
+  );
+  const fullscreenLabRoomLabel = useMemo(
+    () => (
+      String(fullscreenLabVisit?.poliklinik || '').trim()
+      || String(fullscreenLabHistory?.source || '').trim()
+      || '-'
+    ),
+    [fullscreenLabHistory?.source, fullscreenLabVisit?.poliklinik]
+  );
+  const fullscreenLabStatusLabel = useMemo(
+    () => visitCaraBayar || '-',
+    [visitCaraBayar]
+  );
+  const fullscreenLabResultDateTime = useMemo(
+    () => formatLabSheetDateTime(fullscreenLabHistory?.tanggal),
+    [fullscreenLabHistory?.tanggal]
+  );
+  const fullscreenLabAgeLabel = useMemo(
+    () => formatLabSheetAge(currentPatient.tanggal_lahir, fullscreenLabHistory?.tanggal),
+    [currentPatient.tanggal_lahir, fullscreenLabHistory?.tanggal]
+  );
+  const fullscreenLabPrintedAt = useMemo(
+    () => formatUIDateTime(new Date()),
+    [fullscreenLabHistory]
+  );
 
   const prbInfoList = [currentPatient.prb, currentPatient.prb_program]
     .map((value) => String(value || '').trim())
@@ -11991,33 +12115,145 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           }
         }}
       >
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden p-0">
-          <DialogHeader className="border-b px-6 py-4">
-            <DialogTitle className="flex items-center gap-2">
-              <FlaskConical className="h-5 w-5" />
-              Hasil Laboratorium Sesuai Tanggal
-            </DialogTitle>
+        <DialogContent className="max-w-[980px] max-h-[95vh] overflow-hidden bg-muted/30 p-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Hasil Laboratorium Fullscreen</DialogTitle>
           </DialogHeader>
 
           {fullscreenLabHistory ? (
-            <div className="max-h-[calc(90vh-88px)] space-y-4 overflow-y-auto px-6 py-4 pr-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Tanggal</p>
-                  <p className="font-medium">{formatDateSafe(fullscreenLabHistory.tanggal)}</p>
+            <div className="max-h-[95vh] overflow-y-auto bg-slate-200 p-3 sm:p-6">
+              <div className="mx-auto w-full max-w-[860px] bg-white p-4 text-[11px] text-slate-900 shadow-lg sm:p-6">
+                <div className="border border-slate-500 p-3">
+                  <div className="flex items-start gap-4 border-b border-slate-500 pb-3">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center">
+                      <img src={logoImg} alt="Logo RSUD" className="h-14 w-14 object-contain" />
+                    </div>
+                    <div className="flex-1 text-center leading-tight">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide">Pemerintah Kabupaten Hulu Sungai Tengah</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide">Dinas Kesehatan</p>
+                      <p className="text-lg font-bold uppercase">UPT RSUD H. Damanhuri Barabai</p>
+                      <p className="text-[10px] text-slate-600">
+                        Jalan Murakata Nomor 4 Barabai Barat, Hulu Sungai Tengah, Kalimantan Selatan 71314
+                      </p>
+                      <p className="text-[10px] text-slate-600">
+                        Telepon: 08115000800, Email: rsdhbarabai@gmail.com
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="border border-slate-500 p-2">
+                      <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                        <p className="uppercase">No. RM</p>
+                        <p>:</p>
+                        <p>{currentPatient.no_rm || no_rkm_medis || '-'}</p>
+                        <p className="uppercase">Nama</p>
+                        <p>:</p>
+                        <p className="font-semibold uppercase">{currentPatient.nama || '-'}</p>
+                        <p className="uppercase">Tgl. Lahir</p>
+                        <p>:</p>
+                        <p>{formatUIDate(currentPatient.tanggal_lahir)}</p>
+                        <p className="uppercase">Umur / JK</p>
+                        <p>:</p>
+                        <p>{fullscreenLabAgeLabel} / {formatGenderLabel(currentPatient.jenis_kelamin)}</p>
+                        <p className="uppercase">Ket. Klinik</p>
+                        <p>:</p>
+                        <p>{String(fullscreenLabHistory?.source || '-').trim() || '-'}</p>
+                      </div>
+                    </div>
+                    <div className="border border-slate-500 p-2">
+                      <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                        <p className="uppercase">No. Lab</p>
+                        <p>:</p>
+                        <p>{fullscreenLabHistory.noorder || fullscreenLabHistory.no_rawat || '-'}</p>
+                        <p className="uppercase">Ruang</p>
+                        <p>:</p>
+                        <p>{fullscreenLabRoomLabel}</p>
+                        <p className="uppercase">Status</p>
+                        <p>:</p>
+                        <p>{fullscreenLabStatusLabel}</p>
+                        <p className="uppercase">Dokter</p>
+                        <p>:</p>
+                        <p>{fullscreenLabDoctorName}</p>
+                        <p className="uppercase">Tanggal</p>
+                        <p>:</p>
+                        <p>{fullscreenLabResultDateTime}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 border border-slate-500">
+                    <div className="border-b border-slate-500 bg-emerald-50 px-3 py-1 text-center text-xs font-bold uppercase tracking-wide text-emerald-700">
+                      Hasil Pemeriksaan Laboratorium
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-[11px]">
+                        <thead>
+                          <tr className="bg-slate-100">
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Pemeriksaan</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Hasil</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Nilai Rujukan</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Satuan</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Metoda</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Ket</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {fullscreenLabPanels.length > 0 ? (
+                            fullscreenLabPanels.map(({ groupName, tests }, groupIndex) => (
+                              <React.Fragment key={`${groupName}-${groupIndex}`}>
+                                <tr className="bg-emerald-50/70">
+                                  <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
+                                    {groupName}
+                                  </td>
+                                </tr>
+                                {tests.map((test: any, testIndex: number) => (
+                                  <tr
+                                    key={`${groupName}-${testIndex}`}
+                                    className={cn(
+                                      test.keterangan === 'H' && "bg-red-50 text-red-900",
+                                      test.keterangan === 'L' && "bg-amber-50 text-amber-900"
+                                    )}
+                                  >
+                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.pemeriksaan || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{test.hasil || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.rujukan || test.nilai_rujukan || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.satuan || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.metode || test.method || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{test.keterangan || '-'}</td>
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="border border-slate-300 px-3 py-4 text-center italic text-slate-500">
+                                Tidak ada hasil pemeriksaan
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-col justify-between gap-4 text-[10px] text-slate-700 sm:flex-row">
+                    <div className="max-w-[60%] space-y-1">
+                      <p>
+                        Jika sekiranya ada keraguan tentang hasil pemeriksaan, diharapkan segera menghubungi Instalasi Laboratorium Patologi Klinik.
+                      </p>
+                      <p>
+                        Catatan: {fullscreenLabHistory?.catatan || '-'}
+                      </p>
+                    </div>
+                    <div className="min-w-[200px] text-left sm:text-right">
+                      <p>Tanggal cetak: {fullscreenLabPrintedAt}</p>
+                      <p>Dokter Penanggung Jawab,</p>
+                      <div className="h-16" />
+                      <p className="font-semibold">{fullscreenLabDoctorName}</p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">No. Rawat</p>
-                  <p className="font-medium">{fullscreenLabHistory.no_rawat}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Sumber</p>
-                  <p className="font-medium">{fullscreenLabHistory.source}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h4 className="font-medium">Pemeriksaan:</h4>
-                {renderLaboratoryHistoryDetails(fullscreenLabHistory)}
               </div>
             </div>
           ) : null}
