@@ -51,7 +51,7 @@ import {
   CommandList
 } from "@/components/ui/command";
 import { format, addDays, differenceInDays, subMonths } from 'date-fns';
-import { indonesianLocale } from '@/lib/date-utils';
+import { indonesianLocale, formatUIDate } from '@/lib/date-utils';
 import PatientTable from '@/components/PatientTable';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DateRange } from 'react-day-picker';
@@ -376,11 +376,10 @@ const BookingTabs = () => {
             displayValue={dateRange?.from ? (
               dateRange.to ? (
                 <>
-                  {format(dateRange.from, "LLL dd, y")} -{" "}
-                  {format(dateRange.to, "LLL dd, y")}
+                  {formatUIDate(dateRange.from)} - {formatUIDate(dateRange.to)}
                 </>
               ) : (
-                format(dateRange.from, "LLL dd, y")
+                formatUIDate(dateRange.from)
               )
             ) : undefined}
           />
@@ -1192,7 +1191,11 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
     rawatInapColumns[rawatInapColumns.length - 1]
   ];
   const getInapColumns = (tab: RawatInapStatusTab) => {
-    const baseColumns = baseListTab === 'rawat-bersama' ? rawatBersamaColumns : rawatInapColumns;
+    let baseColumns = baseListTab === 'rawat-bersama' ? rawatBersamaColumns : rawatInapColumns;
+
+    if (tab === 'belum-pulang') {
+      baseColumns = baseColumns.filter((column) => column.accessor !== 'tgl_keluar');
+    }
 
     if (tab !== 'belum-diajukan-klaim') {
       return baseColumns;
@@ -1611,10 +1614,10 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
               displayValue={dateRange?.from ? (
                 dateRange.to ? (
                   <>
-                    {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
+                    {formatUIDate(dateRange.from)} - {formatUIDate(dateRange.to)}
                   </>
                 ) : (
-                  format(dateRange.from, "LLL dd, y")
+                  formatUIDate(dateRange.from)
                 )
               ) : undefined}
             />
@@ -2079,10 +2082,10 @@ const IGDTabs = () => {
             displayValue={dateRange?.from ? (
               dateRange.to ? (
                 <>
-                  {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
+                  {formatUIDate(dateRange.from)} - {formatUIDate(dateRange.to)}
                 </>
               ) : (
-                format(dateRange.from, "LLL dd, y")
+                formatUIDate(dateRange.from)
               )
             ) : undefined}
           />

@@ -15,9 +15,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClockIcon, Calendar as CalendarIcon, CheckCircle, UserCheck, AlarmCheck, History, BarChart3 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
-import { indonesianLocale, formatIndonesianDate } from "@/lib/date-utils";
+import { indonesianLocale, formatUIDate } from "@/lib/date-utils";
 import { StatusPill } from "@/components/StatusPill";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { format } from "date-fns";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,7 +39,7 @@ const Presensi = () => {
   const [activeTab, setActiveTab] = useState<string>('attendance');
   const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
   const [monthlyAttendance, setMonthlyAttendance] = useState<any[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
   const [todayAttendance, setTodayAttendance] = useState<any>(null);
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
   const [selectedShift, setSelectedShift] = useState<string>('');
@@ -183,7 +184,7 @@ const Presensi = () => {
     if (!user?.username) return;
     
     try {
-      const dateStr = targetDate || new Date().toISOString().split('T')[0];
+      const dateStr = targetDate || format(new Date(), 'yyyy-MM-dd');
       
       const response = await fetch(API_URLS.ATTENDANCE_DATA, {
         method: 'POST',
@@ -348,7 +349,7 @@ const Presensi = () => {
 
   useEffect(() => {
     if (date && user?.username) {
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = format(date, 'yyyy-MM-dd');
       fetchTodayAttendance(dateStr);
     }
   }, [date, user?.username]);
@@ -368,7 +369,7 @@ const Presensi = () => {
     }
     
     return {
-      date: tanggal.toLocaleDateString('id-ID'),
+      date: formatUIDate(tanggal),
       checkIn: jamDatang ? `${String(jamDatang.getHours()).padStart(2, '0')}:${String(jamDatang.getMinutes()).padStart(2, '0')}` : '-',
       checkOut: jamPulang ? `${String(jamPulang.getHours()).padStart(2, '0')}:${String(jamPulang.getMinutes()).padStart(2, '0')}` : '-',
       status: statusDisplay,
@@ -426,7 +427,7 @@ const Presensi = () => {
                 <div>
                   <p className="text-xs sm:text-sm font-medium">Tanggal Dipilih:</p>
                   <p className="text-xs sm:text-sm text-muted-foreground">
-                    {formatIndonesianDate(date)}
+                    {formatUIDate(date)}
                   </p>
                 </div>
                 {date && (
@@ -444,7 +445,7 @@ const Presensi = () => {
                   Absensi Hari Ini
                 </CardTitle>
                  <CardDescription className="text-xs sm:text-sm">
-                   {formatIndonesianDate(wibNow)}
+                   {formatUIDate(wibNow)}
                  </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 sm:space-y-4">
@@ -614,11 +615,8 @@ const Presensi = () => {
                     {Array.from({ length: 12 }, (_, i) => {
                       const date = new Date();
                       date.setMonth(date.getMonth() - i);
-                      const monthValue = date.toISOString().substring(0, 7);
-                      const monthName = date.toLocaleDateString('id-ID', { 
-                        year: 'numeric', 
-                        month: 'long' 
-                      });
+                      const monthValue = format(date, 'yyyy-MM');
+                      const monthName = formatUIDate(date).replace(/^\d+\s/, '');
                       return (
                         <SelectItem key={monthValue} value={monthValue}>
                           {monthName}
@@ -696,10 +694,10 @@ const Presensi = () => {
                         return (
                           <TableRow key={index}>
                             <TableCell className="text-xs sm:text-sm">
-                              {tanggal.toLocaleDateString('id-ID')}
+                              {formatUIDate(tanggal)}
                             </TableCell>
                             <TableCell className="text-xs sm:text-sm">
-                              {tanggal.toLocaleDateString('id-ID', { weekday: 'long' })}
+                              {new Intl.DateTimeFormat('id-ID', { weekday: 'long' }).format(tanggal)}
                             </TableCell>
                             <TableCell className="text-xs sm:text-sm">
                               {jamDatang ? `${String(jamDatang.getHours()).padStart(2, '0')}:${String(jamDatang.getMinutes()).padStart(2, '0')}` : '-'}

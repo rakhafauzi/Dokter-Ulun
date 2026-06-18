@@ -46,6 +46,61 @@ class LaboratoryDataService {
     return String(value ?? '').trim();
   }
 
+  normalizeDate(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return null;
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)) {
+      return normalizedValue;
+    }
+
+    const parsedDate = new Date(normalizedValue);
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new Error('Tanggal tidak valid');
+    }
+
+    const year = parsedDate.getFullYear();
+    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(parsedDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  normalizeTime(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return null;
+    }
+
+    const fullTimeMatch = normalizedValue.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+    if (fullTimeMatch) {
+      return `${fullTimeMatch[1]}:${fullTimeMatch[2]}:${fullTimeMatch[3]}`;
+    }
+
+    const shortTimeMatch = normalizedValue.match(/^(\d{2}):(\d{2})$/);
+    if (shortTimeMatch) {
+      return `${shortTimeMatch[1]}:${shortTimeMatch[2]}:00`;
+    }
+
+    throw new Error('Jam tidak valid');
+  }
+
+  getCurrentSystemDateTime() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+
+    return {
+      date: `${year}-${month}-${day}`,
+      time: `${hours}:${minutes}:${seconds}`
+    };
+  }
+
   async getLabRequests(no_rawat) {
     const connection = await this.getConnection();
     try {
@@ -192,7 +247,7 @@ class LaboratoryDataService {
       conditions.push('rp.tgl_registrasi <= ?');
       params.push(endDate);
     } else {
-      const effectiveDate = String(date || '').trim() || new Date().toISOString().slice(0, 10);
+      const effectiveDate = String(date || '').trim() || this.getCurrentSystemDateTime().date;
       conditions.push('rp.tgl_registrasi = ?');
       params.push(effectiveDate);
     }
@@ -402,7 +457,7 @@ class LaboratoryDataService {
     }
   }
 
-  async saveLabReview(no_rawat, kesan = '', saran = '') {
+  async saveLabReview(no_rawat, kesan = '', saran = '', reviewDate, reviewTime) {
     const connection = await this.getConnection();
     try {
       const normalizedNoRawat = String(no_rawat || '').trim();
@@ -417,12 +472,16 @@ class LaboratoryDataService {
         throw new Error('Kesan atau saran wajib diisi');
       }
 
+      const currentSystemDateTime = this.getCurrentSystemDateTime();
+      const normalizedReviewDate = this.normalizeDate(reviewDate) || currentSystemDateTime.date;
+      const normalizedReviewTime = this.normalizeTime(reviewTime) || currentSystemDateTime.time;
+
       await connection.execute(
         `
           INSERT INTO saran_kesan_lab (no_rawat, tgl_periksa, jam, saran, kesan)
-          VALUES (?, CURDATE(), CURTIME(), ?, ?)
+          VALUES (?, ?, ?, ?, ?)
         `,
-        [normalizedNoRawat, normalizedSaran, normalizedKesan]
+        [normalizedNoRawat, normalizedReviewDate, normalizedReviewTime, normalizedSaran, normalizedKesan]
       );
 
       return {
@@ -434,14 +493,16 @@ class LaboratoryDataService {
     }
   }
 
-  async createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat, klinis = '') {
+  async createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat, klinis = '', requestDate, requestTime) {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat) || 'ralan';
       const normalizedKlinis = this.normalizeKlinis(klinis);
-      
-      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const currentSystemDateTime = this.getCurrentSystemDateTime();
+      const normalizedRequestDate = this.normalizeDate(requestDate) || currentSystemDateTime.date;
+      const normalizedRequestTime = this.normalizeTime(requestTime) || currentSystemDateTime.time;
+      const today = normalizedRequestDate.replace(/-/g, '');
       const [sequenceRows] = await connection.execute(
         `
           SELECT MAX(noorder) AS last_noorder
@@ -457,10 +518,17 @@ class LaboratoryDataService {
       
       const insertLabRequestQuery = `
         INSERT INTO permintaan_lab (noorder, no_rawat, tgl_permintaan, jam_permintaan, tgl_sampel, jam_sampel, tgl_hasil, jam_hasil, dokter_perujuk, status, kategori)
-        VALUES (?, ?, CURDATE(), CURTIME(), '0000-00-00', '00:00:00', '0000-00-00', '00:00:00', ?, ?, 'PK')
+        VALUES (?, ?, ?, ?, '0000-00-00', '00:00:00', '0000-00-00', '00:00:00', ?, ?, 'PK')
       `;
       
-      await connection.execute(insertLabRequestQuery, [noorder, no_rawat, dokter_perujuk, normalizedStatusRawat]);
+      await connection.execute(insertLabRequestQuery, [
+        noorder,
+        no_rawat,
+        normalizedRequestDate,
+        normalizedRequestTime,
+        dokter_perujuk,
+        normalizedStatusRawat
+      ]);
 
       if (normalizedKlinis) {
         await connection.execute(

@@ -9,6 +9,7 @@ import { StatusPill } from '@/components/StatusPill';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { dispatchOpenMedicalRecordTab } from '@/lib/medical-record-tabs';
+import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
 
 
 interface Patient {
@@ -136,6 +137,43 @@ const PatientTable: React.FC<PatientTableProps> = ({
       default:
         return 'slate' as const;
     }
+  };
+
+  const formatPotentialDateValue = (accessor: string, value: any) => {
+    const accessorLower = String(accessor || '').toLowerCase();
+    const shouldConsiderDate =
+      accessorLower.includes('tgl') ||
+      accessorLower.includes('tanggal') ||
+      accessorLower.includes('waktu') ||
+      accessorLower.includes('date');
+
+    if (!shouldConsiderDate) {
+      return null;
+    }
+
+    if (value instanceof Date || typeof value === 'number') {
+      return accessorLower.includes('jam') || accessorLower.includes('time') || accessorLower.includes('waktu')
+        ? formatUIDateTime(value)
+        : formatUIDate(value);
+    }
+
+    const normalized = String(value ?? '').trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(normalized);
+    const isDateTime = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?/.test(normalized);
+
+    if (isDateTime) {
+      return formatUIDateTime(normalized);
+    }
+
+    if (isDateOnly) {
+      return formatUIDate(normalized);
+    }
+
+    return null;
   };
   
   // Handle the case when simple view is used (with type and without columns)
@@ -270,9 +308,9 @@ const PatientTable: React.FC<PatientTableProps> = ({
                           label={patient[column.accessor]}
                         />
                       ) : column.accessor === 'tanggal' || column.accessor === 'tanggal_booking' ? (
-                        new Date(patient[column.accessor]).toLocaleDateString('id-ID')
+                        formatUIDate(patient[column.accessor])
                       ) : (
-                        patient[column.accessor]
+                        formatPotentialDateValue(column.accessor, patient[column.accessor]) ?? patient[column.accessor]
                       )}
                     </TableCell>
                   ))}

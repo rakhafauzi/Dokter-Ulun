@@ -26,7 +26,7 @@ import {
 import { format } from 'date-fns';
 import PatientTable from '@/components/PatientTable';
 import { DateRange } from 'react-day-picker';
-import { formatDateTimeWIB, formatLocalDateValue, parseLocalDateValue } from '@/lib/date-utils';
+import { formatDateTimeWIB, formatLocalDateValue, parseLocalDateValue, formatUIDate } from '@/lib/date-utils';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
 import {
@@ -565,11 +565,10 @@ const RawatJalanTabs = () => {
                     displayValue={date?.from ? (
                       date.to ? (
                         <>
-                          {format(date.from, "LLL dd, y")} -{" "}
-                          {format(date.to, "LLL dd, y")}
+                          {formatUIDate(date.from)} - {formatUIDate(date.to)}
                         </>
                       ) : (
-                        format(date.from, "LLL dd, y")
+                        formatUIDate(date.from)
                       )
                     ) : undefined}
                   />

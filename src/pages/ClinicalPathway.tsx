@@ -7,6 +7,7 @@ import { StatusPill } from '@/components/StatusPill';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { API_URLS } from '@/config/api';
+import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
 import {
   Activity,
   AlertTriangle,
@@ -167,12 +168,7 @@ const formatNoRawatDisplay = (value?: string) => {
 };
 
 const formatDateDisplay = (value?: string) => {
-  if (!value) {
-    return '-';
-  }
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('id-ID');
+  return formatUIDate(value);
 };
 
 const formatDateTimeDisplay = (dateValue?: string, timeValue?: string) => {
@@ -180,7 +176,11 @@ const formatDateTimeDisplay = (dateValue?: string, timeValue?: string) => {
     return '-';
   }
 
-  return `${formatDateDisplay(dateValue)}${timeValue ? ` ${String(timeValue).slice(0, 5)}` : ''}`;
+  if (timeValue) {
+    return formatUIDateTime(`${String(dateValue).trim()} ${String(timeValue).trim()}`);
+  }
+
+  return formatDateDisplay(dateValue);
 };
 
 const formatGender = (value?: string) => {

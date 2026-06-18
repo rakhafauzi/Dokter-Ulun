@@ -17,6 +17,7 @@ import {
   User
 } from 'lucide-react';
 import { API_URLS } from '@/config/api';
+import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
 import {
   Dialog,
   DialogContent,
@@ -90,60 +91,15 @@ const mergeVisitsByNoRawat = (previous: any[] = [], incoming: any[] = []) => {
 };
 
 const formatDateTime = (value?: string) => {
-  const trimmedValue = String(value || '').trim();
-  if (!trimmedValue) {
-    return '-';
-  }
-
-  const normalizedValue = trimmedValue.includes('T') ? trimmedValue : trimmedValue.replace(' ', 'T');
-  const parsedDate = new Date(normalizedValue);
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return trimmedValue;
-  }
-
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(parsedDate);
+  return formatUIDateTime(value);
 };
 
 const formatDate = (value?: string) => {
-  const trimmedValue = String(value || '').trim();
-  if (!trimmedValue) {
-    return '-';
-  }
-
-  const parsedDate = new Date(`${trimmedValue}T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime())) {
-    return trimmedValue;
-  }
-
-  return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(parsedDate);
+  return formatUIDate(value);
 };
 
 const formatLongDate = (value?: string) => {
-  const trimmedValue = String(value || '').trim();
-  if (!trimmedValue) {
-    return '-';
-  }
-
-  const normalizedValue = trimmedValue.includes('T')
-    ? trimmedValue
-    : trimmedValue.includes(' ')
-      ? trimmedValue.replace(' ', 'T')
-      : `${trimmedValue}T00:00:00`;
-  const parsedDate = new Date(normalizedValue);
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return trimmedValue;
-  }
-
-  return new Intl.DateTimeFormat('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  }).format(parsedDate);
+  return formatUIDate(value);
 };
 
 const getVisitDateLabel = (visit: any) => {

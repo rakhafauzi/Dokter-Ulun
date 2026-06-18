@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import { API_URLS } from '@/config/api';
+import { formatUIDate } from '@/lib/date-utils';
 
 interface DashboardData {
   stats: {
@@ -37,11 +38,7 @@ const Dashboard: React.FC = () => {
   });
   const [loading, setLoading] = useState(true);
 
-  const today = new Date().toLocaleDateString('id-ID', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  const today = formatUIDate(new Date());
 
   useEffect(() => {
     const fetchDashboardData = async () => {

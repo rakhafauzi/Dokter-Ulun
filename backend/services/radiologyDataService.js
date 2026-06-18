@@ -46,6 +46,61 @@ class RadiologyDataService {
     return String(value ?? '').trim();
   }
 
+  normalizeDate(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return null;
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)) {
+      return normalizedValue;
+    }
+
+    const parsedDate = new Date(normalizedValue);
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new Error('Tanggal tidak valid');
+    }
+
+    const year = parsedDate.getFullYear();
+    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(parsedDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  normalizeTime(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return null;
+    }
+
+    const fullTimeMatch = normalizedValue.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+    if (fullTimeMatch) {
+      return `${fullTimeMatch[1]}:${fullTimeMatch[2]}:${fullTimeMatch[3]}`;
+    }
+
+    const shortTimeMatch = normalizedValue.match(/^(\d{2}):(\d{2})$/);
+    if (shortTimeMatch) {
+      return `${shortTimeMatch[1]}:${shortTimeMatch[2]}:00`;
+    }
+
+    throw new Error('Jam tidak valid');
+  }
+
+  getCurrentSystemDateTime() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+
+    return {
+      date: `${year}-${month}-${day}`,
+      time: `${hours}:${minutes}:${seconds}`
+    };
+  }
+
   async getRadiologyRequests(no_rawat) {
     const connection = await this.getConnection();
     try {
@@ -153,7 +208,7 @@ class RadiologyDataService {
       conditions.push('rp.tgl_registrasi <= ?');
       params.push(endDate);
     } else {
-      const effectiveDate = String(date || '').trim() || new Date().toISOString().slice(0, 10);
+      const effectiveDate = String(date || '').trim() || this.getCurrentSystemDateTime().date;
       conditions.push('rp.tgl_registrasi = ?');
       params.push(effectiveDate);
     }
@@ -370,7 +425,7 @@ class RadiologyDataService {
     };
   }
 
-  async saveRadiologyReport(no_rawat, judul = '', hasil = '', kesan = '', saran = '') {
+  async saveRadiologyReport(no_rawat, judul = '', hasil = '', kesan = '', saran = '', reportDate, reportTime) {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
@@ -389,22 +444,26 @@ class RadiologyDataService {
         throw new Error('Minimal salah satu field hasil radiologi wajib diisi');
       }
 
+      const currentSystemDateTime = this.getCurrentSystemDateTime();
+      const normalizedReportDate = this.normalizeDate(reportDate) || currentSystemDateTime.date;
+      const normalizedReportTime = this.normalizeTime(reportTime) || currentSystemDateTime.time;
+
       if (normalizedHasil) {
         await connection.execute(
           `
             INSERT INTO hasil_radiologi (no_rawat, tgl_periksa, jam, hasil)
-            VALUES (?, CURDATE(), CURTIME(), ?)
+            VALUES (?, ?, ?, ?)
           `,
-          [normalizedNoRawat, normalizedHasil]
+          [normalizedNoRawat, normalizedReportDate, normalizedReportTime, normalizedHasil]
         );
       }
 
       await connection.execute(
         `
           INSERT INTO saran_kesan_rad (no_rawat, tgl_periksa, jam, judul, saran, kesan)
-          VALUES (?, CURDATE(), CURTIME(), ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?)
         `,
-        [normalizedNoRawat, normalizedJudul, normalizedSaran, normalizedKesan]
+        [normalizedNoRawat, normalizedReportDate, normalizedReportTime, normalizedJudul, normalizedSaran, normalizedKesan]
       );
 
       await connection.commit();
@@ -420,14 +479,17 @@ class RadiologyDataService {
     }
   }
 
-  async createRadiologyRequest(no_rawat, dokter_perujuk, examinations, status_rawat, klinis = '') {
+  async createRadiologyRequest(no_rawat, dokter_perujuk, examinations, status_rawat, klinis = '', requestDate, requestTime) {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
 
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat) || 'ralan';
       const normalizedKlinis = this.normalizeKlinis(klinis);
-      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const currentSystemDateTime = this.getCurrentSystemDateTime();
+      const normalizedRequestDate = this.normalizeDate(requestDate) || currentSystemDateTime.date;
+      const normalizedRequestTime = this.normalizeTime(requestTime) || currentSystemDateTime.time;
+      const today = normalizedRequestDate.replace(/-/g, '');
       const [sequenceRows] = await connection.execute(
         `
           SELECT MAX(noorder) AS last_noorder
@@ -455,12 +517,14 @@ class RadiologyDataService {
           dokter_perujuk,
           status
         )
-        VALUES (?, ?, CURDATE(), CURTIME(), '0000-00-00', '00:00:00', '0000-00-00', '00:00:00', ?, ?)
+        VALUES (?, ?, ?, ?, '0000-00-00', '00:00:00', '0000-00-00', '00:00:00', ?, ?)
       `;
 
       await connection.execute(insertHeaderQuery, [
         noorder,
         no_rawat,
+        normalizedRequestDate,
+        normalizedRequestTime,
         dokter_perujuk,
         normalizedStatusRawat
       ]);

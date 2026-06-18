@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { API_URLS } from '@/config/api';
+import { formatUIDateTime } from '@/lib/date-utils';
 
 interface AuditLogEntry {
   log_id: string;
@@ -39,19 +40,7 @@ interface AuditHistoryResponse {
 }
 
 const formatDateTime = (value: string) => {
-  if (!value) {
-    return '-';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(date);
+  return formatUIDateTime(value);
 };
 
 const formatJson = (value: unknown) => {

@@ -1,4 +1,5 @@
 
+import { format as formatDateFns } from 'date-fns';
 import { id } from 'date-fns/locale';
 
 // Make sure the Indonesian locale is properly exported
@@ -92,6 +93,13 @@ export const parseDateLike = (value: string | Date | number | null | undefined):
     return null;
   }
 
+  const dateOnlyMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const parsedDateOnly = new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
+    return Number.isNaN(parsedDateOnly.getTime()) ? null : parsedDateOnly;
+  }
+
   const directDate = new Date(normalized);
   if (!Number.isNaN(directDate.getTime())) {
     return directDate;
@@ -103,6 +111,24 @@ export const parseDateLike = (value: string | Date | number | null | undefined):
   const fallbackDate = new Date(mysqlLikeValue);
 
   return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+};
+
+export const formatUIDate = (value: string | Date | number | null | undefined): string => {
+  const parsedDate = parseDateLike(value);
+  if (!parsedDate) {
+    return '-';
+  }
+
+  return formatDateFns(parsedDate, 'd MMMM yyyy', { locale: indonesianLocale });
+};
+
+export const formatUIDateTime = (value: string | Date | number | null | undefined): string => {
+  const parsedDate = parseDateLike(value);
+  if (!parsedDate) {
+    return '-';
+  }
+
+  return formatDateFns(parsedDate, 'd MMMM yyyy HH:mm', { locale: indonesianLocale });
 };
 
 export const formatDateTimeIndonesia = (

@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { API_URLS } from '@/config/api';
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/hooks/use-toast";
 import { Calculator, Clock, FileText, Loader2, Trash2, Unlock } from 'lucide-react';
 import { format } from 'date-fns';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
 
 type SearchType = 'idrg_diagnosa' | 'idrg_prosedur' | 'inacbg_diagnosa' | 'inacbg_prosedur';
 
@@ -317,7 +318,7 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
         method,
         payload,
         response,
-        timestamp: new Date().toLocaleTimeString('id-ID')
+        timestamp: formatUIDateTime(new Date())
       },
       ...prev
     ]);
@@ -1155,7 +1156,7 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
                       mode="single"
                       selected={patientForm.tgl_lahir ? new Date(`${formatDateInput(patientForm.tgl_lahir)}T00:00:00`) : undefined}
                       onSelect={(date) => setPatientForm((prev) => ({ ...prev, tgl_lahir: date ? format(date, 'yyyy-MM-dd') : '' }))}
-                      displayValue={patientForm.tgl_lahir ? format(new Date(`${formatDateInput(patientForm.tgl_lahir)}T00:00:00`), 'dd/MM/yyyy') : undefined}
+                      displayValue={patientForm.tgl_lahir ? formatUIDate(new Date(`${formatDateInput(patientForm.tgl_lahir)}T00:00:00`)) : undefined}
                     />
                   </div>
                   <div>
@@ -1190,7 +1191,7 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
                           ...prev,
                           tgl_masuk: buildDateTimeString(date, getTimePart(prev.tgl_masuk, '00:00'))
                         }))}
-                        displayValue={patientForm.tgl_masuk ? format(parseDateFromDateTime(patientForm.tgl_masuk) || new Date(), 'dd/MM/yyyy') : undefined}
+                        displayValue={patientForm.tgl_masuk ? formatUIDate(parseDateFromDateTime(patientForm.tgl_masuk) || new Date()) : undefined}
                       />
                       <div className="relative">
                         <Clock className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -1216,7 +1217,7 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
                           ...prev,
                           tgl_pulang: buildDateTimeString(date, getTimePart(prev.tgl_pulang, '00:00'))
                         }))}
-                        displayValue={patientForm.tgl_pulang ? format(parseDateFromDateTime(patientForm.tgl_pulang) || new Date(), 'dd/MM/yyyy') : undefined}
+                        displayValue={patientForm.tgl_pulang ? formatUIDate(parseDateFromDateTime(patientForm.tgl_pulang) || new Date()) : undefined}
                       />
                       <div className="relative">
                         <Clock className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />

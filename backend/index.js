@@ -1626,7 +1626,7 @@ app.get('/api/laboratory-data', async (req, res) => {
 app.post('/api/laboratory-data', async (req, res) => {
   try {
     const { action } = req.query;
-    const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat, username, klinis } = req.body;
+    const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat, username, klinis, request_date, request_time, review_date, review_time } = req.body;
     if (String(action || '').trim() === 'save_lab_review') {
       DiagnosticAccessService.ensureAccess('laboratorium', username);
     }
@@ -1638,7 +1638,16 @@ app.post('/api/laboratory-data', async (req, res) => {
         if (!no_rawat || !dokter_perujuk) {
           return res.status(400).json({ error: 'no_rawat and dokter_perujuk are required' });
         }
-        result = await LaboratoryDataService.createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat, klinis);
+        result = await LaboratoryDataService.createLabRequest(
+          no_rawat,
+          dokter_perujuk,
+          examinations,
+          details,
+          status_rawat,
+          klinis,
+          request_date,
+          request_time
+        );
         break;
         
       case 'update_lab_request':
@@ -1652,7 +1661,13 @@ app.post('/api/laboratory-data', async (req, res) => {
         if (!no_rawat) {
           return res.status(400).json({ error: 'no_rawat is required' });
         }
-        result = await LaboratoryDataService.saveLabReview(no_rawat, req.body?.kesan, req.body?.saran);
+        result = await LaboratoryDataService.saveLabReview(
+          no_rawat,
+          req.body?.kesan,
+          req.body?.saran,
+          review_date,
+          review_time
+        );
         break;
         
       default:
@@ -2020,7 +2035,7 @@ app.get('/api/radiology-data', async (req, res) => {
 app.post('/api/radiology-data', async (req, res) => {
   try {
     const { action } = req.query;
-    const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat, username, klinis } = req.body;
+    const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat, username, klinis, request_date, request_time, review_date, review_time } = req.body;
     if (String(action || '').trim() === 'save_radiology_review') {
       DiagnosticAccessService.ensureAccess('radiologi', username);
     }
@@ -2032,7 +2047,15 @@ app.post('/api/radiology-data', async (req, res) => {
         if (!no_rawat || !dokter_perujuk) {
           return res.status(400).json({ error: 'no_rawat and dokter_perujuk are required' });
         }
-        result = await RadiologyDataService.createRadiologyRequest(no_rawat, dokter_perujuk, examinations, status_rawat, klinis);
+        result = await RadiologyDataService.createRadiologyRequest(
+          no_rawat,
+          dokter_perujuk,
+          examinations,
+          status_rawat,
+          klinis,
+          request_date,
+          request_time
+        );
         break;
 
       case 'update_radiology_request':
@@ -2051,7 +2074,9 @@ app.post('/api/radiology-data', async (req, res) => {
           req.body?.judul,
           req.body?.hasil,
           req.body?.kesan,
-          req.body?.saran
+          req.body?.saran,
+          review_date,
+          review_time
         );
         break;
 
@@ -2241,7 +2266,7 @@ app.get('/api/debug/digital-files-env', async (_req, res) => {
 
 app.post('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, kd_dokter, no_resep, medicines, compounds, prescription_date, prescription_status, username } = req.body;
+    const { action, no_rawat, kd_dokter, no_resep, medicines, compounds, prescription_date, prescription_time, prescription_status, username } = req.body;
     
     let result;
     
@@ -2253,7 +2278,15 @@ app.post('/api/prescription-data', async (req, res) => {
             error: 'no_rawat and kd_dokter are required for create_prescription'
           });
         }
-        result = await PrescriptionDataService.createPrescription(no_rawat, kd_dokter, medicines, compounds, prescription_date, prescription_status);
+        result = await PrescriptionDataService.createPrescription(
+          no_rawat,
+          kd_dokter,
+          medicines,
+          compounds,
+          prescription_date,
+          prescription_status,
+          prescription_time
+        );
         break;
         
       case 'update_prescription':
@@ -2269,7 +2302,8 @@ app.post('/api/prescription-data', async (req, res) => {
           compounds,
           prescription_date,
           prescription_status,
-          username
+          username,
+          prescription_time
         );
         break;
         

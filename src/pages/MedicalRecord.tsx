@@ -26,7 +26,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
-import { formatDateIndonesia, formatDateTimeIndonesia, formatDateTimeWIB, parseDateLike } from "@/lib/date-utils";
+import { formatDateTimeWIB, parseDateLike, formatUIDate, formatUIDateTime } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { API_CONFIG, API_URLS } from '@/config/api';
@@ -466,6 +466,9 @@ const getCurrentExaminationDateTime = () => ({
 });
 
 const getCurrentPrescriptionDate = () => format(new Date(), 'yyyy-MM-dd');
+const getCurrentPrescriptionTime = () => format(new Date(), 'HH:mm:ss');
+const getCurrentRequestDate = () => format(new Date(), 'yyyy-MM-dd');
+const getCurrentRequestTime = () => format(new Date(), 'HH:mm:ss');
 
 const createEmptyRacikanMedicine = (): RacikanMedicine => ({
   kode_brng: '',
@@ -1260,6 +1263,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [loadingAllOutpatientMedicationRequests, setLoadingAllOutpatientMedicationRequests] = useState(false);
   const [showAllInpatientMedicationRequests, setShowAllInpatientMedicationRequests] = useState(false);
   const [loadingAllInpatientMedicationRequests, setLoadingAllInpatientMedicationRequests] = useState(false);
+  const [showAllOutpatientLaboratoryHistory, setShowAllOutpatientLaboratoryHistory] = useState(false);
+  const [showAllInpatientLaboratoryHistory, setShowAllInpatientLaboratoryHistory] = useState(false);
+  const [showAllOutpatientRadiologyHistory, setShowAllOutpatientRadiologyHistory] = useState(false);
+  const [showAllInpatientRadiologyHistory, setShowAllInpatientRadiologyHistory] = useState(false);
   const [editingLabRequestNo, setEditingLabRequestNo] = useState<string | null>(null);
   const [labFormNoRawat, setLabFormNoRawat] = useState<string>('');
   const [deletingLabRequestNo, setDeletingLabRequestNo] = useState<string | null>(null);
@@ -1867,6 +1874,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [formattedNoRawat, medicationRequestFilter, no_rkm_medis]);
 
   useEffect(() => {
+    setShowAllOutpatientLaboratoryHistory(false);
+    setShowAllInpatientLaboratoryHistory(false);
+  }, [formattedNoRawat, laboratoryHistoryFilter, no_rkm_medis, defaultExaminationStatusRawat]);
+
+  useEffect(() => {
+    setShowAllOutpatientRadiologyHistory(false);
+    setShowAllInpatientRadiologyHistory(false);
+  }, [formattedNoRawat, no_rkm_medis, defaultExaminationStatusRawat]);
+
+  useEffect(() => {
     setMedicationCurrentCareTab(preferredCareSectionTab);
   }, [preferredCareSectionTab]);
 
@@ -1958,10 +1975,26 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     () => outpatientLaboratoryHistory.filter(matchesLaboratoryHistoryFilter),
     [matchesLaboratoryHistoryFilter, outpatientLaboratoryHistory]
   );
+  const displayedOutpatientLaboratoryHistoryFiltered = useMemo(
+    () => (
+      showAllOutpatientLaboratoryHistory
+        ? outpatientLaboratoryHistoryFiltered
+        : outpatientLaboratoryHistoryFiltered.slice(0, 1)
+    ),
+    [outpatientLaboratoryHistoryFiltered, showAllOutpatientLaboratoryHistory]
+  );
 
   const laboratoryHistoryInpatientViewFiltered = useMemo(
     () => laboratoryHistoryInpatientView.filter(matchesLaboratoryHistoryFilter),
     [laboratoryHistoryInpatientView, matchesLaboratoryHistoryFilter]
+  );
+  const displayedInpatientLaboratoryHistoryFiltered = useMemo(
+    () => (
+      showAllInpatientLaboratoryHistory
+        ? laboratoryHistoryInpatientViewFiltered
+        : laboratoryHistoryInpatientViewFiltered.slice(0, 1)
+    ),
+    [laboratoryHistoryInpatientViewFiltered, showAllInpatientLaboratoryHistory]
   );
   const outpatientRadiologyRequests = React.useMemo(() => {
     if (formattedNoRawat) {
@@ -2026,6 +2059,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [inpatientRadiologyHistory, outpatientRadiologyHistory]);
   const radiologyHistoryInpatientView =
     defaultExaminationStatusRawat === 'Ranap' ? inpatientRadiologyHistoryAll : inpatientRadiologyHistory;
+  const displayedOutpatientRadiologyHistory = useMemo(
+    () => (
+      showAllOutpatientRadiologyHistory
+        ? outpatientRadiologyHistory
+        : outpatientRadiologyHistory.slice(0, 1)
+    ),
+    [outpatientRadiologyHistory, showAllOutpatientRadiologyHistory]
+  );
+  const displayedInpatientRadiologyHistory = useMemo(
+    () => (
+      showAllInpatientRadiologyHistory
+        ? radiologyHistoryInpatientView
+        : radiologyHistoryInpatientView.slice(0, 1)
+    ),
+    [radiologyHistoryInpatientView, showAllInpatientRadiologyHistory]
+  );
   const selectedBalanceCairanEntry = useMemo(
     () => balanceCairanEntries.find((entry) => Number(entry.id) === Number(selectedBalanceCairanId)) || null,
     [balanceCairanEntries, selectedBalanceCairanId]
@@ -2260,6 +2309,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const resolvedRole = resolveExaminationRole(exam?.role, exam?.pegawai, exam?.nama, visit?.dokter, visit?.nm_dokter);
       const roleStyles = getExaminationRoleStyles(resolvedRole);
       const roleLabel = getExaminationRoleLabel(resolvedRole);
+      const examinationDateTime = [exam?.tgl_perawatan, exam?.jam_rawat].filter(Boolean).join(' ');
 
       return (
       <div key={key} className="border rounded-lg p-4">
@@ -2267,7 +2317,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
             <div>
               <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-              <p className="font-medium">{exam.tgl_perawatan} {exam.jam_rawat}</p>
+              <p className="font-medium">{formatDateSafe(examinationDateTime)}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">No. Rawat</p>
@@ -3017,7 +3067,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       <div key={tanggal} className="border rounded-lg p-3 space-y-3">
         <div className="flex flex-col gap-1 border-b pb-2 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <span className="font-semibold text-foreground">{formatDateTimeToMinute(tanggal)}</span>
+            <span className="font-semibold text-foreground">{tanggal}</span>
             <span className="text-muted-foreground">{items[0]?.source || '-'}</span>
           </div>
           <p className="text-sm text-muted-foreground">{items[0]?.no_rawat || '-'}</p>
@@ -3221,7 +3271,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Waktu Triase</span>
-              <span className="font-medium text-right">{triage.tanggal || '-'}</span>
+              <span className="font-medium text-right">{formatDateSafe(triage.tanggal)}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Level</span>
@@ -7143,7 +7193,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return '-';
       }
 
-      return formatDateTimeIndonesia(date);
+      return formatUIDateTime(date);
     } catch (error) {
       console.error('Error formatting date:', dateStr, error);
       return '-';
@@ -7160,7 +7210,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return '-';
       }
 
-      return formatDateIndonesia(date);
+      return formatUIDate(date);
     } catch (error) {
       console.error('Error formatting long date:', dateStr, error);
       return '-';
@@ -7177,14 +7227,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return '-';
       }
 
-      return formatDateTimeIndonesia(date, {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
+      return formatUIDateTime(date);
     } catch (error) {
       console.error('Error formatting date to minute:', dateStr, error);
       return '-';
@@ -7754,6 +7797,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             dokter_perujuk: user.username,
             status_rawat: labStatusRawat,
             klinis: labKlinis.trim(),
+            request_date: getCurrentRequestDate(),
+            request_time: getCurrentRequestTime(),
             noorder: editingLabRequestNo,
             username: currentUsername,
             examinations: validLabRequests,
@@ -7814,6 +7859,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             dokter_perujuk: user.username,
             status_rawat: radiologyStatusRawat,
             klinis: radiologyKlinis.trim(),
+            request_date: getCurrentRequestDate(),
+            request_time: getCurrentRequestTime(),
             noorder: editingRadiologyRequestNo,
             username: currentUsername,
             examinations: validRadiologyRequests
@@ -7901,6 +7948,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             no_rawat: formattedNoRawat,
             kd_dokter: user.username,
             prescription_date: referenceDate,
+            prescription_time: getCurrentPrescriptionTime(),
             prescription_status: statusRawat === 'Ranap' ? 'Ranap' : 'Ralan',
             medicines: [],
             compounds: validCompounds
@@ -7978,6 +8026,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               no_resep: editingPrescriptionNo,
               username: currentUsername,
               prescription_date: prescription.tanggal,
+              prescription_time: getCurrentPrescriptionTime(),
               prescription_status: prescription.status,
               medicines: prescription.medicines,
               compounds: []
@@ -8010,6 +8059,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 no_rawat: formattedNoRawat,
                 kd_dokter: user.username,
                 prescription_date: prescription.tanggal,
+                prescription_time: getCurrentPrescriptionTime(),
                 prescription_status: prescription.status,
                 medicines: prescription.medicines,
                 compounds: []
@@ -8261,7 +8311,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <Calendar className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Tanggal Lahir</p>
-                  <p className="font-medium">{currentPatient.tanggal_lahir || '-'}</p>
+                  <p className="font-medium">{formatUIDate(currentPatient.tanggal_lahir)}</p>
                 </div>
               </div>
               <div className="flex items-start space-x-4">
@@ -9096,7 +9146,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               ...prev,
                               tgl_perawatan: date ? format(date, "yyyy-MM-dd") : ""
                             }))}
-                            displayValue={igdTriageForm.tgl_perawatan ? format(new Date(igdTriageForm.tgl_perawatan), "dd/MM/yyyy") : undefined}
+                            displayValue={igdTriageForm.tgl_perawatan ? formatUIDate(new Date(igdTriageForm.tgl_perawatan)) : undefined}
                           />
                         </div>
                         <div>
@@ -9472,7 +9522,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       mode="single"
                       selected={examinationForm.tgl_perawatan ? new Date(examinationForm.tgl_perawatan) : undefined}
                       onSelect={(date) => setExaminationForm({...examinationForm, tgl_perawatan: date ? format(date, "yyyy-MM-dd") : ""})}
-                      displayValue={examinationForm.tgl_perawatan ? format(new Date(examinationForm.tgl_perawatan), "dd/MM/yyyy") : undefined}
+                      displayValue={examinationForm.tgl_perawatan ? formatUIDate(new Date(examinationForm.tgl_perawatan)) : undefined}
                     />
                    </div>
                    <div>
@@ -9959,7 +10009,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                       <tbody>
                                         {balanceCairanEntries.map((entry) => (
                                           <tr key={entry.id} className="border-t">
-                                            <td className="px-3 py-2">{entry.tanggal || '-'}</td>
+                                            <td className="px-3 py-2">{formatLongDateSafe(entry.tanggal)}</td>
                                             <td className="px-3 py-2">{entry.bc_ke || '-'}</td>
                                             <td className="px-3 py-2">{entry.minum ?? 0}</td>
                                             <td className="px-3 py-2">{entry.makan ?? 0}</td>
@@ -10280,7 +10330,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 : item
                             )));
                           }}
-                          displayValue={medication.tanggal ? format(new Date(medication.tanggal), "dd/MM/yyyy") : undefined}
+                          displayValue={medication.tanggal ? formatUIDate(new Date(medication.tanggal)) : undefined}
                           placeholder="Pilih tanggal resep"
                         />
                       </div>
@@ -10535,7 +10585,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 : item
                             )));
                           }}
-                          displayValue={compound.tanggal ? format(new Date(compound.tanggal), "dd/MM/yyyy") : undefined}
+                          displayValue={compound.tanggal ? formatUIDate(new Date(compound.tanggal)) : undefined}
                           placeholder="Pilih tanggal resep"
                         />
                        </div>
@@ -11480,7 +11530,18 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 </button>
                               ))}
                             </div>
-                            {renderLaboratoryHistoryCards(outpatientLaboratoryHistoryFiltered)}
+                            {renderLaboratoryHistoryCards(displayedOutpatientLaboratoryHistoryFiltered)}
+                            {!showAllOutpatientLaboratoryHistory && outpatientLaboratoryHistoryFiltered.length > 1 ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setShowAllOutpatientLaboratoryHistory(true)}
+                                >
+                                  See More
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
@@ -11506,7 +11567,18 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 </button>
                               ))}
                             </div>
-                            {renderLaboratoryHistoryCards(laboratoryHistoryInpatientViewFiltered)}
+                            {renderLaboratoryHistoryCards(displayedInpatientLaboratoryHistoryFiltered)}
+                            {!showAllInpatientLaboratoryHistory && laboratoryHistoryInpatientViewFiltered.length > 1 ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setShowAllInpatientLaboratoryHistory(true)}
+                                >
+                                  See More
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
@@ -11832,12 +11904,38 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </TabsList>
                       <TabsContent value="outpatient">
                         {isFocusedRadiologyLoaded ? (
-                          <div className="space-y-4">{renderRadiologyHistoryCards(outpatientRadiologyHistory)}</div>
+                          <div className="space-y-4">
+                            {renderRadiologyHistoryCards(displayedOutpatientRadiologyHistory)}
+                            {!showAllOutpatientRadiologyHistory && outpatientRadiologyHistory.length > 1 ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setShowAllOutpatientRadiologyHistory(true)}
+                                >
+                                  See More
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
                         ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedRadiologyLoaded ? (
-                          <div className="space-y-4">{renderRadiologyHistoryCards(radiologyHistoryInpatientView)}</div>
+                          <div className="space-y-4">
+                            {renderRadiologyHistoryCards(displayedInpatientRadiologyHistory)}
+                            {!showAllInpatientRadiologyHistory && radiologyHistoryInpatientView.length > 1 ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setShowAllInpatientRadiologyHistory(true)}
+                                >
+                                  See More
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
                         ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                     </Tabs>
@@ -12374,7 +12472,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       <tbody>
                         {allergyHistory.map((item) => (
                           <tr key={String(item.id)} className="border-t">
-                            <td className="px-3 py-2">{item.created_at || '-'}</td>
+                            <td className="px-3 py-2">{formatDateSafe(item.created_at)}</td>
                             <td className="px-3 py-2">{item.nama || '-'}</td>
                             <td className="px-3 py-2">{item.kategori || '-'}</td>
                           </tr>

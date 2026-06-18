@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
 
 type DiagnosticMode = 'laboratorium' | 'radiologi';
 
@@ -157,8 +158,14 @@ const formatDateTime = (date?: string, time?: string) => {
 
   const dateText = String(date).trim();
   const timeText = String(time || '').trim();
-  return timeText ? `${dateText} ${timeText}` : dateText;
+  const combinedDateTime = timeText ? `${dateText} ${timeText}` : dateText;
+  const hasExplicitTime = Boolean(timeText) || /[T\s]\d{2}:\d{2}/.test(dateText);
+
+  return hasExplicitTime ? formatUIDateTime(combinedDateTime) : formatUIDate(dateText);
 };
+
+const getCurrentRequestDate = () => format(new Date(), 'yyyy-MM-dd');
+const getCurrentRequestTime = () => format(new Date(), 'HH:mm:ss');
 
 const buildPacsPreviewUrl = (instanceId?: string, width = 500) => {
   const normalizedInstanceId = String(instanceId || '').trim();
@@ -613,14 +620,18 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
         ? {
             no_rawat: selectedNoRawat,
             kesan: labReviewForm.kesan,
-            saran: labReviewForm.saran
+            saran: labReviewForm.saran,
+            review_date: getCurrentRequestDate(),
+            review_time: getCurrentRequestTime()
           }
         : {
             no_rawat: selectedNoRawat,
             judul: radiologyReviewForm.judul,
             hasil: radiologyReviewForm.hasil,
             kesan: radiologyReviewForm.kesan,
-            saran: radiologyReviewForm.saran
+            saran: radiologyReviewForm.saran,
+            review_date: getCurrentRequestDate(),
+            review_time: getCurrentRequestTime()
           };
 
       const response = await fetch(`${config.endpoint}?action=${config.saveAction}`, {
@@ -767,8 +778,8 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
               placeholder="Pilih rentang tanggal"
               displayValue={dateRange?.from ? (
                 dateRange.to
-                  ? `${format(dateRange.from, 'dd MMM yyyy')} - ${format(dateRange.to, 'dd MMM yyyy')}`
-                  : format(dateRange.from, 'dd MMM yyyy')
+                  ? `${formatUIDate(dateRange.from)} - ${formatUIDate(dateRange.to)}`
+                  : formatUIDate(dateRange.from)
               ) : undefined}
             />
 
@@ -1090,7 +1101,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                               <div>
                                 <p className="font-medium">{result.pemeriksaan || result.judul || '-'}</p>
-                                <p className="text-sm text-muted-foreground">{result.tanggal || '-'}</p>
+                                <p className="text-sm text-muted-foreground">{formatDateTime(result.tanggal)}</p>
                               </div>
                               <div className="flex gap-2">
                                 <Badge variant="secondary">{result.pacs_modality || 'RAD'}</Badge>
@@ -1133,7 +1144,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                                         const viewerImages = result.pacs_images?.map((item, index) => ({
                                           src: buildPacsPreviewUrl(item.instance_id, 1200),
                                           title: `${result.pemeriksaan || 'Radiologi'} ${index + 1}`,
-                                          description: result.tanggal || '',
+                                          description: formatDateTime(result.tanggal),
                                           downloadName: `radiologi-${result.pemeriksaan || 'gambar'}-${index + 1}.jpg`,
                                           instanceId: item.instance_id
                                         })).filter((item) => Boolean(item.src)) || [];

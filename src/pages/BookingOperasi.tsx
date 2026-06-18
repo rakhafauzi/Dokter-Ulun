@@ -47,6 +47,7 @@ import { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import { formatUIDate } from '@/lib/date-utils';
 
 const BookingOperasi = () => {
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -171,11 +172,10 @@ const BookingOperasi = () => {
                     displayValue={dateRange?.from ? (
                       dateRange.to ? (
                         <>
-                          {format(dateRange.from, "LLL dd, y")} -{" "}
-                          {format(dateRange.to, "LLL dd, y")}
+                          {formatUIDate(dateRange.from)} - {formatUIDate(dateRange.to)}
                         </>
                       ) : (
-                        format(dateRange.from, "LLL dd, y")
+                        formatUIDate(dateRange.from)
                       )
                     ) : undefined}
                   />
@@ -330,7 +330,7 @@ const BookingOperasi = () => {
                             </div>
                           </td>
                           <td className="p-3">
-                            {booking.tanggal ? new Date(booking.tanggal).toLocaleDateString('id-ID') : '-'}
+                            {formatUIDate(booking.tanggal)}
                           </td>
                           <td className="p-3">
                             <div>
@@ -385,7 +385,7 @@ const BookingOperasi = () => {
                                     <div>
                                       <p className="text-sm font-medium">Tanggal:</p>
                                       <p>
-                                        {booking.tanggal ? new Date(booking.tanggal).toLocaleDateString('id-ID') : '-'}
+                                        {formatUIDate(booking.tanggal)}
                                       </p>
                                     </div>
                                     <div>
