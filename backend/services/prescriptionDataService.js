@@ -452,6 +452,40 @@ class PrescriptionDataService {
     return `${year}-${month}-${day}`;
   }
 
+  normalizePrescriptionTime(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return null;
+    }
+
+    const fullTimeMatch = normalizedValue.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+    if (fullTimeMatch) {
+      return `${fullTimeMatch[1]}:${fullTimeMatch[2]}:${fullTimeMatch[3]}`;
+    }
+
+    const shortTimeMatch = normalizedValue.match(/^(\d{2}):(\d{2})$/);
+    if (shortTimeMatch) {
+      return `${shortTimeMatch[1]}:${shortTimeMatch[2]}:00`;
+    }
+
+    throw new Error('Jam resep tidak valid');
+  }
+
+  getCurrentSystemDateTime() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+
+    return {
+      date: `${year}-${month}-${day}`,
+      time: `${hours}:${minutes}:${seconds}`
+    };
+  }
+
   // Get prescriptions for a patient
   async getPrescriptions(no_rawat) {
     if (!no_rawat) {
@@ -857,7 +891,7 @@ class PrescriptionDataService {
   }
 
   // Create new prescription
-  async createPrescription(no_rawat, kd_dokter, medicines, compounds, prescriptionDate, prescriptionStatus) {
+  async createPrescription(no_rawat, kd_dokter, medicines, compounds, prescriptionDate, prescriptionStatus, prescriptionTime) {
     if (!no_rawat || !kd_dokter) {
       throw new Error('no_rawat and kd_dokter are required');
     }
@@ -866,7 +900,9 @@ class PrescriptionDataService {
     
     try {
       await connection.beginTransaction();
-      const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate) || new Date().toISOString().slice(0, 10);
+      const currentSystemDateTime = this.getCurrentSystemDateTime();
+      const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate) || currentSystemDateTime.date;
+      const normalizedPrescriptionTime = this.normalizePrescriptionTime(prescriptionTime) || currentSystemDateTime.time;
       const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, no_rawat, prescriptionStatus);
       const normalizedMedicines = await this.normalizeMedicines(medicines);
       const normalizedCompounds = await this.normalizeCompounds(connection, compounds);
@@ -927,9 +963,16 @@ class PrescriptionDataService {
           await connection.execute(
             `
               INSERT INTO resep_dokter_pulang
-              VALUES (?, ?, ?, CURTIME(), ?, CURTIME())
+              VALUES (?, ?, ?, ?, ?, ?)
             `,
-            [no_resep, kd_dokter, normalizedPrescriptionDate, normalizedPrescriptionDate]
+            [
+              no_resep,
+              kd_dokter,
+              normalizedPrescriptionDate,
+              normalizedPrescriptionTime,
+              normalizedPrescriptionDate,
+              normalizedPrescriptionTime
+            ]
           );
         }
 
@@ -941,7 +984,7 @@ class PrescriptionDataService {
           await connection.execute(
             `
               INSERT INTO resep_pulang
-              VALUES (?, ?, ?, ?, ?, ?, ?, CURTIME(), ?, ?, 0)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             `,
             [
               no_rawat,
@@ -951,6 +994,7 @@ class PrescriptionDataService {
               totalPrice,
               medicine.aturan_pakai,
               normalizedPrescriptionDate,
+              normalizedPrescriptionTime,
               storageBangsalCode,
               no_resep
             ]
@@ -978,14 +1022,16 @@ class PrescriptionDataService {
             INSERT INTO resep_obat (
               no_resep, tgl_perawatan, jam, no_rawat, kd_dokter, tgl_peresepan, jam_peresepan, status
             )
-            VALUES (?, ?, CURTIME(), ?, ?, ?, CURTIME(), ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `,
           [
             no_resep,
             normalizedPrescriptionDate,
+            normalizedPrescriptionTime,
             no_rawat,
             kd_dokter,
             normalizedPrescriptionDate,
+            normalizedPrescriptionTime,
             resolvedPrescriptionStatus
           ]
         );
@@ -1042,7 +1088,7 @@ class PrescriptionDataService {
   }
 
   // Update existing prescription
-  async updatePrescription(no_resep, medicines, compounds, prescriptionDate, prescriptionStatus, username = '') {
+  async updatePrescription(no_resep, medicines, compounds, prescriptionDate, prescriptionStatus, username = '', prescriptionTime) {
     if (!no_resep) {
       throw new Error('no_resep is required');
     }
@@ -1053,6 +1099,8 @@ class PrescriptionDataService {
       await connection.beginTransaction();
       const normalizedUsername = String(username || '').trim();
       const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate);
+      const currentSystemDateTime = this.getCurrentSystemDateTime();
+      const normalizedPrescriptionTime = this.normalizePrescriptionTime(prescriptionTime) || currentSystemDateTime.time;
       const normalizedPrescriptionStatus = this.normalizePrescriptionStatus(prescriptionStatus);
       const normalizedMedicines = await this.normalizeMedicines(medicines);
       const normalizedCompounds = await this.normalizeCompounds(connection, compounds);
@@ -1164,7 +1212,7 @@ class PrescriptionDataService {
           await connection.execute(
             `
               INSERT INTO resep_pulang
-              VALUES (?, ?, ?, ?, ?, ?, ?, CURTIME(), ?, ?, 0)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             `,
             [
               noRawatHeader,
@@ -1173,7 +1221,8 @@ class PrescriptionDataService {
               unitPrice,
               totalPrice,
               medicine.aturan_pakai,
-              normalizedPrescriptionDate || this.normalizePrescriptionDate(new Date()) || new Date().toISOString().slice(0, 10),
+              normalizedPrescriptionDate || currentSystemDateTime.date,
+              normalizedPrescriptionTime,
               storageBangsalCode,
               no_resep
             ]

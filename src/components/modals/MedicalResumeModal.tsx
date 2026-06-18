@@ -14,6 +14,7 @@ import { BadgeCheck, Check, ChevronsUpDown, FileText, Loader2, Paperclip, Search
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
 
 interface MedicalResume {
   no_rawat: string;
@@ -817,15 +818,19 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       .filter(Boolean)
       .join('\n');
 
+    const formattedDate = item.tanggal ? formatUIDate(item.tanggal) : '';
+
     return [
-      item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+      formattedDate ? `Tanggal: ${formattedDate}` : '',
       detailLines ? `Laboratorium:\n${detailLines}` : ''
     ].filter(Boolean).join('\n');
   };
 
   const buildRadiologyResultText = (item: any) => {
+    const formattedDate = item.tanggal ? formatUIDate(item.tanggal) : '';
+
     return [
-      item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+      formattedDate ? `Tanggal: ${formattedDate}` : '',
       item.pemeriksaan ? `Radiologi: ${item.pemeriksaan}` : '',
       item.hasil ? `Hasil:\n${item.hasil}` : '',
       item.kesan && item.kesan !== item.hasil ? `Kesan:\n${item.kesan}` : ''
@@ -833,9 +838,12 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
   };
 
   const buildExaminationProcedureText = (item: ResumeRanapExamination, sourceLabel: string) => {
+    const formattedDateTime = item.tanggal || item.tgl_perawatan
+      ? formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`)
+      : '';
+
     return [
-      item.tanggal || item.tgl_perawatan ? `Tanggal: ${item.tanggal || item.tgl_perawatan}` : '',
-      item.jam_rawat ? `Jam: ${item.jam_rawat}` : '',
+      formattedDateTime ? `Tanggal & Jam: ${formattedDateTime}` : '',
       `Sumber: ${sourceLabel}`,
       item.pegawai ? `Petugas: ${item.pegawai}` : '',
       item.a ? `Assessment: ${item.a}` : '',
@@ -846,8 +854,14 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
   };
 
   const buildOperationText = (item: any) => {
+    const formattedDate = item.tanggal_op
+      ? (/[T\s]\d{2}:\d{2}/.test(String(item.tanggal_op))
+          ? formatUIDateTime(item.tanggal_op)
+          : formatUIDate(item.tanggal_op))
+      : '';
+
     return [
-      item.tanggal_op ? `Tanggal Operasi: ${item.tanggal_op}` : '',
+      formattedDate ? `Tanggal Operasi: ${formattedDate}` : '',
       item.nm_op ? `Nama Operasi: ${item.nm_op}` : '',
       item.pre_op ? `Pre Operasi: ${item.pre_op}` : '',
       item.post_op ? `Post Operasi: ${item.post_op}` : '',
@@ -867,8 +881,10 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       .filter(Boolean)
       .join('\n');
 
+    const formattedDate = item.tanggal ? formatUIDate(item.tanggal) : '';
+
     return [
-      item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+      formattedDate ? `Tanggal: ${formattedDate}` : '',
       item.no_resep ? `No. Resep: ${item.no_resep}` : '',
       `Sumber: ${sourceLabel}`,
       detailLines ? `Obat:\n${detailLines}` : ''
@@ -923,7 +939,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     sortTimestamp: getExaminationSortTimestamp(item),
                     pickerItem: {
                       id: `keluhan-ralan-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                      title: item.tanggal || item.tgl_perawatan || `Pemeriksaan ${index + 1}`,
+                      title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                       subtitle: item.pegawai || 'Pemeriksaan Rawat Jalan',
                       description: item.s,
                       value: item.s
@@ -936,7 +952,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       sortTimestamp: getExaminationSortTimestamp(item),
                       pickerItem: {
                         id: `keluhan-igd-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                        title: item.tanggal || item.tgl_perawatan || `IGD ${index + 1}`,
+                        title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                         subtitle: item.pegawai || 'IGD',
                         description: item.s,
                         value: item.s,
@@ -950,7 +966,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       sortTimestamp: getExaminationSortTimestamp(item),
                       pickerItem: {
                         id: `keluhan-ranap-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                        title: item.tanggal || item.tgl_perawatan || `Rawat Inap ${index + 1}`,
+                        title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                         subtitle: item.pegawai || 'Rawat Inap',
                         description: item.s,
                         value: item.s,
@@ -982,7 +998,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     sortTimestamp: getExaminationSortTimestamp(item),
                     pickerItem: {
                       id: `objektif-ralan-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                      title: item.tanggal || item.tgl_perawatan || `Pemeriksaan ${index + 1}`,
+                      title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                       subtitle: item.pegawai || 'Pemeriksaan Rawat Jalan',
                       description: [item.o, buildVitalsText(item)].filter(Boolean).join('\n'),
                       value: [item.o, buildVitalsText(item)].filter(Boolean).join('\n')
@@ -995,7 +1011,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       sortTimestamp: getExaminationSortTimestamp(item),
                       pickerItem: {
                         id: `objektif-igd-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                        title: item.tanggal || item.tgl_perawatan || `IGD ${index + 1}`,
+                        title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                         subtitle: item.pegawai || 'IGD',
                         description: [item.o, buildVitalsText(item)].filter(Boolean).join('\n'),
                         value: [item.o, buildVitalsText(item)].filter(Boolean).join('\n'),
@@ -1009,7 +1025,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       sortTimestamp: getExaminationSortTimestamp(item),
                       pickerItem: {
                         id: `objektif-ranap-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                        title: item.tanggal || item.tgl_perawatan || `Rawat Inap ${index + 1}`,
+                        title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                         subtitle: item.pegawai || 'Rawat Inap',
                         description: [item.o, buildVitalsText(item)].filter(Boolean).join('\n'),
                         value: [item.o, buildVitalsText(item)].filter(Boolean).join('\n'),
@@ -1040,11 +1056,11 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     sortTimestamp: getExaminationSortTimestamp(item),
                     pickerItem: {
                       id: `soap-ralan-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                      title: item.tanggal || item.tgl_perawatan || `Pemeriksaan ${index + 1}`,
+                      title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                       subtitle: item.pegawai || 'Pemeriksaan Rawat Jalan',
                       description: [item.s, item.o, item.a, item.p, item.i, item.e].filter(Boolean).join('\n'),
                       value: [
-                        item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+                        item.tanggal ? `Tanggal: ${formatUIDate(item.tanggal)}` : '',
                         buildVitalsText(item),
                         item.s ? `S: ${item.s}` : '',
                         item.o ? `O: ${item.o}` : '',
@@ -1061,11 +1077,11 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       sortTimestamp: getExaminationSortTimestamp(item),
                       pickerItem: {
                         id: `soap-igd-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                        title: item.tanggal || item.tgl_perawatan || `IGD ${index + 1}`,
+                        title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                         subtitle: item.pegawai || 'IGD',
                         description: [item.s, item.o, item.a, item.p].filter(Boolean).join('\n'),
                         value: [
-                          item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+                          item.tanggal ? `Tanggal: ${formatUIDate(item.tanggal)}` : '',
                           buildVitalsText(item),
                           item.s ? `S: ${item.s}` : '',
                           item.o ? `O: ${item.o}` : '',
@@ -1081,11 +1097,11 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       sortTimestamp: getExaminationSortTimestamp(item),
                       pickerItem: {
                         id: `soap-ranap-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                        title: item.tanggal || item.tgl_perawatan || `Rawat Inap ${index + 1}`,
+                        title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                         subtitle: item.pegawai || 'Rawat Inap',
                         description: [item.s, item.o, item.a, item.p, item.i, item.e].filter(Boolean).join('\n'),
                         value: [
-                          item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+                          item.tanggal ? `Tanggal: ${formatUIDate(item.tanggal)}` : '',
                           buildVitalsText(item),
                           item.s ? `S: ${item.s}` : '',
                           item.o ? `O: ${item.o}` : '',
@@ -1116,7 +1132,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
               sortTimestamp: getDateSortTimestamp(item.tanggal),
               pickerItem: {
                 id: `penunjang-lab-${index}-${item.tanggal}`,
-                title: item.tanggal || `Laboratorium ${index + 1}`,
+                title: item.tanggal ? formatUIDate(item.tanggal) : `Laboratorium ${index + 1}`,
                 subtitle: 'Pemeriksaan Laboratorium',
                 description: buildLaboratoryResultText(item),
                 value: buildLaboratoryResultText(item)
@@ -1126,7 +1142,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
               sortTimestamp: getDateSortTimestamp(item.tanggal),
               pickerItem: {
                 id: `penunjang-rad-${index}-${item.tanggal}`,
-                title: item.tanggal || `Radiologi ${index + 1}`,
+                title: item.tanggal ? formatUIDate(item.tanggal) : `Radiologi ${index + 1}`,
                 subtitle: 'Pemeriksaan Radiologi',
                 description: buildRadiologyResultText(item),
                 value: buildRadiologyResultText(item)
@@ -1149,7 +1165,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
             .sort((a, b) => getDateSortTimestamp(a.tanggal) - getDateSortTimestamp(b.tanggal))
             .map((item, index) => ({
               id: `hasil-lab-${index}-${item.tanggal}`,
-              title: item.tanggal || `Hasil Laboratorium ${index + 1}`,
+              title: item.tanggal ? formatUIDate(item.tanggal) : `Hasil Laboratorium ${index + 1}`,
               subtitle: 'Hasil Pemeriksaan Lab',
               description: buildLaboratoryResultText(item),
               value: buildLaboratoryResultText(item)
@@ -1169,7 +1185,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                 sortTimestamp: getExaminationSortTimestamp(item),
                 pickerItem: {
                   id: `tindakan-ralan-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                  title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ralan ${index + 1}`,
+                  title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                   subtitle: item.pegawai || 'Pemeriksaan Rawat Jalan',
                   description: buildExaminationProcedureText(item, 'Pemeriksaan Ralan'),
                   value: buildExaminationProcedureText(item, 'Pemeriksaan Ralan')
@@ -1181,7 +1197,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                 sortTimestamp: getExaminationSortTimestamp(item),
                 pickerItem: {
                   id: `tindakan-ranap-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                  title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ranap ${index + 1}`,
+                  title: formatUIDateTime(`${item.tanggal || item.tgl_perawatan} ${item.jam_rawat || '00:00'}`),
                   subtitle: item.pegawai || 'Pemeriksaan Rawat Inap',
                   description: buildExaminationProcedureText(item, 'Pemeriksaan Ranap'),
                   value: buildExaminationProcedureText(item, 'Pemeriksaan Ranap')
@@ -1193,7 +1209,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                 sortTimestamp: getDateSortTimestamp(item.tanggal_op),
                 pickerItem: {
                   id: `operasi-${item.id || index}`,
-                  title: item.nm_op || item.tanggal_op || `Operasi ${index + 1}`,
+                  title: item.nm_op || (/[T\s]\d{2}:\d{2}/.test(String(item.tanggal_op || '')) ? formatUIDateTime(item.tanggal_op) : formatUIDate(item.tanggal_op)) || `Operasi ${index + 1}`,
                   subtitle: item.post_op || item.pre_op || 'Laporan Operasi',
                   description: buildOperationText(item),
                   value: buildOperationText(item)
@@ -1217,7 +1233,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                 sortTimestamp: getDateSortTimestamp(item.tanggal),
                 pickerItem: {
                   id: `obat-pulang-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
-                  title: item.tanggal || `Obat Pulang ${index + 1}`,
+                  title: item.tanggal ? formatUIDate(item.tanggal) : `Obat Pulang ${index + 1}`,
                   subtitle: 'Obat Pulang',
                   description: buildMedicationListText(item, 'Obat Pulang'),
                   value: buildMedicationListText(item, 'Obat Pulang')
@@ -1229,7 +1245,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                 sortTimestamp: getDateSortTimestamp(item.tanggal),
                 pickerItem: {
                   id: `obat-ranap-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
-                  title: item.tanggal || `Pemberian Obat ${index + 1}`,
+                  title: item.tanggal ? formatUIDate(item.tanggal) : `Pemberian Obat ${index + 1}`,
                   subtitle: 'Pemberian Obat Selama Perawatan',
                   description: buildMedicationListText(item, 'Pemberian Obat Selama Perawatan'),
                   value: buildMedicationListText(item, 'Pemberian Obat Selama Perawatan')

@@ -10,6 +10,7 @@ import { id } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import { formatUIDate } from '@/lib/date-utils';
 
 const Statistik = () => {
   const [visitData, setVisitData] = useState<any[]>([]);
@@ -180,7 +181,7 @@ const Statistik = () => {
                     mode="single"
                     selected={customStartDate}
                     onSelect={setCustomStartDate}
-                    displayValue={customStartDate ? format(customStartDate, "dd/MM/yyyy", { locale: id }) : undefined}
+                    displayValue={customStartDate ? formatUIDate(customStartDate) : undefined}
                   />
                 </div>
 
@@ -190,7 +191,7 @@ const Statistik = () => {
                     mode="single"
                     selected={customEndDate}
                     onSelect={setCustomEndDate}
-                    displayValue={customEndDate ? format(customEndDate, "dd/MM/yyyy", { locale: id }) : undefined}
+                    displayValue={customEndDate ? formatUIDate(customEndDate) : undefined}
                   />
                 </div>
               </>

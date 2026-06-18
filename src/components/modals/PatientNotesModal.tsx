@@ -9,6 +9,8 @@ import { Plus, Edit, Trash2, StickyNote, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatUIDateTime } from '@/lib/date-utils';
+import { format } from 'date-fns';
 
 interface PatientNote {
   tanggal: string;
@@ -42,8 +44,8 @@ export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, on
 
   const createDefaultForm = useMemo(() => {
     return () => ({
-      tanggal: new Date().toISOString().split('T')[0],
-      jam: new Date().toTimeString().slice(0, 5),
+      tanggal: format(new Date(), 'yyyy-MM-dd'),
+      jam: format(new Date(), 'HH:mm'),
       no_rawat: noRawat,
       kd_dokter: currentDoctorCode,
       catatan: '',
@@ -341,15 +343,14 @@ export const PatientNotesModal: React.FC<PatientNotesModalProps> = ({ isOpen, on
             )}
             {!loading && notes.map((note) => {
               const noteKey = `${note.original_tanggal || note.tanggal}-${note.original_jam || note.jam}-${note.original_kd_dokter || note.kd_dokter}`;
+              const noteDateTime = [note.tanggal, note.jam].filter(Boolean).join(' ');
               return (
               <Card key={noteKey}>
                 <CardContent className="pt-4">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                        <span>{note.tanggal}</span>
-                        <span>•</span>
-                        <span>{note.jam}</span>
+                        <span>{formatUIDateTime(noteDateTime)}</span>
                         <span>•</span>
                         <span>{note.petugas}</span>
                       </div>

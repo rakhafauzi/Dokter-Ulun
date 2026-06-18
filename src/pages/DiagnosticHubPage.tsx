@@ -19,6 +19,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
+import logoImg from '@/assets/logo.png';
 
 type DiagnosticMode = 'laboratorium' | 'radiologi';
 
@@ -157,8 +159,14 @@ const formatDateTime = (date?: string, time?: string) => {
 
   const dateText = String(date).trim();
   const timeText = String(time || '').trim();
-  return timeText ? `${dateText} ${timeText}` : dateText;
+  const combinedDateTime = timeText ? `${dateText} ${timeText}` : dateText;
+  const hasExplicitTime = Boolean(timeText) || /[T\s]\d{2}:\d{2}/.test(dateText);
+
+  return hasExplicitTime ? formatUIDateTime(combinedDateTime) : formatUIDate(dateText);
 };
+
+const getCurrentRequestDate = () => format(new Date(), 'yyyy-MM-dd');
+const getCurrentRequestTime = () => format(new Date(), 'HH:mm:ss');
 
 const buildPacsPreviewUrl = (instanceId?: string, width = 500) => {
   const normalizedInstanceId = String(instanceId || '').trim();
@@ -180,6 +188,20 @@ const getLabResultRowTone = (keterangan?: string) => {
     return 'low';
   }
   return 'normal';
+};
+
+const formatLabSheetStatus = (value?: string) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'ranap') {
+    return 'Rawat Inap';
+  }
+  if (normalized === 'ralan') {
+    return 'Rawat Jalan';
+  }
+  if (normalized === 'igd') {
+    return 'IGD';
+  }
+  return String(value || '-').trim() || '-';
 };
 
 const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
@@ -613,14 +635,18 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
         ? {
             no_rawat: selectedNoRawat,
             kesan: labReviewForm.kesan,
-            saran: labReviewForm.saran
+            saran: labReviewForm.saran,
+            review_date: getCurrentRequestDate(),
+            review_time: getCurrentRequestTime()
           }
         : {
             no_rawat: selectedNoRawat,
             judul: radiologyReviewForm.judul,
             hasil: radiologyReviewForm.hasil,
             kesan: radiologyReviewForm.kesan,
-            saran: radiologyReviewForm.saran
+            saran: radiologyReviewForm.saran,
+            review_date: getCurrentRequestDate(),
+            review_time: getCurrentRequestTime()
           };
 
       const response = await fetch(`${config.endpoint}?action=${config.saveAction}`, {
@@ -767,8 +793,8 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
               placeholder="Pilih rentang tanggal"
               displayValue={dateRange?.from ? (
                 dateRange.to
-                  ? `${format(dateRange.from, 'dd MMM yyyy')} - ${format(dateRange.to, 'dd MMM yyyy')}`
-                  : format(dateRange.from, 'dd MMM yyyy')
+                  ? `${formatUIDate(dateRange.from)} - ${formatUIDate(dateRange.to)}`
+                  : formatUIDate(dateRange.from)
               ) : undefined}
             />
 
@@ -969,59 +995,135 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                         {labDetail.results.length === 0 ? (
                           <p className="text-sm text-muted-foreground">Belum ada hasil pemeriksaan laboratorium.</p>
                         ) : (
-                          <div className="space-y-6">
-                            {groupedLabResults.map((group, groupIndex) => (
-                              <div key={`${group.templateName}-${groupIndex}`} className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="secondary" className="rounded-md px-3 py-1 text-sm font-semibold">
-                                    {group.templateName}
-                                  </Badge>
-                                  <span className="text-xs text-muted-foreground">
-                                    {group.results.length} item pemeriksaan
-                                  </span>
+                          <div className="rounded-lg bg-slate-200 p-3 sm:p-5">
+                            <div className="mx-auto w-full max-w-[860px] bg-white p-4 text-[11px] text-slate-900 shadow-sm sm:p-6">
+                              <div className="border border-slate-500 p-3">
+                                <div className="flex items-start gap-4 border-b border-slate-500 pb-3">
+                                  <div className="flex h-16 w-16 shrink-0 items-center justify-center">
+                                    <img src={logoImg} alt="Logo RSUD" className="h-14 w-14 object-contain" />
+                                  </div>
+                                  <div className="flex-1 text-center leading-tight">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide">Pemerintah Kabupaten Hulu Sungai Tengah</p>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide">Dinas Kesehatan</p>
+                                    <p className="text-lg font-bold uppercase">UPT RSUD H. Damanhuri Barabai</p>
+                                    <p className="text-[10px] text-slate-600">
+                                      Jalan Murakata Nomor 4 Barabai Barat, Hulu Sungai Tengah, Kalimantan Selatan 71314
+                                    </p>
+                                    <p className="text-[10px] text-slate-600">
+                                      Telepon: 08115000800, Email: rsdhbarabai@gmail.com
+                                    </p>
+                                  </div>
                                 </div>
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead>Pemeriksaan</TableHead>
-                                      <TableHead>Nilai</TableHead>
-                                      <TableHead>Rujukan</TableHead>
-                                      <TableHead>Keterangan</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {group.results.map((result, index) => {
-                                      const rowTone = getLabResultRowTone(result.keterangan);
-                                      return (
-                                        <TableRow
-                                          key={`${group.templateName}-${result.pemeriksaan}-${index}`}
-                                          className={cn(
-                                            rowTone === 'high' && 'bg-red-50/80 hover:bg-red-100/80',
-                                            rowTone === 'low' && 'bg-amber-50/80 hover:bg-amber-100/80'
-                                          )}
-                                        >
-                                          <TableCell className="font-medium">{result.pemeriksaan || '-'}</TableCell>
-                                          <TableCell>{[result.nilai, result.satuan].filter(Boolean).join(' ') || '-'}</TableCell>
-                                          <TableCell>{result.nilai_rujukan || '-'}</TableCell>
-                                          <TableCell>
-                                            <span
-                                              className={cn(
-                                                'inline-flex min-w-8 items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold',
-                                                rowTone === 'high' && 'bg-red-100 text-red-700',
-                                                rowTone === 'low' && 'bg-amber-100 text-amber-700',
-                                                rowTone === 'normal' && 'bg-muted text-muted-foreground'
-                                              )}
-                                            >
-                                              {result.keterangan || '-'}
-                                            </span>
-                                          </TableCell>
-                                        </TableRow>
-                                      );
-                                    })}
-                                  </TableBody>
-                                </Table>
+
+                                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                  <div className="border border-slate-500 p-2">
+                                    <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                                      <p className="uppercase">No. RM</p>
+                                      <p>:</p>
+                                      <p>{labDetail.no_rkm_medis || '-'}</p>
+                                      <p className="uppercase">Nama</p>
+                                      <p>:</p>
+                                      <p className="font-semibold uppercase">{labDetail.nm_pasien || '-'}</p>
+                                      <p className="uppercase">No. Rawat</p>
+                                      <p>:</p>
+                                      <p>{labDetail.no_rawat || '-'}</p>
+                                      <p className="uppercase">Umur</p>
+                                      <p>:</p>
+                                      <p>{labDetail.umur || '-'}</p>
+                                      <p className="uppercase">Ket. Klinik</p>
+                                      <p>:</p>
+                                      <p>{labDetail.nm_perawatan || '-'}</p>
+                                    </div>
+                                  </div>
+                                  <div className="border border-slate-500 p-2">
+                                    <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                                      <p className="uppercase">No. Lab</p>
+                                      <p>:</p>
+                                      <p>{labDetail.no_rawat || '-'}</p>
+                                      <p className="uppercase">Ruang</p>
+                                      <p>:</p>
+                                      <p>{formatLabSheetStatus(labDetail.status_lanjut)}</p>
+                                      <p className="uppercase">Status</p>
+                                      <p>:</p>
+                                      <p>{labDetail.kd_pj || '-'}</p>
+                                      <p className="uppercase">Dokter</p>
+                                      <p>:</p>
+                                      <p>{labDetail.nm_dokter || '-'}</p>
+                                      <p className="uppercase">Tanggal</p>
+                                      <p>:</p>
+                                      <p>{formatUIDateTime(new Date())}</p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 border border-slate-500">
+                                  <div className="border-b border-slate-500 bg-emerald-50 px-3 py-1 text-center text-xs font-bold uppercase tracking-wide text-emerald-700">
+                                    Hasil Pemeriksaan Laboratorium
+                                  </div>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full border-collapse text-[11px]">
+                                      <thead>
+                                        <tr className="bg-slate-100">
+                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Pemeriksaan</th>
+                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Hasil</th>
+                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Nilai Rujukan</th>
+                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Satuan</th>
+                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Metoda</th>
+                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Ket</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {groupedLabResults.map((group, groupIndex) => (
+                                          <React.Fragment key={`${group.templateName}-${groupIndex}`}>
+                                            <tr className="bg-emerald-50/70">
+                                              <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
+                                                {group.templateName}
+                                              </td>
+                                            </tr>
+                                            {group.results.map((result, index) => {
+                                              const rowTone = getLabResultRowTone(result.keterangan);
+                                              return (
+                                                <tr
+                                                  key={`${group.templateName}-${result.pemeriksaan}-${index}`}
+                                                  className={cn(
+                                                    rowTone === 'high' && 'bg-red-50 text-red-900',
+                                                    rowTone === 'low' && 'bg-amber-50 text-amber-900'
+                                                  )}
+                                                >
+                                                  <td className="border border-slate-300 px-2 py-1 align-top">{result.pemeriksaan || '-'}</td>
+                                                  <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.nilai || '-'}</td>
+                                                  <td className="border border-slate-300 px-2 py-1 align-top">{result.nilai_rujukan || '-'}</td>
+                                                  <td className="border border-slate-300 px-2 py-1 align-top">{result.satuan || '-'}</td>
+                                                  <td className="border border-slate-300 px-2 py-1 align-top">-</td>
+                                                  <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.keterangan || '-'}</td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </React.Fragment>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 flex flex-col justify-between gap-4 text-[10px] text-slate-700 sm:flex-row">
+                                  <div className="max-w-[60%] space-y-1">
+                                    <p>
+                                      Jika sekiranya ada keraguan tentang hasil pemeriksaan, diharapkan segera menghubungi Instalasi Laboratorium Patologi Klinik.
+                                    </p>
+                                    <p>
+                                      Catatan: {labReviewForm.kesan || labDetail.review.kesan || '-'}
+                                    </p>
+                                  </div>
+                                  <div className="min-w-[200px] text-left sm:text-right">
+                                    <p>Tanggal cetak: {formatUIDateTime(new Date())}</p>
+                                    <p>Dokter Penanggung Jawab,</p>
+                                    <div className="h-16" />
+                                    <p className="font-semibold">{labDetail.nm_dokter || '-'}</p>
+                                  </div>
+                                </div>
                               </div>
-                            ))}
+                            </div>
                           </div>
                         )}
                       </CardContent>
@@ -1090,7 +1192,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                               <div>
                                 <p className="font-medium">{result.pemeriksaan || result.judul || '-'}</p>
-                                <p className="text-sm text-muted-foreground">{result.tanggal || '-'}</p>
+                                <p className="text-sm text-muted-foreground">{formatDateTime(result.tanggal)}</p>
                               </div>
                               <div className="flex gap-2">
                                 <Badge variant="secondary">{result.pacs_modality || 'RAD'}</Badge>
@@ -1133,7 +1235,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                                         const viewerImages = result.pacs_images?.map((item, index) => ({
                                           src: buildPacsPreviewUrl(item.instance_id, 1200),
                                           title: `${result.pemeriksaan || 'Radiologi'} ${index + 1}`,
-                                          description: result.tanggal || '',
+                                          description: formatDateTime(result.tanggal),
                                           downloadName: `radiologi-${result.pemeriksaan || 'gambar'}-${index + 1}.jpg`,
                                           instanceId: item.instance_id
                                         })).filter((item) => Boolean(item.src)) || [];

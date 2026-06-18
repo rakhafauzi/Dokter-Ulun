@@ -26,11 +26,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
-import { formatDateIndonesia, formatDateTimeIndonesia, formatDateTimeWIB, parseDateLike } from "@/lib/date-utils";
+import { formatDateTimeWIB, parseDateLike, formatUIDate, formatUIDateTime } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { API_CONFIG, API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import logoImg from '@/assets/logo.png';
 
 type PrescriptionStatus = 'Ralan' | 'Ranap' | 'Pulang' | 'IBS';
 
@@ -466,6 +467,9 @@ const getCurrentExaminationDateTime = () => ({
 });
 
 const getCurrentPrescriptionDate = () => format(new Date(), 'yyyy-MM-dd');
+const getCurrentPrescriptionTime = () => format(new Date(), 'HH:mm:ss');
+const getCurrentRequestDate = () => format(new Date(), 'yyyy-MM-dd');
+const getCurrentRequestTime = () => format(new Date(), 'HH:mm:ss');
 
 const createEmptyRacikanMedicine = (): RacikanMedicine => ({
   kode_brng: '',
@@ -1032,6 +1036,91 @@ const buildFocusedLabItems = (
     });
 };
 
+const groupLaboratoryTestsByPanel = (labGroup: any) => {
+  if (!Array.isArray(labGroup?.pemeriksaan) || labGroup.pemeriksaan.length === 0) {
+    return [];
+  }
+
+  const groupedTests = (labGroup.pemeriksaan as LabTest[]).reduce((groups, test) => {
+    const key = String(test?.nama || '').trim() || 'Pemeriksaan Lainnya';
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+    groups[key].push(test);
+    return groups;
+  }, {} as Record<string, LabTest[]>);
+
+  return Object.entries(groupedTests).map(([groupName, tests]) => ({
+    groupName,
+    tests
+  }));
+};
+
+const formatLabSheetDateTime = (value?: string | null) => {
+  const normalizedValue = String(value || '').trim();
+  if (!normalizedValue) {
+    return '-';
+  }
+
+  const parsedDate = parseDateLike(normalizedValue);
+  if (!parsedDate) {
+    return normalizedValue;
+  }
+
+  return formatUIDateTime(parsedDate);
+};
+
+const formatLabSheetAge = (
+  birthDateValue?: string | null,
+  referenceDateValue?: string | null
+) => {
+  const birthDate = parseDateLike(String(birthDateValue || '').trim());
+  const referenceDate = parseDateLike(String(referenceDateValue || '').trim()) || new Date();
+
+  if (!birthDate) {
+    return '-';
+  }
+
+  let years = referenceDate.getFullYear() - birthDate.getFullYear();
+  let months = referenceDate.getMonth() - birthDate.getMonth();
+  let days = referenceDate.getDate() - birthDate.getDate();
+
+  if (days < 0) {
+    const previousMonth = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 0);
+    days += previousMonth.getDate();
+    months -= 1;
+  }
+
+  if (months < 0) {
+    months += 12;
+    years -= 1;
+  }
+
+  const parts: string[] = [];
+  if (years > 0) {
+    parts.push(`${years} th`);
+  }
+  if (months > 0) {
+    parts.push(`${months} bln`);
+  }
+  if (days > 0 || parts.length === 0) {
+    parts.push(`${Math.max(days, 0)} hr`);
+  }
+
+  return parts.join(' ');
+};
+
+const formatGenderLabel = (value?: string | null) => {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  if (normalizedValue === 'l' || normalizedValue === 'laki-laki') {
+    return 'Laki-laki';
+  }
+  if (normalizedValue === 'p' || normalizedValue === 'perempuan') {
+    return 'Perempuan';
+  }
+  return String(value || '-').trim() || '-';
+};
+
 const ekstrapiramidalQuestionLabels: Record<string, string> = {
   piramidal1: 'Perlambatan atau kelemahan yang nyata, ada kesan kesulitan dalam menjalankan tugas rutin',
   piramidal2: 'Kesulitan dalam berjalan dan menjaga keseimbangan',
@@ -1260,6 +1349,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [loadingAllOutpatientMedicationRequests, setLoadingAllOutpatientMedicationRequests] = useState(false);
   const [showAllInpatientMedicationRequests, setShowAllInpatientMedicationRequests] = useState(false);
   const [loadingAllInpatientMedicationRequests, setLoadingAllInpatientMedicationRequests] = useState(false);
+  const [showAllOutpatientLaboratoryHistory, setShowAllOutpatientLaboratoryHistory] = useState(false);
+  const [showAllInpatientLaboratoryHistory, setShowAllInpatientLaboratoryHistory] = useState(false);
+  const [showAllOutpatientRadiologyHistory, setShowAllOutpatientRadiologyHistory] = useState(false);
+  const [showAllInpatientRadiologyHistory, setShowAllInpatientRadiologyHistory] = useState(false);
   const [editingLabRequestNo, setEditingLabRequestNo] = useState<string | null>(null);
   const [labFormNoRawat, setLabFormNoRawat] = useState<string>('');
   const [deletingLabRequestNo, setDeletingLabRequestNo] = useState<string | null>(null);
@@ -1867,6 +1960,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [formattedNoRawat, medicationRequestFilter, no_rkm_medis]);
 
   useEffect(() => {
+    setShowAllOutpatientLaboratoryHistory(false);
+    setShowAllInpatientLaboratoryHistory(false);
+  }, [formattedNoRawat, laboratoryHistoryFilter, no_rkm_medis, defaultExaminationStatusRawat]);
+
+  useEffect(() => {
+    setShowAllOutpatientRadiologyHistory(false);
+    setShowAllInpatientRadiologyHistory(false);
+  }, [formattedNoRawat, no_rkm_medis, defaultExaminationStatusRawat]);
+
+  useEffect(() => {
     setMedicationCurrentCareTab(preferredCareSectionTab);
   }, [preferredCareSectionTab]);
 
@@ -1958,10 +2061,26 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     () => outpatientLaboratoryHistory.filter(matchesLaboratoryHistoryFilter),
     [matchesLaboratoryHistoryFilter, outpatientLaboratoryHistory]
   );
+  const displayedOutpatientLaboratoryHistoryFiltered = useMemo(
+    () => (
+      showAllOutpatientLaboratoryHistory
+        ? outpatientLaboratoryHistoryFiltered
+        : outpatientLaboratoryHistoryFiltered.slice(0, 1)
+    ),
+    [outpatientLaboratoryHistoryFiltered, showAllOutpatientLaboratoryHistory]
+  );
 
   const laboratoryHistoryInpatientViewFiltered = useMemo(
     () => laboratoryHistoryInpatientView.filter(matchesLaboratoryHistoryFilter),
     [laboratoryHistoryInpatientView, matchesLaboratoryHistoryFilter]
+  );
+  const displayedInpatientLaboratoryHistoryFiltered = useMemo(
+    () => (
+      showAllInpatientLaboratoryHistory
+        ? laboratoryHistoryInpatientViewFiltered
+        : laboratoryHistoryInpatientViewFiltered.slice(0, 1)
+    ),
+    [laboratoryHistoryInpatientViewFiltered, showAllInpatientLaboratoryHistory]
   );
   const outpatientRadiologyRequests = React.useMemo(() => {
     if (formattedNoRawat) {
@@ -2026,6 +2145,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [inpatientRadiologyHistory, outpatientRadiologyHistory]);
   const radiologyHistoryInpatientView =
     defaultExaminationStatusRawat === 'Ranap' ? inpatientRadiologyHistoryAll : inpatientRadiologyHistory;
+  const displayedOutpatientRadiologyHistory = useMemo(
+    () => (
+      showAllOutpatientRadiologyHistory
+        ? outpatientRadiologyHistory
+        : outpatientRadiologyHistory.slice(0, 1)
+    ),
+    [outpatientRadiologyHistory, showAllOutpatientRadiologyHistory]
+  );
+  const displayedInpatientRadiologyHistory = useMemo(
+    () => (
+      showAllInpatientRadiologyHistory
+        ? radiologyHistoryInpatientView
+        : radiologyHistoryInpatientView.slice(0, 1)
+    ),
+    [radiologyHistoryInpatientView, showAllInpatientRadiologyHistory]
+  );
   const selectedBalanceCairanEntry = useMemo(
     () => balanceCairanEntries.find((entry) => Number(entry.id) === Number(selectedBalanceCairanId)) || null,
     [balanceCairanEntries, selectedBalanceCairanId]
@@ -2260,6 +2395,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const resolvedRole = resolveExaminationRole(exam?.role, exam?.pegawai, exam?.nama, visit?.dokter, visit?.nm_dokter);
       const roleStyles = getExaminationRoleStyles(resolvedRole);
       const roleLabel = getExaminationRoleLabel(resolvedRole);
+      const examinationDateTime = [exam?.tgl_perawatan, exam?.jam_rawat].filter(Boolean).join(' ');
 
       return (
       <div key={key} className="border rounded-lg p-4">
@@ -2267,7 +2403,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
             <div>
               <p className="text-sm text-muted-foreground">Tanggal & Jam</p>
-              <p className="font-medium">{exam.tgl_perawatan} {exam.jam_rawat}</p>
+              <p className="font-medium">{formatDateSafe(examinationDateTime)}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">No. Rawat</p>
@@ -3017,7 +3153,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       <div key={tanggal} className="border rounded-lg p-3 space-y-3">
         <div className="flex flex-col gap-1 border-b pb-2 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <span className="font-semibold text-foreground">{formatDateTimeToMinute(tanggal)}</span>
+            <span className="font-semibold text-foreground">{tanggal}</span>
             <span className="text-muted-foreground">{items[0]?.source || '-'}</span>
           </div>
           <p className="text-sm text-muted-foreground">{items[0]?.no_rawat || '-'}</p>
@@ -3221,7 +3357,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Waktu Triase</span>
-              <span className="font-medium text-right">{triage.tanggal || '-'}</span>
+              <span className="font-medium text-right">{formatDateSafe(triage.tanggal)}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Level</span>
@@ -3590,20 +3726,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     )});
   };
   const renderLaboratoryHistoryDetails = (labGroup: any) => {
-    if (!Array.isArray(labGroup.pemeriksaan) || labGroup.pemeriksaan.length === 0) {
+    const groupedPanels = groupLaboratoryTestsByPanel(labGroup);
+
+    if (groupedPanels.length === 0) {
       return <p className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan</p>;
     }
 
-    const groupedTests = (labGroup.pemeriksaan as LabTest[]).reduce((groups, test) => {
-      const key = test.nama?.trim() || '-';
-      if (!groups[key]) {
-        groups[key] = [];
-      }
-      groups[key].push(test);
-      return groups;
-    }, {} as Record<string, LabTest[]>);
-
-    return Object.entries(groupedTests).map(([groupName, tests], groupIdx) => (
+    return groupedPanels.map(({ groupName, tests }, groupIdx) => (
       <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
         <div>
           <p className="text-sm text-muted-foreground">Nama</p>
@@ -7143,7 +7272,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return '-';
       }
 
-      return formatDateTimeIndonesia(date);
+      return formatUIDateTime(date);
     } catch (error) {
       console.error('Error formatting date:', dateStr, error);
       return '-';
@@ -7160,7 +7289,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return '-';
       }
 
-      return formatDateIndonesia(date);
+      return formatUIDate(date);
     } catch (error) {
       console.error('Error formatting long date:', dateStr, error);
       return '-';
@@ -7177,14 +7306,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return '-';
       }
 
-      return formatDateTimeIndonesia(date, {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
+      return formatUIDateTime(date);
     } catch (error) {
       console.error('Error formatting date to minute:', dateStr, error);
       return '-';
@@ -7754,6 +7876,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             dokter_perujuk: user.username,
             status_rawat: labStatusRawat,
             klinis: labKlinis.trim(),
+            request_date: getCurrentRequestDate(),
+            request_time: getCurrentRequestTime(),
             noorder: editingLabRequestNo,
             username: currentUsername,
             examinations: validLabRequests,
@@ -7814,6 +7938,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             dokter_perujuk: user.username,
             status_rawat: radiologyStatusRawat,
             klinis: radiologyKlinis.trim(),
+            request_date: getCurrentRequestDate(),
+            request_time: getCurrentRequestTime(),
             noorder: editingRadiologyRequestNo,
             username: currentUsername,
             examinations: validRadiologyRequests
@@ -7901,6 +8027,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             no_rawat: formattedNoRawat,
             kd_dokter: user.username,
             prescription_date: referenceDate,
+            prescription_time: getCurrentPrescriptionTime(),
             prescription_status: statusRawat === 'Ranap' ? 'Ranap' : 'Ralan',
             medicines: [],
             compounds: validCompounds
@@ -7978,6 +8105,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               no_resep: editingPrescriptionNo,
               username: currentUsername,
               prescription_date: prescription.tanggal,
+              prescription_time: getCurrentPrescriptionTime(),
               prescription_status: prescription.status,
               medicines: prescription.medicines,
               compounds: []
@@ -8010,6 +8138,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 no_rawat: formattedNoRawat,
                 kd_dokter: user.username,
                 prescription_date: prescription.tanggal,
+                prescription_time: getCurrentPrescriptionTime(),
                 prescription_status: prescription.status,
                 medicines: prescription.medicines,
                 compounds: []
@@ -8129,6 +8258,51 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     prb: "",
     prb_program: ""
   };
+  const fullscreenLabVisit = useMemo(() => {
+    const fullscreenNoRawat = String(fullscreenLabHistory?.no_rawat || '').trim();
+    if (!fullscreenNoRawat) {
+      return focusedVisit;
+    }
+
+    return allVisits.find((visit: any) => String(visit?.no_rawat || '').trim() === fullscreenNoRawat) || focusedVisit;
+  }, [allVisits, focusedVisit, fullscreenLabHistory]);
+  const fullscreenLabPanels = useMemo(
+    () => groupLaboratoryTestsByPanel(fullscreenLabHistory),
+    [fullscreenLabHistory]
+  );
+  const fullscreenLabDoctorName = useMemo(
+    () => (
+      String(fullscreenLabVisit?.dokter || '').trim()
+      || String(dpjpMeta.dokterUtama?.nama || '').trim()
+      || String(user?.name || '').trim()
+      || '-'
+    ),
+    [dpjpMeta.dokterUtama?.nama, fullscreenLabVisit?.dokter, user?.name]
+  );
+  const fullscreenLabRoomLabel = useMemo(
+    () => (
+      String(fullscreenLabVisit?.poliklinik || '').trim()
+      || String(fullscreenLabHistory?.source || '').trim()
+      || '-'
+    ),
+    [fullscreenLabHistory?.source, fullscreenLabVisit?.poliklinik]
+  );
+  const fullscreenLabStatusLabel = useMemo(
+    () => visitCaraBayar || '-',
+    [visitCaraBayar]
+  );
+  const fullscreenLabResultDateTime = useMemo(
+    () => formatLabSheetDateTime(fullscreenLabHistory?.tanggal),
+    [fullscreenLabHistory?.tanggal]
+  );
+  const fullscreenLabAgeLabel = useMemo(
+    () => formatLabSheetAge(currentPatient.tanggal_lahir, fullscreenLabHistory?.tanggal),
+    [currentPatient.tanggal_lahir, fullscreenLabHistory?.tanggal]
+  );
+  const fullscreenLabPrintedAt = useMemo(
+    () => formatUIDateTime(new Date()),
+    [fullscreenLabHistory]
+  );
 
   const prbInfoList = [currentPatient.prb, currentPatient.prb_program]
     .map((value) => String(value || '').trim())
@@ -8261,7 +8435,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <Calendar className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Tanggal Lahir</p>
-                  <p className="font-medium">{currentPatient.tanggal_lahir || '-'}</p>
+                  <p className="font-medium">{formatUIDate(currentPatient.tanggal_lahir)}</p>
                 </div>
               </div>
               <div className="flex items-start space-x-4">
@@ -9096,7 +9270,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               ...prev,
                               tgl_perawatan: date ? format(date, "yyyy-MM-dd") : ""
                             }))}
-                            displayValue={igdTriageForm.tgl_perawatan ? format(new Date(igdTriageForm.tgl_perawatan), "dd/MM/yyyy") : undefined}
+                            displayValue={igdTriageForm.tgl_perawatan ? formatUIDate(new Date(igdTriageForm.tgl_perawatan)) : undefined}
                           />
                         </div>
                         <div>
@@ -9472,7 +9646,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       mode="single"
                       selected={examinationForm.tgl_perawatan ? new Date(examinationForm.tgl_perawatan) : undefined}
                       onSelect={(date) => setExaminationForm({...examinationForm, tgl_perawatan: date ? format(date, "yyyy-MM-dd") : ""})}
-                      displayValue={examinationForm.tgl_perawatan ? format(new Date(examinationForm.tgl_perawatan), "dd/MM/yyyy") : undefined}
+                      displayValue={examinationForm.tgl_perawatan ? formatUIDate(new Date(examinationForm.tgl_perawatan)) : undefined}
                     />
                    </div>
                    <div>
@@ -9959,7 +10133,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                       <tbody>
                                         {balanceCairanEntries.map((entry) => (
                                           <tr key={entry.id} className="border-t">
-                                            <td className="px-3 py-2">{entry.tanggal || '-'}</td>
+                                            <td className="px-3 py-2">{formatLongDateSafe(entry.tanggal)}</td>
                                             <td className="px-3 py-2">{entry.bc_ke || '-'}</td>
                                             <td className="px-3 py-2">{entry.minum ?? 0}</td>
                                             <td className="px-3 py-2">{entry.makan ?? 0}</td>
@@ -10280,7 +10454,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 : item
                             )));
                           }}
-                          displayValue={medication.tanggal ? format(new Date(medication.tanggal), "dd/MM/yyyy") : undefined}
+                          displayValue={medication.tanggal ? formatUIDate(new Date(medication.tanggal)) : undefined}
                           placeholder="Pilih tanggal resep"
                         />
                       </div>
@@ -10535,7 +10709,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 : item
                             )));
                           }}
-                          displayValue={compound.tanggal ? format(new Date(compound.tanggal), "dd/MM/yyyy") : undefined}
+                          displayValue={compound.tanggal ? formatUIDate(new Date(compound.tanggal)) : undefined}
                           placeholder="Pilih tanggal resep"
                         />
                        </div>
@@ -11480,7 +11654,18 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 </button>
                               ))}
                             </div>
-                            {renderLaboratoryHistoryCards(outpatientLaboratoryHistoryFiltered)}
+                            {renderLaboratoryHistoryCards(displayedOutpatientLaboratoryHistoryFiltered)}
+                            {!showAllOutpatientLaboratoryHistory && outpatientLaboratoryHistoryFiltered.length > 1 ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setShowAllOutpatientLaboratoryHistory(true)}
+                                >
+                                  See More
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
@@ -11506,7 +11691,18 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 </button>
                               ))}
                             </div>
-                            {renderLaboratoryHistoryCards(laboratoryHistoryInpatientViewFiltered)}
+                            {renderLaboratoryHistoryCards(displayedInpatientLaboratoryHistoryFiltered)}
+                            {!showAllInpatientLaboratoryHistory && laboratoryHistoryInpatientViewFiltered.length > 1 ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setShowAllInpatientLaboratoryHistory(true)}
+                                >
+                                  See More
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
@@ -11832,12 +12028,38 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </TabsList>
                       <TabsContent value="outpatient">
                         {isFocusedRadiologyLoaded ? (
-                          <div className="space-y-4">{renderRadiologyHistoryCards(outpatientRadiologyHistory)}</div>
+                          <div className="space-y-4">
+                            {renderRadiologyHistoryCards(displayedOutpatientRadiologyHistory)}
+                            {!showAllOutpatientRadiologyHistory && outpatientRadiologyHistory.length > 1 ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setShowAllOutpatientRadiologyHistory(true)}
+                                >
+                                  See More
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
                         ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedRadiologyLoaded ? (
-                          <div className="space-y-4">{renderRadiologyHistoryCards(radiologyHistoryInpatientView)}</div>
+                          <div className="space-y-4">
+                            {renderRadiologyHistoryCards(displayedInpatientRadiologyHistory)}
+                            {!showAllInpatientRadiologyHistory && radiologyHistoryInpatientView.length > 1 ? (
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setShowAllInpatientRadiologyHistory(true)}
+                                >
+                                  See More
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
                         ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                     </Tabs>
@@ -11893,33 +12115,145 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           }
         }}
       >
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden p-0">
-          <DialogHeader className="border-b px-6 py-4">
-            <DialogTitle className="flex items-center gap-2">
-              <FlaskConical className="h-5 w-5" />
-              Hasil Laboratorium Sesuai Tanggal
-            </DialogTitle>
+        <DialogContent className="max-w-[980px] max-h-[95vh] overflow-hidden bg-muted/30 p-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Hasil Laboratorium Fullscreen</DialogTitle>
           </DialogHeader>
 
           {fullscreenLabHistory ? (
-            <div className="max-h-[calc(90vh-88px)] space-y-4 overflow-y-auto px-6 py-4 pr-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Tanggal</p>
-                  <p className="font-medium">{formatDateSafe(fullscreenLabHistory.tanggal)}</p>
+            <div className="max-h-[95vh] overflow-y-auto bg-slate-200 p-3 sm:p-6">
+              <div className="mx-auto w-full max-w-[860px] bg-white p-4 text-[11px] text-slate-900 shadow-lg sm:p-6">
+                <div className="border border-slate-500 p-3">
+                  <div className="flex items-start gap-4 border-b border-slate-500 pb-3">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center">
+                      <img src={logoImg} alt="Logo RSUD" className="h-14 w-14 object-contain" />
+                    </div>
+                    <div className="flex-1 text-center leading-tight">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide">Pemerintah Kabupaten Hulu Sungai Tengah</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide">Dinas Kesehatan</p>
+                      <p className="text-lg font-bold uppercase">UPT RSUD H. Damanhuri Barabai</p>
+                      <p className="text-[10px] text-slate-600">
+                        Jalan Murakata Nomor 4 Barabai Barat, Hulu Sungai Tengah, Kalimantan Selatan 71314
+                      </p>
+                      <p className="text-[10px] text-slate-600">
+                        Telepon: 08115000800, Email: rsdhbarabai@gmail.com
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="border border-slate-500 p-2">
+                      <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                        <p className="uppercase">No. RM</p>
+                        <p>:</p>
+                        <p>{currentPatient.no_rm || no_rkm_medis || '-'}</p>
+                        <p className="uppercase">Nama</p>
+                        <p>:</p>
+                        <p className="font-semibold uppercase">{currentPatient.nama || '-'}</p>
+                        <p className="uppercase">Tgl. Lahir</p>
+                        <p>:</p>
+                        <p>{formatUIDate(currentPatient.tanggal_lahir)}</p>
+                        <p className="uppercase">Umur / JK</p>
+                        <p>:</p>
+                        <p>{fullscreenLabAgeLabel} / {formatGenderLabel(currentPatient.jenis_kelamin)}</p>
+                        <p className="uppercase">Ket. Klinik</p>
+                        <p>:</p>
+                        <p>{String(fullscreenLabHistory?.source || '-').trim() || '-'}</p>
+                      </div>
+                    </div>
+                    <div className="border border-slate-500 p-2">
+                      <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                        <p className="uppercase">No. Lab</p>
+                        <p>:</p>
+                        <p>{fullscreenLabHistory.noorder || fullscreenLabHistory.no_rawat || '-'}</p>
+                        <p className="uppercase">Ruang</p>
+                        <p>:</p>
+                        <p>{fullscreenLabRoomLabel}</p>
+                        <p className="uppercase">Status</p>
+                        <p>:</p>
+                        <p>{fullscreenLabStatusLabel}</p>
+                        <p className="uppercase">Dokter</p>
+                        <p>:</p>
+                        <p>{fullscreenLabDoctorName}</p>
+                        <p className="uppercase">Tanggal</p>
+                        <p>:</p>
+                        <p>{fullscreenLabResultDateTime}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 border border-slate-500">
+                    <div className="border-b border-slate-500 bg-emerald-50 px-3 py-1 text-center text-xs font-bold uppercase tracking-wide text-emerald-700">
+                      Hasil Pemeriksaan Laboratorium
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-[11px]">
+                        <thead>
+                          <tr className="bg-slate-100">
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Pemeriksaan</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Hasil</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Nilai Rujukan</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Satuan</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Metoda</th>
+                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Ket</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {fullscreenLabPanels.length > 0 ? (
+                            fullscreenLabPanels.map(({ groupName, tests }, groupIndex) => (
+                              <React.Fragment key={`${groupName}-${groupIndex}`}>
+                                <tr className="bg-emerald-50/70">
+                                  <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
+                                    {groupName}
+                                  </td>
+                                </tr>
+                                {tests.map((test: any, testIndex: number) => (
+                                  <tr
+                                    key={`${groupName}-${testIndex}`}
+                                    className={cn(
+                                      test.keterangan === 'H' && "bg-red-50 text-red-900",
+                                      test.keterangan === 'L' && "bg-amber-50 text-amber-900"
+                                    )}
+                                  >
+                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.pemeriksaan || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{test.hasil || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.rujukan || test.nilai_rujukan || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.satuan || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.metode || test.method || '-'}</td>
+                                    <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{test.keterangan || '-'}</td>
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="border border-slate-300 px-3 py-4 text-center italic text-slate-500">
+                                Tidak ada hasil pemeriksaan
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-col justify-between gap-4 text-[10px] text-slate-700 sm:flex-row">
+                    <div className="max-w-[60%] space-y-1">
+                      <p>
+                        Jika sekiranya ada keraguan tentang hasil pemeriksaan, diharapkan segera menghubungi Instalasi Laboratorium Patologi Klinik.
+                      </p>
+                      <p>
+                        Catatan: {fullscreenLabHistory?.catatan || '-'}
+                      </p>
+                    </div>
+                    <div className="min-w-[200px] text-left sm:text-right">
+                      <p>Tanggal cetak: {fullscreenLabPrintedAt}</p>
+                      <p>Dokter Penanggung Jawab,</p>
+                      <div className="h-16" />
+                      <p className="font-semibold">{fullscreenLabDoctorName}</p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">No. Rawat</p>
-                  <p className="font-medium">{fullscreenLabHistory.no_rawat}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Sumber</p>
-                  <p className="font-medium">{fullscreenLabHistory.source}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h4 className="font-medium">Pemeriksaan:</h4>
-                {renderLaboratoryHistoryDetails(fullscreenLabHistory)}
               </div>
             </div>
           ) : null}
@@ -12374,7 +12708,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       <tbody>
                         {allergyHistory.map((item) => (
                           <tr key={String(item.id)} className="border-t">
-                            <td className="px-3 py-2">{item.created_at || '-'}</td>
+                            <td className="px-3 py-2">{formatDateSafe(item.created_at)}</td>
                             <td className="px-3 py-2">{item.nama || '-'}</td>
                             <td className="px-3 py-2">{item.kategori || '-'}</td>
                           </tr>

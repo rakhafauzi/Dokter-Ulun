@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, Search, UserRound } from 'lucide-react';
 import { API_URLS } from '@/config/api';
+import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
 import {
   Dialog,
   DialogContent,
@@ -54,15 +55,11 @@ const formatVisitDate = (dateValue?: string, timeValue?: string) => {
     return 'Belum ada kunjungan';
   }
 
-  const date = new Date(`${trimmedDate}T${trimmedTime || '00:00:00'}`);
-  if (Number.isNaN(date.getTime())) {
-    return [trimmedDate, trimmedTime.slice(0, 5)].filter(Boolean).join(' ');
+  if (trimmedTime) {
+    return formatUIDateTime(`${trimmedDate} ${trimmedTime}`);
   }
 
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: trimmedTime ? 'short' : undefined
-  }).format(date);
+  return formatUIDate(trimmedDate);
 };
 
 const MedicalRecordSearchModal: React.FC<MedicalRecordSearchModalProps> = ({

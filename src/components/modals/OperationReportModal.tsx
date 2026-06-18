@@ -13,6 +13,7 @@ import { DatePickerPopover } from "@/components/DatePickerPopover";
 import { StatusPill } from "@/components/StatusPill";
 import { format } from "date-fns";
 import { id as indonesianLocale } from "date-fns/locale";
+import { formatUIDate } from "@/lib/date-utils";
 
 interface OperationReport {
   id?: number;
@@ -34,6 +35,8 @@ interface OperationReportModalProps {
   noRawat: string;
 }
 
+const getCurrentOperationDateTime = () => format(new Date(), "yyyy-MM-dd'T'HH:mm");
+
 export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOpen, onClose, noRawat }) => {
   const { user } = useAuth();
   const [reports, setReports] = useState<OperationReport[]>([]);
@@ -46,7 +49,7 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
     id: undefined,
     no_rawat: noRawat,
     kd_dokter: user?.kd_dokter || user?.username || '',
-    tanggal_op: new Date().toISOString().slice(0, 16),
+    tanggal_op: getCurrentOperationDateTime(),
     hasil_op: '',
     pre_op: '',
     post_op: '',
@@ -201,7 +204,6 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
     setFormData({
       ...item,
       no_rawat: noRawat,
-      original_tanggal: item.original_tanggal || item.tanggal,
     });
     setShowForm(true);
   };
@@ -248,7 +250,7 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
       id: undefined,
       no_rawat: noRawat,
       kd_dokter: user?.kd_dokter || user?.username || '',
-      tanggal_op: new Date().toISOString().slice(0, 16),
+      tanggal_op: getCurrentOperationDateTime(),
       hasil_op: '',
       pre_op: '',
       post_op: '',
@@ -309,7 +311,7 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                         locale={indonesianLocale}
                         placeholder="Pilih tanggal operasi"
                         displayValue={getTanggalOperasiDate(formData.tanggal_op)
-                          ? format(getTanggalOperasiDate(formData.tanggal_op) as Date, 'dd/MM/yyyy', { locale: indonesianLocale })
+                          ? formatUIDate(getTanggalOperasiDate(formData.tanggal_op) as Date)
                           : undefined}
                       />
                       <Input
@@ -395,7 +397,7 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                   <CardTitle className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-5 w-5" />
-                      {report.nm_op || report.post_op || report.pre_op || 'Laporan Operasi'} - {report.tanggal_op}
+                      {report.nm_op || report.post_op || report.pre_op || 'Laporan Operasi'} - {formatUIDate(report.tanggal_op)}
                     </div>
                     <div className="flex gap-2">
                       {getPaBadge(report.kirim_pa)}
@@ -412,7 +414,7 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Tanggal Operasi</p>
-                      <p className="text-sm">{report.tanggal_op}</p>
+                      <p className="text-sm">{formatUIDate(report.tanggal_op)}</p>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Nama Operasi</p>

@@ -11,7 +11,7 @@ import logoImg from '@/assets/logo.png'; // Add this import
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { formatDateTimeIndonesia } from '@/lib/date-utils';
+import { formatUIDateTime } from '@/lib/date-utils';
 import {
   NOTIFICATION_PREFERENCES_CHANGED_EVENT,
   type NotificationPreferences,
@@ -88,14 +88,7 @@ const formatNotificationTime = (value?: string) => {
     return '-';
   }
 
-  return formatDateTimeIndonesia(normalized, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+  return formatUIDateTime(normalized);
 };
 
 const getNotificationTypeLabel = (type: DoctorNotificationItem['type']) => {
