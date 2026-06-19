@@ -440,28 +440,28 @@ const getExaminationRoleStyles = (value?: string | null) => {
   switch (normalizeExaminationRole(value)) {
     case 'medis':
       return {
-        badge: 'border-violet-200 bg-violet-100 text-violet-700',
-        soap: 'border-violet-200 bg-violet-50/80'
+        badge: 'border-violet-200 bg-violet-100 text-violet-700 dark:border-violet-700 dark:bg-violet-900 dark:text-violet-100',
+        soap: 'border-violet-200 bg-violet-50/80 dark:border-violet-800 dark:bg-violet-950'
       };
     case 'paramedis':
       return {
-        badge: 'border-sky-200 bg-sky-100 text-sky-700',
-        soap: 'border-sky-200 bg-sky-50/80'
+        badge: 'border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-700 dark:bg-sky-900 dark:text-sky-100',
+        soap: 'border-sky-200 bg-sky-50/80 dark:border-sky-800 dark:bg-sky-950'
       };
     case 'apoteker':
       return {
-        badge: 'border-emerald-200 bg-emerald-100 text-emerald-700',
-        soap: 'border-emerald-200 bg-emerald-50/80'
+        badge: 'border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900 dark:text-emerald-100',
+        soap: 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-800 dark:bg-emerald-950'
       };
     case 'gizi':
       return {
-        badge: 'border-amber-200 bg-amber-100 text-amber-700',
-        soap: 'border-amber-200 bg-amber-50/80'
+        badge: 'border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900 dark:text-amber-100',
+        soap: 'border-amber-200 bg-amber-50/80 dark:border-amber-800 dark:bg-amber-950'
       };
     default:
       return {
-        badge: 'border-slate-200 bg-slate-100 text-slate-700',
-        soap: 'border-slate-200 bg-slate-50/80'
+        badge: 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200',
+        soap: 'border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70'
       };
   }
 };
@@ -814,6 +814,20 @@ const vitalChartSeries = [
 ] as const;
 
 type VitalChartSeriesKey = typeof vitalChartSeries[number]['key'];
+
+const balanceCairanChartSeries = [
+  { key: 'minum', title: 'Minum', color: '#38bdf8', unit: 'ml' },
+  { key: 'makan', title: 'Makan', color: '#22c55e', unit: 'ml' },
+  { key: 'infus', title: 'Infus', color: '#3b82f6', unit: 'ml' },
+  { key: 'total_in', title: 'Total In', color: '#06b6d4', unit: 'ml' },
+  { key: 'muntah', title: 'Muntah', color: '#f97316', unit: 'ml' },
+  { key: 'urine', title: 'Urine', color: '#eab308', unit: 'ml' },
+  { key: 'bab', title: 'BAB', color: '#a855f7', unit: 'ml' },
+  { key: 'total_out', title: 'Total Out', color: '#ef4444', unit: 'ml' },
+  { key: 'balance', title: 'Balance', color: '#10b981', unit: 'ml' },
+] as const;
+
+type BalanceCairanChartSeriesKey = typeof balanceCairanChartSeries[number]['key'];
 
 const formatRouteNoRawat = (rawatParam?: string) => {
   if (!rawatParam || rawatParam.length < 9) {
@@ -1349,6 +1363,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [editingPrescriptionNo, setEditingPrescriptionNo] = useState<string | null>(null);
   const [deletingPrescriptionNo, setDeletingPrescriptionNo] = useState<string | null>(null);
   const [medicationRequestFilter, setMedicationRequestFilter] = useState<MedicationRequestFilterValue>('umum');
+  const [medicationDataTab, setMedicationDataTab] = useState<'current' | 'history'>('history');
   const [medicationCurrentCareTab, setMedicationCurrentCareTab] = useState<CareSectionTabValue>(preferredCareSectionTab);
   const [showAllOutpatientMedicationRequests, setShowAllOutpatientMedicationRequests] = useState(false);
   const [loadingAllOutpatientMedicationRequests, setLoadingAllOutpatientMedicationRequests] = useState(false);
@@ -1429,6 +1444,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     suhu: true,
     gcs: true,
     spo2: true,
+  }));
+  const [visibleBalanceCairanSeries, setVisibleBalanceCairanSeries] = useState<Record<BalanceCairanChartSeriesKey, boolean>>(() => ({
+    minum: false,
+    makan: false,
+    infus: false,
+    total_in: true,
+    muntah: false,
+    urine: false,
+    bab: false,
+    total_out: true,
+    balance: true,
   }));
   const [activeTab, setActiveTab] = useState('visits');
   const [visitHistoryTab, setVisitHistoryTab] = useState<VisitHistoryTabValue>('outpatient');
@@ -2170,6 +2196,35 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     () => balanceCairanEntries.find((entry) => Number(entry.id) === Number(selectedBalanceCairanId)) || null,
     [balanceCairanEntries, selectedBalanceCairanId]
   );
+  const balanceCairanChartData = useMemo(
+    () => [...balanceCairanEntries]
+      .map((entry) => {
+        const entryDate = String(entry.tanggal || '').trim();
+        const entryTime = String(entry.bc_ke || '').trim() || '00:00';
+        const timestamp = entryDate
+          ? new Date(`${entryDate}T${entryTime.length === 5 ? `${entryTime}:00` : entryTime}`).getTime()
+          : 0;
+
+        return {
+          id: entry.id,
+          label: entryDate ? `${entryDate.slice(8, 10)}/${entryDate.slice(5, 7)} ${entryTime.slice(0, 5)}` : '-',
+          fullDate: entryDate,
+          fullTime: entryTime,
+          minum: Number(entry.minum) || 0,
+          makan: Number(entry.makan) || 0,
+          infus: Number(entry.infus) || 0,
+          total_in: Number(entry.total_in) || 0,
+          muntah: Number(entry.muntah) || 0,
+          urine: Number(entry.urine) || 0,
+          bab: Number(entry.bab) || 0,
+          total_out: Number(entry.total_out) || 0,
+          balance: Number(entry.balance) || 0,
+          timestamp: Number.isNaN(timestamp) ? 0 : timestamp
+        };
+      })
+      .sort((a, b) => a.timestamp - b.timestamp),
+    [balanceCairanEntries]
+  );
   const selectedEchoCardiographyEntry = useMemo(
     () => echoCardiographyEntries.find(
       (entry) => `${entry.tgl_periksa}|${entry.jam}` === selectedEchoCardiographyKey
@@ -2177,6 +2232,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     [echoCardiographyEntries, selectedEchoCardiographyKey]
   );
   const activeVitalSeries = vitalChartSeries.filter((series) => visibleVitalSeries[series.key]);
+  const activeBalanceCairanSeries = balanceCairanChartSeries.filter((series) => visibleBalanceCairanSeries[series.key]);
   const isFocusedExaminationsLoaded =
     !formattedNoRawat ||
     (medicalData?.focused_examinations !== undefined && medicalData?.focused_ekstrapiramidal !== undefined);
@@ -6424,6 +6480,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     });
 
     setIsMedicationFormOpen(true);
+    setActiveTab('medications');
+    setMedicationDataTab('current');
 
     toast({
       title: "Berhasil",
@@ -8062,6 +8120,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
         resetCompoundForm();
         setActiveTab('medications');
+        setMedicationDataTab('current');
         await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
       } else if (type === 'Resep') {
         if (!formattedNoRawat) {
@@ -8173,6 +8232,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
         resetMedicationForm();
         setActiveTab('medications');
+        setMedicationDataTab('current');
         await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
       } else {
         toast({
@@ -10112,6 +10172,82 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 </div>
                               </div>
 
+                              {balanceCairanChartData.length > 0 ? (
+                                <div className="space-y-4 rounded-lg border bg-card p-4">
+                                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                    <div>
+                                      <h4 className="font-medium">Grafik Balance Cairan</h4>
+                                      <p className="text-xs text-muted-foreground">
+                                        Tampilkan atau sembunyikan komponen intake, outtake, dan balance sesuai kebutuhan
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {balanceCairanChartSeries.map((series) => {
+                                        const hasData = balanceCairanChartData.some((item) => item[series.key] !== null);
+
+                                        return (
+                                          <Button
+                                            key={series.key}
+                                            type="button"
+                                            variant={visibleBalanceCairanSeries[series.key] ? 'default' : 'outline'}
+                                            size="sm"
+                                            disabled={!hasData}
+                                            onClick={() => setVisibleBalanceCairanSeries((previous) => ({
+                                              ...previous,
+                                              [series.key]: !previous[series.key]
+                                            }))}
+                                            className="gap-2"
+                                          >
+                                            <span
+                                              className="h-2.5 w-2.5 rounded-full"
+                                              style={{ backgroundColor: series.color }}
+                                            />
+                                            {series.title}
+                                          </Button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {activeBalanceCairanSeries.some((series) => balanceCairanChartData.some((item) => item[series.key] !== null)) ? (
+                                    <ResponsiveContainer width="100%" height={340}>
+                                      <LineChart data={balanceCairanChartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="label" tick={{ fontSize: 12 }} minTickGap={24} />
+                                        <YAxis tick={{ fontSize: 12 }} width={56} />
+                                        <Tooltip
+                                          labelFormatter={(label, payload) => {
+                                            const point = payload?.[0]?.payload;
+                                            return point ? `${point.fullDate} ${point.fullTime}` : label;
+                                          }}
+                                          formatter={(value: number | string | Array<number | string>, name: string) => {
+                                            const activeSeries = balanceCairanChartSeries.find((series) => series.title === name);
+                                            return [`${value} ${activeSeries?.unit || ''}`.trim(), name];
+                                          }}
+                                        />
+                                        <Legend />
+                                        {activeBalanceCairanSeries.map((series) => (
+                                          <Line
+                                            key={series.key}
+                                            type="monotone"
+                                            dataKey={series.key}
+                                            name={series.title}
+                                            stroke={series.color}
+                                            strokeWidth={2}
+                                            dot={{ r: 3 }}
+                                            connectNulls
+                                          />
+                                        ))}
+                                      </LineChart>
+                                    </ResponsiveContainer>
+                                  ) : (
+                                    <div className="flex h-[340px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+                                      Pilih minimal satu komponen balance cairan yang memiliki data untuk ditampilkan.
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+
                               <div className="border rounded-lg">
                                 <div className="border-b p-4">
                                   <h4 className="font-medium">Riwayat Balance Cairan</h4>
@@ -11112,7 +11248,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               ) : null}
 
               {/* Data Existing */}
-              <Tabs defaultValue="history" className="space-y-4">
+              <Tabs value={medicationDataTab} onValueChange={(value) => setMedicationDataTab(value as 'current' | 'history')} className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="current">Data Resep Obat</TabsTrigger>
                   <TabsTrigger value="history">Riwayat Pemberian Obat</TabsTrigger>

@@ -890,13 +890,13 @@ const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-    <header className="fixed left-0 right-0 top-0 z-50 h-16 w-full border-b border-white/10 bg-primary/95 shadow-md backdrop-blur dark:border-emerald-950/60 dark:bg-emerald-950/95">
+    <header className="fixed left-0 right-0 top-0 z-50 h-16 w-full border-b border-white/10 bg-primary/95 shadow-md backdrop-blur dark:border-white/10 dark:bg-[#12151b]/95">
       <div className="h-full flex items-center justify-between px-4 md:px-6">
         <div className="flex items-center">
           {isMobile && (
             <button 
               onClick={onMenuClick}
-              className="mr-3 rounded-full p-1.5 text-white transition-colors hover:bg-white/20 dark:hover:bg-white/10"
+              className="mr-3 rounded-full p-1.5 text-white transition-colors hover:bg-white/20 dark:hover:bg-white/8"
               aria-label="Toggle navigation menu"
             >
               <Menu className="h-6 w-6" />
@@ -918,7 +918,7 @@ const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onMedicalRecordSearchClick}
-              className="w-72 rounded-full border-none bg-white/10 py-1.5 pl-10 pr-4 text-left text-sm text-white/70 transition-colors hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/20 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+              className="w-72 rounded-full border-none bg-white/10 py-1.5 pl-10 pr-4 text-left text-sm text-white/70 transition-colors hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/20 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:bg-white/[0.08]"
             >
               Cari rekam medis pasien...
             </button>
@@ -927,7 +927,7 @@ const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onMedicalRecordSearchClick}
-            className="rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 md:hidden"
+            className="rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] md:hidden"
             aria-label="Cari rekam medis pasien"
           >
             <Search className="h-5 w-5 text-white" />
@@ -937,7 +937,7 @@ const Header: React.FC<HeaderProps> = ({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="relative rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10"
+                className="relative rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
                 aria-label="Notifikasi proses layanan"
               >
                 {notificationLoading ? (
@@ -988,7 +988,7 @@ const Header: React.FC<HeaderProps> = ({
                 <p className="mt-1 text-xs text-muted-foreground">
                   Pantau proses peresepan, laboratorium, dan radiologi pasien Anda.
                 </p>
-                <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:bg-[#1a1f27] dark:text-slate-300">
                   <span>
                     Total aktif: <span className="font-semibold">{notificationSummary.active}</span>
                   </span>
@@ -1098,7 +1098,7 @@ const Header: React.FC<HeaderProps> = ({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div className="flex cursor-pointer items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 dark:bg-white/10">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 dark:bg-white/[0.08]">
                   <User className="h-5 w-5 text-white" />
                 </div>
                 {!isMobile && username && (

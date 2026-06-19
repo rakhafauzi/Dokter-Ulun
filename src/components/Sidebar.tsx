@@ -132,10 +132,15 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [location.pathname]);
 
+  const activeItemClass = 'bg-primary/10 text-primary dark:bg-sky-500/12 dark:text-sky-300';
+  const inactiveItemClass = 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/[0.04]';
+  const activeIconClass = 'text-primary dark:text-sky-300';
+  const inactiveIconClass = 'text-slate-500 dark:text-slate-500';
+
   return (
-    <aside className="fixed left-0 top-0 z-30 flex h-[calc(100vh)] w-64 flex-col border-r bg-white shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-950 sm:top-16 sm:h-[calc(100vh-4rem)]">
+    <aside className="fixed left-0 top-0 z-30 flex h-[calc(100vh)] w-64 flex-col border-r bg-white shadow-sm transition-colors dark:border-white/10 dark:bg-[#101317] sm:top-16 sm:h-[calc(100vh-4rem)]">
         <div 
-          className="relative border-b p-4 dark:border-slate-800"
+          className="relative border-b p-4 dark:border-white/10"
           style={{
             backgroundImage: `url(${bgImage})`,
             backgroundSize: 'cover',
@@ -167,12 +172,12 @@ const Sidebar: React.FC<SidebarProps> = ({
             to="/"
             className={`flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActive('/')
-                ? 'bg-primary/10 text-primary'
-                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'
+                ? activeItemClass
+                : inactiveItemClass
             }`}
             onClick={onClose}
           >
-            <span className={`mr-3 ${isActive('/') ? 'text-primary' : 'text-slate-500 dark:text-slate-400'}`}>
+            <span className={`mr-3 ${isActive('/') ? activeIconClass : inactiveIconClass}`}>
               <BarChart2 className="h-5 w-5" />
             </span>
             Dashboard
@@ -187,13 +192,13 @@ const Sidebar: React.FC<SidebarProps> = ({
               <CollapsibleTrigger
               className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   isPasienActive()
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'
+                    ? activeItemClass
+                    : inactiveItemClass
                 }`}
                 onClick={handlePatientsMenuClick}
               >
                 <div className="flex items-center">
-                  <span className={`mr-3 ${isPasienActive() ? 'text-primary' : 'text-slate-500 dark:text-slate-400'}`}>
+                  <span className={`mr-3 ${isPasienActive() ? activeIconClass : inactiveIconClass}`}>
                     <Users className="h-5 w-5" />
                   </span>
                   Pasien
@@ -209,8 +214,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     to={item.path}
                     className={`flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                       item.exact 
-                        ? (location.pathname === item.path ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900')
-                        : (location.pathname.startsWith(item.path) ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900')
+                        ? (location.pathname === item.path ? activeItemClass : inactiveItemClass)
+                        : (location.pathname.startsWith(item.path) ? activeItemClass : inactiveItemClass)
                     }`}
                     onClick={handlePatientsMenuClick}
                   >
@@ -225,8 +230,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <CollapsibleTrigger
                     className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                       (location.pathname.startsWith('/pasien/rawat-inap') || location.pathname.startsWith('/pasien/rawat-gabung'))
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'
+                        ? activeItemClass
+                        : inactiveItemClass
                     }`}
                   >
                     <span>Rawat Inap</span>
@@ -241,8 +246,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                         to={item.path}
                         className={`flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                           location.pathname.startsWith(item.path)
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'
+                            ? activeItemClass
+                            : inactiveItemClass
                         }`}
                         onClick={handlePatientsMenuClick}
                       >
@@ -257,8 +262,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     to={item.path}
                     className={`flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                       item.exact
-                        ? (location.pathname === item.path ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900')
-                        : (location.pathname.startsWith(item.path) ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900')
+                        ? (location.pathname === item.path ? activeItemClass : inactiveItemClass)
+                        : (location.pathname.startsWith(item.path) ? activeItemClass : inactiveItemClass)
                     }`}
                     onClick={handlePatientsMenuClick}
                   >
@@ -303,12 +308,12 @@ const Sidebar: React.FC<SidebarProps> = ({
               <CollapsibleTrigger
                 className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   isStatistikActive()
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'
+                  ? activeItemClass
+                  : inactiveItemClass
                 }`}
               >
                 <div className="flex items-center">
-                  <span className={`mr-3 ${isStatistikActive() ? 'text-primary' : 'text-slate-500 dark:text-slate-400'}`}>
+                  <span className={`mr-3 ${isStatistikActive() ? activeIconClass : inactiveIconClass}`}>
                     <Activity className="h-5 w-5" />
                   </span>
                   Statistik
@@ -324,8 +329,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     to={item.path}
                     className={`flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                       item.exact
-                        ? (location.pathname === item.path ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900')
-                        : (location.pathname.startsWith(item.path) ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900')
+                        ? (location.pathname === item.path ? activeItemClass : inactiveItemClass)
+                        : (location.pathname.startsWith(item.path) ? activeItemClass : inactiveItemClass)
                     }`}
                     onClick={onClose}
                   >
@@ -340,12 +345,12 @@ const Sidebar: React.FC<SidebarProps> = ({
             to="/panduan"
             className={`flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActive('/panduan')
-                ? 'bg-primary/10 text-primary'
-                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'
+                ? activeItemClass
+                : inactiveItemClass
             }`}
             onClick={onClose}
           >
-            <span className={`mr-3 ${isActive('/panduan') ? 'text-primary' : 'text-slate-500 dark:text-slate-400'}`}>
+            <span className={`mr-3 ${isActive('/panduan') ? activeIconClass : inactiveIconClass}`}>
               <HelpCircle className="h-5 w-5" />
             </span>
             Panduan
@@ -354,7 +359,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
       
-      <div className="mt-auto border-t bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+      <div className="mt-auto border-t bg-white p-4 dark:border-white/10 dark:bg-[#101317]">
         <p className="text-sm text-slate-600 dark:text-slate-300">
           © 2017 - {new Date().getFullYear()}{" "}
           <button 
