@@ -146,7 +146,7 @@ const AppContent = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100 pt-16 text-foreground transition-colors dark:bg-slate-950">
+    <div className="min-h-screen flex flex-col bg-slate-100 pt-16 text-foreground transition-colors dark:bg-[#0c0e12]">
       <Header 
         hospitalName="RSUD H. DAMANHURI" 
         onMenuClick={() => setSidebarOpen(true)}
