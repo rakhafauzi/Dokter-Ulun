@@ -197,17 +197,17 @@ const PatientTable: React.FC<PatientTableProps> = ({
               displayData.map((patient) => (
                 <TableRow 
                   key={patient.id} 
-                  className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/70"
                   onClick={() => handleRowClick(patient)}
                 >
                   <TableCell className="py-2 px-2 sm:py-3 sm:px-4">{patient.id}</TableCell>
                   <TableCell className="py-2 px-2 sm:py-3 sm:px-4">
                     <div className="flex items-center">
-                      <div className="flex-shrink-0 h-6 w-6 sm:h-8 sm:w-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500">
+                      <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300 sm:h-8 sm:w-8">
                         <User size={isMobile ? 14 : 16} />
                       </div>
                       <div className={cn(
-                        "ml-2 sm:ml-4 font-medium text-gray-900",
+                        "ml-2 font-medium text-slate-900 dark:text-slate-100 sm:ml-4",
                         isMobile ? "text-xs sm:text-sm max-w-[120px] truncate" : ""
                       )}>
                         {patient.name}
@@ -216,7 +216,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
                   </TableCell>
                   {type === 'active' ? (
                     <TableCell className="py-2 px-2 sm:py-3 sm:px-4 text-right sm:text-left">
-                      <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
+                      <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-500/15 dark:text-green-300">
                         {patient.visits}
                       </span>
                     </TableCell>
@@ -237,7 +237,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={3} className="text-center py-6 text-gray-500 italic">
+                <TableCell colSpan={3} className="py-6 text-center italic text-slate-500 dark:text-slate-400">
                   Tidak ada data
                 </TableCell>
               </TableRow>
@@ -267,7 +267,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center py-6 text-gray-500 italic">
+                <TableCell colSpan={columns.length} className="py-6 text-center italic text-slate-500 dark:text-slate-400">
                   Memuat data...
                 </TableCell>
               </TableRow>
@@ -276,7 +276,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
                 <TableRow 
                   key={patient.id || rowIndex} 
                   className={cn(
-                    "hover:bg-gray-50 transition-colors cursor-pointer",
+                    "cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/70",
                     getRowClassName ? getRowClassName(patient) : ""
                   )}
                   onClick={() => handleRowClick(patient)}
@@ -287,11 +287,11 @@ const PatientTable: React.FC<PatientTableProps> = ({
                         column.render(patient)
                       ) : column.accessor === 'nama' ? (
                         <div className="flex items-center">
-                          <div className="flex-shrink-0 h-6 w-6 sm:h-8 sm:w-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500">
+                          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300 sm:h-8 sm:w-8">
                             <User size={isMobile ? 14 : 16} />
                           </div>
                           <div className={cn(
-                            "ml-2 sm:ml-4 font-medium text-gray-900",
+                            "ml-2 font-medium text-slate-900 dark:text-slate-100 sm:ml-4",
                             isMobile ? "text-xs sm:text-sm max-w-[120px] truncate" : ""
                           )}>
                             {patient[column.accessor]}
@@ -318,7 +318,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center py-6 text-gray-500 italic">
+                <TableCell colSpan={columns.length} className="py-6 text-center italic text-slate-500 dark:text-slate-400">
                   Tidak ada data
                 </TableCell>
               </TableRow>
@@ -332,8 +332,8 @@ const PatientTable: React.FC<PatientTableProps> = ({
   return (
     // <div className="bg-white rounded-xl shadow-md overflow-hidden h-full hover:shadow-lg transition-shadow duration-300">
         <div className="p-0 sm:p-0">
-          {title && <h2 className="text-lg sm:text-xl font-bold mb-3 sm:mb-6 text-gray-800">{title}</h2>}
-          <div className="rounded-lg border border-gray-200">
+          {title && <h2 className="mb-3 text-lg font-bold text-slate-800 dark:text-slate-100 sm:mb-6 sm:text-xl">{title}</h2>}
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800">
             {columns ? renderColumnsView() : renderSimpleView()}
           </div>
           
@@ -358,7 +358,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
                   <button
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
-                    className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="rounded border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
                   >
                     Sebelumnya
                   </button>
@@ -366,8 +366,8 @@ const PatientTable: React.FC<PatientTableProps> = ({
                     <button
                       key={page}
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 text-sm border rounded ${
-                        currentPage === page ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+                      className={`rounded border px-3 py-1 text-sm dark:border-slate-700 ${
+                        currentPage === page ? 'bg-primary text-primary-foreground' : 'hover:bg-muted dark:bg-slate-900 dark:hover:bg-slate-800'
                       }`}
                     >
                       {page}
@@ -376,7 +376,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
                   <button
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="rounded border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
                   >
                     Berikutnya
                   </button>

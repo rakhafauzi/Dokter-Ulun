@@ -93,17 +93,17 @@ const Dashboard: React.FC = () => {
         <div className="mb-4 md:mb-8">
           <div className="flex items-center space-x-2 mb-2">
             <BarChart size={24} className="text-primary" />
-            <h1 className="text-xl md:text-2xl font-bold uppercase text-gray-800">Dashboard Dokter</h1>
+            <h1 className="text-xl md:text-2xl font-bold uppercase text-slate-800 dark:text-slate-100">Dashboard Dokter</h1>
           </div>
-          <p className="text-sm md:text-base text-gray-500">Memuat data...</p>
+          <p className="text-sm md:text-base text-slate-500 dark:text-slate-400">Memuat data...</p>
           <Separator className="mt-4" />
         </div>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-white rounded-xl shadow-md p-6 animate-pulse">
-              <div className="h-8 bg-gray-200 rounded mb-2"></div>
-              <div className="h-6 bg-gray-200 rounded"></div>
+            <div key={i} className="animate-pulse rounded-xl bg-white p-6 shadow-md dark:bg-slate-900">
+              <div className="mb-2 h-8 rounded bg-slate-200 dark:bg-slate-800"></div>
+              <div className="h-6 rounded bg-slate-200 dark:bg-slate-800"></div>
             </div>
           ))}
         </div>
@@ -116,9 +116,9 @@ const Dashboard: React.FC = () => {
       <div className="mb-4 md:mb-8">
         <div className="flex items-center space-x-2 mb-2">
           <BarChart size={24} className="text-primary" />
-          <h1 className="text-xl md:text-2xl font-bold uppercase text-gray-800">Dashboard Dokter</h1>
+          <h1 className="text-xl md:text-2xl font-bold uppercase text-slate-800 dark:text-slate-100">Dashboard Dokter</h1>
         </div>
-        <p className="text-sm md:text-base text-gray-500">Selamat datang kembali, selamat melayani pasien hari ini!</p>
+        <p className="text-sm md:text-base text-slate-500 dark:text-slate-400">Selamat datang kembali, selamat melayani pasien hari ini!</p>
         <Separator className="mt-4" />
       </div>
       
@@ -149,7 +149,7 @@ const Dashboard: React.FC = () => {
         />
       </div>
       
-      <Card className="shadow-sm border-0">
+      <Card className="border-0 shadow-sm dark:bg-slate-900">
         <CardContent className="p-0">
           <VisitChart 
             title="Poliklinik Hari Ini" 

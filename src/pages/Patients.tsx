@@ -889,7 +889,7 @@ const hemodialisaTerjadwalColumns = [
 const DokterDPJPCell = ({ dokterDpjp, caraBayar }: { dokterDpjp: string; caraBayar?: string }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
-  if (!dokterDpjp) return <span className="text-gray-400">-</span>;
+  if (!dokterDpjp) return <span className="text-slate-400 dark:text-slate-500">-</span>;
   
   // Parse dokter dari string menggunakan regex yang lebih robust
   // Format: "dr./drg. Nama lengkap dengan gelar (Jenis DPJP), dr./drg. Nama2 (Jenis2)"
@@ -919,10 +919,10 @@ const DokterDPJPCell = ({ dokterDpjp, caraBayar }: { dokterDpjp: string; caraBay
     return (
       <div className="text-sm">
         <div className="font-medium">{dokterList[0].nama}</div>
-        <div className="text-xs text-gray-500">({dokterList[0].jenis})</div>
-        <div className="mt-1 text-xs text-gray-500">
+        <div className="text-xs text-slate-500 dark:text-slate-400">({dokterList[0].jenis})</div>
+        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           <span>Cara Bayar: </span>
-          <span className="font-medium text-gray-700">{caraBayar || '-'}</span>
+          <span className="font-medium text-slate-700 dark:text-slate-200">{caraBayar || '-'}</span>
         </div>
       </div>
     );
@@ -933,13 +933,13 @@ const DokterDPJPCell = ({ dokterDpjp, caraBayar }: { dokterDpjp: string; caraBay
       {dokterUtama && (
         <div className="font-medium">
           {dokterUtama.nama}
-          <span className="text-xs text-gray-500 ml-1">(Utama)</span>
+          <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">(Utama)</span>
         </div>
       )}
 
-      <div className="mt-1 text-xs text-gray-500">
+      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
         <span>Cara Bayar: </span>
-        <span className="font-medium text-gray-700">{caraBayar || '-'}</span>
+        <span className="font-medium text-slate-700 dark:text-slate-200">{caraBayar || '-'}</span>
       </div>
       
       {dokterLainnya.length > 0 && (
@@ -949,7 +949,7 @@ const DokterDPJPCell = ({ dokterDpjp, caraBayar }: { dokterDpjp: string; caraBay
               e.stopPropagation();
               setIsExpanded(!isExpanded);
             }}
-            className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
+            className="flex items-center text-xs text-blue-600 transition-colors hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
           >
             <ChevronDown 
               size={12} 
@@ -959,11 +959,11 @@ const DokterDPJPCell = ({ dokterDpjp, caraBayar }: { dokterDpjp: string; caraBay
           </button>
           
           {isExpanded && (
-            <div className="mt-1 space-y-1 pl-4 border-l-2 border-gray-200">
+            <div className="mt-1 space-y-1 border-l-2 border-slate-200 pl-4 dark:border-slate-700">
               {dokterLainnya.map((dokter, index) => (
                 <div key={index} className="text-xs">
                   <div className="font-medium">{dokter.nama}</div>
-                  <div className="text-gray-500">({dokter.jenis})</div>
+                  <div className="text-slate-500 dark:text-slate-400">({dokter.jenis})</div>
                 </div>
               ))}
             </div>
@@ -1642,13 +1642,13 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
             >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="all" id="claim-verification-all" />
-                <label htmlFor="claim-verification-all" className="text-sm font-medium text-gray-700">
+                <label htmlFor="claim-verification-all" className="text-sm font-medium text-slate-700 dark:text-slate-200">
                   Semua
                 </label>
               </div>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="unverified" id="claim-verification-unverified" />
-                <label htmlFor="claim-verification-unverified" className="text-sm font-medium text-gray-700">
+                <label htmlFor="claim-verification-unverified" className="text-sm font-medium text-slate-700 dark:text-slate-200">
                   Belum Verifikasi
                 </label>
               </div>
@@ -2410,13 +2410,13 @@ const Patients = () => {
   }
   
   return (
-    <div className="p-2 md:p-6 space-y-3 md:space-y-4 w-full mx-auto animate-fade-in shadow-md bg-gray-50 rounded-lg bg-gray-50">
+    <div className="mx-auto w-full animate-fade-in space-y-3 rounded-lg bg-slate-50 p-2 shadow-md transition-colors dark:bg-slate-950 dark:shadow-slate-950/40 md:space-y-4 md:p-6">
       <div className="mb-4 md:mb-6">
         <div className="flex items-center space-x-2 mb-2">
           <User size={24} className="text-primary" />
-          <h1 className="text-xl md:text-2xl font-bold text-gray-800">Pasien {title}</h1>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 md:text-2xl">Pasien {title}</h1>
         </div>
-        <p className="text-sm md:text-base text-gray-500">{description}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 md:text-base">{description}</p>
         <Separator className="mt-2" />
       </div>
       <div className="overflow-hidden rounded-lg border bg-background shadow-sm">
@@ -2427,8 +2427,8 @@ const Patients = () => {
                   className={cn(
                     "flex items-center gap-2 rounded-t-md border border-b-0 px-3 py-2 transition-colors",
                     activeMedicalRecordTabId === LIST_PASIEN_TAB_ID
-                      ? "border-amber-500 bg-amber-50 text-amber-700"
-                      : "border-transparent bg-amber-100/70 text-amber-700 hover:bg-amber-100"
+                      ? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                      : "border-transparent bg-amber-100/70 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/5 dark:text-amber-300 dark:hover:bg-amber-500/10"
                   )}
                 >
                   <button

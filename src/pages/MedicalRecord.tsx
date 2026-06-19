@@ -8373,13 +8373,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="w-12 h-12 border-4 border-gray-200 border-t-primary rounded-full animate-spin"></div>
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-primary dark:border-slate-700"></div>
       </div>
     );
   }
 
   return (
-    <div className="p-2 md:p-6 space-y-6 md:space-y-8 w-full mx-auto animate-fade-in shadow-md bg-gray-50 rounded-lg">
+    <div className="mx-auto w-full animate-fade-in space-y-6 rounded-lg bg-slate-50 p-2 shadow-md transition-colors dark:bg-slate-950 dark:shadow-slate-950/40 md:space-y-8 md:p-6">
       <Card className="mb-6">
         <CardHeader className="border-b p-3 md:p-4">
           <CardTitle className="flex items-center justify-between">
@@ -8511,7 +8511,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               {dpjpMeta.dokterLainnya.length} dokter lainnya
                             </button>
                             {isDpjpExpanded ? (
-                              <div className="mt-2 space-y-1 rounded-md border bg-white p-2">
+                              <div className="mt-2 space-y-1 rounded-md border bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
                                 {dpjpMeta.dokterLainnya.map((dokter, index) => (
                                   <div key={`${dokter.nama}-${dokter.jenis}-${index}`} className="flex flex-wrap items-center gap-2 text-xs">
                                     <span className="font-medium">{dokter.nama}</span>
@@ -8670,7 +8670,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                       {expandedVisitKeys[visit.no_rawat] ? (
                       loadingVisitDetailsKeys[visit.no_rawat] ? (
-                        <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
+                        <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/70">
                           Memuat detail kunjungan...
                         </div>
                       ) : visit.details_loaded ? (
@@ -12084,11 +12084,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       {activeTab === 'visits' ? (
         <div
           ref={loadMoreRef}
-          className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground"
+          className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/70"
         >
           {loadingMoreVisits ? (
             <div className="flex items-center justify-center gap-3">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-primary"></div>
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-primary dark:border-slate-700"></div>
               <span>Memuat riwayat {visitHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} berikutnya...</span>
             </div>
           ) : hasMoreCurrentVisitTab ? (
@@ -12102,11 +12102,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       ) : activeTab === 'examinations' && !formattedNoRawat ? (
         <div
           ref={loadMoreExaminationRef}
-          className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground"
+          className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/70"
         >
           {loadingMoreExaminations ? (
             <div className="flex items-center justify-center gap-3">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-primary"></div>
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-primary dark:border-slate-700"></div>
               <span>Memuat data pemeriksaan {examinationHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} berikutnya...</span>
             </div>
           ) : hasMoreCurrentExaminationTab ? (

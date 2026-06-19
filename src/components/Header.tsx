@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Bell, BellOff, BellRing, FlaskConical, Loader2, Menu, Pill, Radio, Search, Settings as SettingsIcon, User, LogOut } from 'lucide-react';
+import { Bell, BellOff, BellRing, FlaskConical, Loader2, Menu, Moon, Pill, Radio, Search, Settings as SettingsIcon, Sun, User, LogOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { API_URLS } from '@/config/api';
@@ -18,6 +18,7 @@ import {
   loadNotificationPreferences,
   saveNotificationPreferences
 } from '@/lib/notification-preferences';
+import { useTheme } from 'next-themes';
 
 interface HeaderProps {
   hospitalName: string;
@@ -120,13 +121,13 @@ const getNotificationTypeIcon = (type: DoctorNotificationItem['type']) => {
 const getNotificationStatusClassName = (status: DoctorNotificationItem['status']) => {
   switch (status) {
     case 'menunggu':
-      return 'bg-amber-100 text-amber-700';
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300';
     case 'diproses':
-      return 'bg-blue-100 text-blue-700';
+      return 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300';
     case 'selesai':
-      return 'bg-emerald-100 text-emerald-700';
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300';
     default:
-      return 'bg-slate-100 text-slate-700';
+      return 'bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-300';
   }
 };
 
@@ -196,15 +197,15 @@ const sortNotificationsByPriority = (items: DoctorNotificationItem[]) => {
 
 const getNotificationAccentClassName = (item: DoctorNotificationItem) => {
   if (isResultReadyNotification(item)) {
-    return 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 focus:bg-emerald-100/70';
+    return 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 focus:bg-emerald-100/70 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15 dark:focus:bg-emerald-500/15';
   }
 
   if (item.status === 'menunggu') {
-    return 'border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 focus:bg-amber-100/70';
+    return 'border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 focus:bg-amber-100/70 dark:border-amber-500/30 dark:bg-amber-500/10 dark:hover:bg-amber-500/15 dark:focus:bg-amber-500/15';
   }
 
   if (item.status === 'diproses') {
-    return 'border-blue-200 bg-blue-50/60 hover:bg-blue-100/70 focus:bg-blue-100/70';
+    return 'border-blue-200 bg-blue-50/60 hover:bg-blue-100/70 focus:bg-blue-100/70 dark:border-blue-500/30 dark:bg-blue-500/10 dark:hover:bg-blue-500/15 dark:focus:bg-blue-500/15';
   }
 
   return 'border-transparent';
@@ -321,6 +322,7 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { resolvedTheme, setTheme } = useTheme();
   const [notifications, setNotifications] = React.useState<DoctorNotificationItem[]>([]);
   const [notificationLoading, setNotificationLoading] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<NotificationTab>('prescription');
@@ -341,7 +343,13 @@ const Header: React.FC<HeaderProps> = ({
   const [notificationResultError, setNotificationResultError] = React.useState('');
   const [notificationLabResults, setNotificationLabResults] = React.useState<NotificationLabResult[]>([]);
   const [notificationRadiologyResults, setNotificationRadiologyResults] = React.useState<NotificationRadiologyResult[]>([]);
+  const [themeReady, setThemeReady] = React.useState(false);
   const soundEnabled = notificationPreferences.sound;
+  const isDarkMode = resolvedTheme === 'dark';
+
+  React.useEffect(() => {
+    setThemeReady(true);
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') {
@@ -791,8 +799,8 @@ const Header: React.FC<HeaderProps> = ({
                             key={`${groupName}-${testIndex}`}
                             className={cn(
                               'grid gap-4 rounded-r border-l-2 border-primary bg-background px-3 py-2 md:grid-cols-4',
-                              test.keterangan === 'H' && 'bg-red-100 text-red-900',
-                              test.keterangan === 'L' && 'bg-yellow-100 text-yellow-900'
+                              test.keterangan === 'H' && 'bg-red-100 text-red-900 dark:bg-red-500/10 dark:text-red-100',
+                              test.keterangan === 'L' && 'bg-yellow-100 text-yellow-900 dark:bg-yellow-500/10 dark:text-yellow-100'
                             )}
                           >
                             <div>
@@ -882,13 +890,13 @@ const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-    <header className="fixed top-0 left-0 right-0 bg-primary h-16 w-full shadow-md z-50">
+    <header className="fixed left-0 right-0 top-0 z-50 h-16 w-full border-b border-white/10 bg-primary/95 shadow-md backdrop-blur dark:border-emerald-950/60 dark:bg-emerald-950/95">
       <div className="h-full flex items-center justify-between px-4 md:px-6">
         <div className="flex items-center">
           {isMobile && (
             <button 
               onClick={onMenuClick}
-              className="mr-3 p-1.5 rounded-full text-white hover:bg-white/20 transition-colors"
+              className="mr-3 rounded-full p-1.5 text-white transition-colors hover:bg-white/20 dark:hover:bg-white/10"
               aria-label="Toggle navigation menu"
             >
               <Menu className="h-6 w-6" />
@@ -910,7 +918,7 @@ const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onMedicalRecordSearchClick}
-              className="w-72 bg-white/10 text-left text-white/70 hover:bg-white/15 border-none rounded-full py-1.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 transition-colors"
+              className="w-72 rounded-full border-none bg-white/10 py-1.5 pl-10 pr-4 text-left text-sm text-white/70 transition-colors hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/20 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
             >
               Cari rekam medis pasien...
             </button>
@@ -919,7 +927,7 @@ const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onMedicalRecordSearchClick}
-            className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors md:hidden"
+            className="rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 md:hidden"
             aria-label="Cari rekam medis pasien"
           >
             <Search className="h-5 w-5 text-white" />
@@ -929,7 +937,7 @@ const Header: React.FC<HeaderProps> = ({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="relative p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                className="relative rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10"
                 aria-label="Notifikasi proses layanan"
               >
                 {notificationLoading ? (
@@ -945,7 +953,7 @@ const Header: React.FC<HeaderProps> = ({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[360px] p-0">
-              <div className="px-4 py-3 border-b">
+              <div className="border-b px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <DropdownMenuLabel className="p-0">Notifikasi Proses</DropdownMenuLabel>
                   <div className="flex items-center gap-1">
@@ -980,13 +988,13 @@ const Header: React.FC<HeaderProps> = ({
                 <p className="mt-1 text-xs text-muted-foreground">
                   Pantau proses peresepan, laboratorium, dan radiologi pasien Anda.
                 </p>
-                <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:bg-slate-900 dark:text-slate-300">
                   <span>
                     Total aktif: <span className="font-semibold">{notificationSummary.active}</span>
                   </span>
                   <span className={cn(
                     'rounded-full px-2 py-1 font-semibold',
-                    soundEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                    soundEnabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
                   )}>
                     {soundEnabled ? 'Suara ON' : 'Suara OFF'}
                   </span>
@@ -1020,15 +1028,15 @@ const Header: React.FC<HeaderProps> = ({
                   <TabsContent key={tab} value={tab} className="mt-0">
                     <div className="px-2 pb-2">
                       <div className="grid grid-cols-3 gap-2 px-2 py-2 text-xs">
-                        <div className="rounded-md bg-amber-50 px-2 py-2 text-amber-700">
+                        <div className="rounded-md bg-amber-50 px-2 py-2 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
                           <div className="font-semibold">{tabStats[tab].menunggu}</div>
                           <div>Menunggu</div>
                         </div>
-                        <div className="rounded-md bg-blue-50 px-2 py-2 text-blue-700">
+                        <div className="rounded-md bg-blue-50 px-2 py-2 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
                           <div className="font-semibold">{tabStats[tab].diproses}</div>
                           <div>Diproses</div>
                         </div>
-                        <div className="rounded-md bg-emerald-50 px-2 py-2 text-emerald-700">
+                        <div className="rounded-md bg-emerald-50 px-2 py-2 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
                           <div className="font-semibold">{tabStats[tab].selesai}</div>
                           <div>Selesai</div>
                         </div>
@@ -1038,7 +1046,7 @@ const Header: React.FC<HeaderProps> = ({
                           {getTabLabel(tab)}: {tabStats[tab].total} item, {tabStats[tab].active} aktif
                         </span>
                         {(tab === 'laboratory' || tab === 'radiology') && tabStats[tab].readyResults > 0 ? (
-                          <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700">
+                          <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
                             Hasil siap: {tabStats[tab].readyResults}
                           </span>
                         ) : null}
@@ -1089,8 +1097,8 @@ const Header: React.FC<HeaderProps> = ({
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <div className="flex items-center gap-2 cursor-pointer">
-                <div className="h-9 w-9 bg-white/20 rounded-full flex items-center justify-center">
+              <div className="flex cursor-pointer items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 dark:bg-white/10">
                   <User className="h-5 w-5 text-white" />
                 </div>
                 {!isMobile && username && (
@@ -1102,6 +1110,21 @@ const Header: React.FC<HeaderProps> = ({
               <div className="px-2 py-1.5 text-sm font-medium">
                 {username || 'User'}
               </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
+                className="cursor-pointer items-start gap-3 py-2"
+              >
+                {themeReady && isDarkMode ? (
+                  <Sun className="mt-0.5 h-4 w-4 shrink-0" />
+                ) : (
+                  <Moon className="mt-0.5 h-4 w-4 shrink-0" />
+                )}
+                <div className="flex min-w-0 flex-col">
+                  <span className="font-medium">{themeReady && isDarkMode ? 'Mode Terang' : 'Mode Gelap'}</span>  
+                  
+                </div>
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate('/pengaturan')} className="cursor-pointer">
                 <SettingsIcon className="mr-2 h-4 w-4" />

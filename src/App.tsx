@@ -41,6 +41,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import MedicalRecordSearchModal from "./components/modals/MedicalRecordSearchModal";
 import PwaInstallPrompt from "./components/PwaInstallPrompt";
 import { API_URLS } from "./config/api";
+import { ThemeProvider } from "next-themes";
 
 const queryClient = new QueryClient();
 
@@ -145,7 +146,7 @@ const AppContent = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100 pt-16">
+    <div className="min-h-screen flex flex-col bg-slate-100 pt-16 text-foreground transition-colors dark:bg-slate-950">
       <Header 
         hospitalName="RSUD H. DAMANHURI" 
         onMenuClick={() => setSidebarOpen(true)}
@@ -171,7 +172,7 @@ const AppContent = () => {
           </div>
         )}
         
-        <div className="flex-1 p-2 sm:p-4 overflow-auto">
+        <div className="flex-1 overflow-auto p-2 sm:p-4">
           <Routes location={backgroundLocation || location}>
             <Route path="/" element={<Index />} />
             <Route path="/pasien" element={<Patients />} />
@@ -250,15 +251,17 @@ const AppContent = () => {
 const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <AppContent />
-          </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
+      <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <AppContent />
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 };
