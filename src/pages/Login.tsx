@@ -194,10 +194,10 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4 transition-colors dark:bg-slate-950">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          <div className="bg-primary p-8 text-white text-center">
+        <div className="overflow-hidden rounded-lg bg-white shadow-lg transition-colors dark:bg-slate-900 dark:shadow-slate-950/40">
+          <div className="bg-primary p-8 text-center text-white dark:bg-emerald-950">
             <div className="flex justify-center mb-4">
               <img 
                 src={logoImg} 
@@ -214,7 +214,7 @@ const Login = () => {
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
                   otpLoginEnabled
                     ? 'bg-white/20 text-white'
-                    : 'bg-emerald-100 text-emerald-800'
+                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-200 dark:text-emerald-950'
                 }`}>
                   {otpLoginEnabled ? 'OTP login aktif di perangkat ini' : 'OTP login nonaktif di perangkat ini'}
                 </span>
@@ -224,11 +224,11 @@ const Login = () => {
           
           {!showOTP ? (
             // Login Form
-            <form onSubmit={handleSubmit} className="p-8 space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6 p-8">
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 dark:text-slate-500">
                     <User size={18} />
                   </div>
                   <Input
@@ -246,7 +246,7 @@ const Login = () => {
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 dark:text-slate-500">
                     <Lock size={18} />
                   </div>
                   <Input
@@ -294,12 +294,12 @@ const Login = () => {
             </form>
           ) : (
             // OTP Verification Form
-            <form onSubmit={handleOTPSubmit} className="p-8 space-y-6">
-              <div className="text-center space-y-2">
+            <form onSubmit={handleOTPSubmit} className="space-y-6 p-8">
+              <div className="space-y-2 text-center">
                 <div className="flex justify-center">
                   <Phone className="h-12 w-12 text-primary" />
                 </div>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
                   Masukkan kode OTP 6 digit yang telah dikirim ke WhatsApp
                 </p>
                 <p className="font-medium text-primary">{phoneNumber}</p>
@@ -343,7 +343,7 @@ const Login = () => {
                       type="button"
                       onClick={handleResendOTP}
                       disabled={resendLoading}
-                      className="text-primary hover:underline disabled:opacity-50"
+                      className="text-primary disabled:opacity-50 hover:underline"
                     >
                       {resendLoading ? 'Mengirim...' : 'Kirim Ulang OTP'}
                     </button>
@@ -351,7 +351,7 @@ const Login = () => {
                     <button
                       type="button"
                       onClick={handleBackToLogin}
-                      className="text-gray-600 hover:underline"
+                      className="text-slate-600 hover:underline dark:text-slate-300"
                     >
                       Kembali ke Login
                     </button>

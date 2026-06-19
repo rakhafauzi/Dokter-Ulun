@@ -4,7 +4,7 @@ import Dashboard from '@/components/Dashboard';
 
 const Index = () => {
   return (
-    <div className="animate-fade-in bg-gray-50 min-h-screen w-full">
+    <div className="min-h-screen w-full animate-fade-in bg-slate-50 transition-colors dark:bg-slate-950">
       <Dashboard />
     </div>
   );

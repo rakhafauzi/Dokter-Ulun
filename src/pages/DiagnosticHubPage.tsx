@@ -746,7 +746,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
   if (!canAccess) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-gray-900">{config.title}</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{config.title}</h1>
         <Card>
           <CardContent className="p-6 text-sm text-red-600">
             {accessError || `Anda tidak memiliki akses ke halaman ${config.title.toLowerCase()}.`}
@@ -757,11 +757,11 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
   }
 
   return (
-    <div className="p-2 md:p-6 space-y-6 w-full mx-auto animate-fade-in shadow-md bg-white rounded-md">
+    <div className="mx-auto w-full animate-fade-in space-y-6 rounded-md bg-white p-2 shadow-md transition-colors dark:bg-slate-950 dark:shadow-slate-950/40 md:p-6">
       <div className="flex items-center gap-3">
         {config.icon}
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">{config.title}</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{config.title}</h1>
           <p className="text-sm text-muted-foreground">{config.description}</p>
         </div>
       </div>
