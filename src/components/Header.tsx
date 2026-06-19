@@ -1121,7 +1121,7 @@ const Header: React.FC<HeaderProps> = ({
                   <Moon className="mt-0.5 h-4 w-4 shrink-0" />
                 )}
                 <div className="flex min-w-0 flex-col">
-                  <span className="font-medium">{themeReady && isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+                  <span className="font-medium">{themeReady && isDarkMode ? 'Mode Terang' : 'Mode Gelap'}</span>  
                   
                 </div>
               </DropdownMenuItem>
