@@ -101,6 +101,9 @@ interface LabTest {
   hasil: string;
   rujukan: string;
   keterangan: string;
+  satuan?: string;
+  metode?: string;
+  nilai_rujukan?: string;
 }
 
 interface LabServiceOption {
@@ -3745,7 +3748,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <div
               key={`${groupName}-${testIndex}`}
               className={cn(
-                "grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2 bg-background",
+                "grid grid-cols-1 md:grid-cols-5 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2 bg-background",
                 test.keterangan === 'H' && "bg-red-100 text-red-900",
                 test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
               )}
@@ -3761,6 +3764,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <div>
                 <p className="text-sm text-muted-foreground">Rujukan</p>
                 <p className="font-medium">{test.rujukan || '-'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Satuan</p>
+                <p className="font-medium">{test.satuan || '-'}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Keterangan</p>

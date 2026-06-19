@@ -1445,7 +1445,14 @@ class GetMedicalRecordService {
   // Helper function to fetch lab results
   static async fetchLaboratory(noRawat, status = null) {
     const labQuery = `
-      SELECT pl.*, jp.nm_perawatan, dpl.nilai, dpl.nilai_rujukan, dpl.keterangan, tl.Pemeriksaan AS pemeriksaan
+      SELECT
+        pl.*,
+        jp.nm_perawatan,
+        dpl.nilai,
+        dpl.nilai_rujukan,
+        dpl.keterangan,
+        tl.Pemeriksaan AS pemeriksaan,
+        tl.satuan
       FROM periksa_lab pl 
       LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw 
       LEFT JOIN detail_periksa_lab dpl
@@ -1473,6 +1480,7 @@ class GetMedicalRecordService {
           pemeriksaan: row.pemeriksaan || '',
           hasil: row.nilai || '',
           rujukan: row.nilai_rujukan || '',
+          satuan: row.satuan || '',
           keterangan: row.keterangan || ''
         });
       }
@@ -1487,7 +1495,14 @@ class GetMedicalRecordService {
 
   static async fetchLaboratoryMicro(noRawat, status = null) {
     const labQuery = `
-      SELECT pl.*, jp.nm_perawatan, dpl.nilai, dpl.nilai_rujukan, dpl.keterangan, tl.Pemeriksaan AS pemeriksaan
+      SELECT
+        pl.*,
+        jp.nm_perawatan,
+        dpl.nilai,
+        dpl.nilai_rujukan,
+        dpl.keterangan,
+        tl.Pemeriksaan AS pemeriksaan,
+        tl.satuan
       FROM periksa_lab pl
       LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw
       LEFT JOIN detail_periksa_lab dpl
@@ -1516,6 +1531,7 @@ class GetMedicalRecordService {
           pemeriksaan: row.pemeriksaan || '',
           hasil: row.nilai || '',
           rujukan: row.nilai_rujukan || '',
+          satuan: row.satuan || '',
           keterangan: row.keterangan || ''
         });
       }
