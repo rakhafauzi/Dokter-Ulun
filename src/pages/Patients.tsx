@@ -2002,9 +2002,17 @@ const RawatJagaTabs = () => {
         setActiveTab(value as RawatJagaTab);
       }}
     >
-      <TabsList className="mb-4 flex h-auto flex-wrap justify-start gap-2 bg-transparent p-0">
+      <TabsList className="mb-4">
         {rawatJagaTabOptions.map((option) => (
           <TabsTrigger key={option.value} value={option.value}>
+            {option.value === 'belum-pulang'
+              || option.value === 'sudah-pulang'
+              || option.value === 'rawat-gabung'
+              || option.value === 'rawat-gabung-pulang' ? (
+              <Home className="mr-2 h-4 w-4" />
+            ) : (
+              <File className="mr-2 h-4 w-4" />
+            )}
             <span>{option.label} ({tabCounts[option.countKey]})</span>
           </TabsTrigger>
         ))}
