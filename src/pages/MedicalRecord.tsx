@@ -2399,9 +2399,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return normalized && normalized === currentUsername;
       })
     );
+  const isPrescriptionPendingService = (med: any) => {
+    const normalizedStatus = String(med?.status_layanan || '').trim();
+    return !normalizedStatus || normalizedStatus === 'Belum Terlayani';
+  };
   const canDeleteExamination = (exam: any) => matchesCurrentUser(exam?.nip, exam?.kd_dokter);
   const canDeleteProcedure = (procedure: any) => matchesCurrentUser(procedure?.kd_dokter, procedure?.nip);
-  const canDeletePrescription = (med: any) => matchesCurrentUser(med?.kd_dokter);
+  const canDeletePrescription = (med: any) => matchesCurrentUser(med?.kd_dokter) && isPrescriptionPendingService(med);
   const canDeleteLabRequest = (lab: any) => matchesCurrentUser(lab?.dokter_perujuk);
   const canDeleteRadiologyRequest = (rad: any) => matchesCurrentUser(rad?.dokter_perujuk);
   const canEditExamination = canDeleteExamination;
@@ -3507,18 +3511,23 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return items.map((med, index) => {
       const allowedToDelete = canDeletePrescription(med);
+      const isPrescriptionVerified = !isPrescriptionPendingService(med);
       const compoundItems = Array.isArray(med?.compounds) ? med.compounds : [];
       const hasCompoundItems = compoundItems.length > 0;
       const hasCompoundItemsOriginal = Boolean(med?.__has_compounds_original) || hasCompoundItems;
       const medicationItems = Array.isArray(med?.obat) ? med.obat : [];
       const hasMedicationItems = medicationItems.length > 0;
       const canEditThisPrescription = canEditPrescription(med) && !hasCompoundItemsOriginal;
-      const editPrescriptionLabel = canEditPrescription(med)
-        ? (hasCompoundItemsOriginal ? 'Ada Racikan' : 'Edit Resep')
-        : 'Bukan Data Anda';
+      const editPrescriptionLabel = isPrescriptionVerified
+        ? 'Verified'
+        : canEditPrescription(med)
+          ? (hasCompoundItemsOriginal ? 'Ada Racikan' : 'Edit Resep')
+          : 'Bukan Data Anda';
       const deletePrescriptionLabel = deletingPrescriptionNo === med.no_resep
         ? 'Menghapus...'
-        : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
+        : isPrescriptionVerified
+          ? 'Verified'
+          : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
 
       return (
       <div key={med.__split_key || `${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
@@ -3531,6 +3540,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-100/70 px-2.5 py-0.5 text-xs font-medium text-violet-700">
                   {med.nm_dokter ? `${med.nm_dokter}` : `${med.kd_dokter || '-'}`}
                 </span>
+                {isPrescriptionVerified ? (
+                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/50 dark:text-emerald-300">
+                    Verified
+                  </span>
+                ) : null}
               </div>
             </div>
             <div>
