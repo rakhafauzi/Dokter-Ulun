@@ -6408,6 +6408,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     user?.name
   ]);
 
+  const handleSelectBalanceCairanEntry = useCallback((entry: BalanceCairanEntry) => {
+    if (Number(selectedBalanceCairanId) === Number(entry.id)) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Pilih data balance cairan tanggal ${formatLongDateSafe(entry.tanggal)} jam ${String(entry.bc_ke || '-')}?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSelectedBalanceCairanId(entry.id);
+  }, [selectedBalanceCairanId]);
+
   const handleSaveEkstrapiramidal = useCallback(async () => {
     if (!formattedNoRawat) {
       toast({
@@ -10613,7 +10629,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                                 type="button"
                                                 size="sm"
                                                 variant={selectedBalanceCairanId === entry.id ? 'default' : 'outline'}
-                                                onClick={() => setSelectedBalanceCairanId(entry.id)}
+                                                onClick={() => handleSelectBalanceCairanEntry(entry)}
                                               >
                                                 {selectedBalanceCairanId === entry.id ? 'Dipilih' : 'Pilih'}
                                               </Button>
