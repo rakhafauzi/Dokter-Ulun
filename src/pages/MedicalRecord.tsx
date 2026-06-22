@@ -420,7 +420,7 @@ const PAGE_SIZE = 5;
 type VisitHistoryTabValue = 'outpatient' | 'inpatient';
 type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
 type CareSectionTabValue = 'outpatient' | 'inpatient';
-type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi';
+type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi' | 'terapis';
 type ExaminationRoleValue = Exclude<ExaminationRoleFilterValue, 'all'>;
 type MedicationRequestFilterValue = 'umum' | 'racikan' | 'pulang' | 'ibs' | 'package';
 type MedicalRecordFetchOptions = {
@@ -471,7 +471,8 @@ const EXAMINATION_ROLE_OPTIONS: Array<{ value: ExaminationRoleFilterValue; label
   { value: 'medis', label: 'Dokter' },
   { value: 'paramedis', label: 'Perawat' },
   { value: 'apoteker', label: 'Farmasi' },
-  { value: 'gizi', label: 'Gizi' }
+  { value: 'gizi', label: 'Gizi' },
+  { value: 'terapis', label: 'Terapis' }
 ];
 
 const resolveExaminationRole = (...values: Array<string | null | undefined>): ExaminationRoleValue | '' => {
@@ -480,10 +481,16 @@ const resolveExaminationRole = (...values: Array<string | null | undefined>): Ex
     .filter(Boolean);
 
   const explicitRole = normalizedValues.find(
-    (value) => value === 'medis' || value === 'paramedis' || value === 'apoteker' || value === 'gizi'
+    (value) => value === 'medis' || value === 'paramedis' || value === 'apoteker' || value === 'gizi' || value === 'terapis'
   );
 
-  if (explicitRole === 'medis' || explicitRole === 'paramedis' || explicitRole === 'apoteker' || explicitRole === 'gizi') {
+  if (
+    explicitRole === 'medis' ||
+    explicitRole === 'paramedis' ||
+    explicitRole === 'apoteker' ||
+    explicitRole === 'gizi' ||
+    explicitRole === 'terapis'
+  ) {
     return explicitRole;
   }
 
@@ -496,7 +503,13 @@ const resolveExaminationRole = (...values: Array<string | null | undefined>): Ex
 
 const normalizeExaminationRole = (value?: string | null): ExaminationRoleValue | '' => {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'medis' || normalized === 'paramedis' || normalized === 'apoteker' || normalized === 'gizi') {
+  if (
+    normalized === 'medis' ||
+    normalized === 'paramedis' ||
+    normalized === 'apoteker' ||
+    normalized === 'gizi' ||
+    normalized === 'terapis'
+  ) {
     return normalized;
   }
   return '';
@@ -512,6 +525,8 @@ const getExaminationRoleLabel = (value?: string | null) => {
       return 'Farmasi';
     case 'gizi':
       return 'Gizi';
+    case 'terapis':
+      return 'Terapis';
     default:
       return 'Tanpa Role';
   }
@@ -538,6 +553,11 @@ const getExaminationRoleStyles = (value?: string | null) => {
       return {
         badge: 'border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900 dark:text-amber-100',
         soap: 'border-amber-200 bg-amber-50/80 dark:border-amber-800 dark:bg-amber-950'
+      };
+    case 'terapis':
+      return {
+        badge: 'border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-700 dark:bg-rose-900 dark:text-rose-100',
+        soap: 'border-rose-200 bg-rose-50/80 dark:border-rose-800 dark:bg-rose-950'
       };
     default:
       return {
