@@ -422,7 +422,7 @@ type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
 type CareSectionTabValue = 'outpatient' | 'inpatient';
 type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi' | 'terapis';
 type ExaminationRoleValue = Exclude<ExaminationRoleFilterValue, 'all'>;
-type MedicationRequestFilterValue = 'umum' | 'racikan' | 'pulang' | 'ibs' | 'package';
+type MedicationRequestFilterValue = 'all' | 'umum' | 'racikan' | 'pulang' | 'ibs' | 'package';
 type MedicalRecordFetchOptions = {
   reset?: boolean;
   outpatientPage?: number;
@@ -822,6 +822,8 @@ const matchesMedicationRequestFilter = (item: any, filter: MedicationRequestFilt
   const hasCompoundItems = Array.isArray(item?.compounds) && item.compounds.length > 0;
 
   switch (filter) {
+    case 'all':
+      return true;
     case 'racikan':
       return status !== 'Pulang' && status !== 'IBS' && !isPackage && hasCompoundItems;
     case 'pulang':
@@ -833,6 +835,45 @@ const matchesMedicationRequestFilter = (item: any, filter: MedicationRequestFilt
     default:
       return status !== 'Pulang' && status !== 'IBS' && !isPackage && !hasCompoundItems;
   }
+};
+
+const getMedicationRequestTypeMeta = (item: any) => {
+  const status = item?.status || mapPrescriptionSourceToStatus(item?.source);
+  const isPackage = Boolean(item?.is_package);
+  const hasCompoundItems = Array.isArray(item?.compounds) && item.compounds.length > 0;
+
+  if (isPackage) {
+    return {
+      label: 'Paket Obat & BHP',
+      className: 'border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900 dark:text-emerald-100'
+    };
+  }
+
+  if (status === 'Pulang') {
+    return {
+      label: 'Obat Pulang',
+      className: 'border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900 dark:text-amber-100'
+    };
+  }
+
+  if (status === 'IBS') {
+    return {
+      label: 'Obat IBS',
+      className: 'border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-700 dark:bg-rose-900 dark:text-rose-100'
+    };
+  }
+
+  if (hasCompoundItems) {
+    return {
+      label: 'Racikan',
+      className: 'border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-700 dark:bg-sky-900 dark:text-sky-100'
+    };
+  }
+
+  return {
+    label: 'Umum',
+    className: 'border-violet-200 bg-violet-100 text-violet-700 dark:border-violet-700 dark:bg-violet-900 dark:text-violet-100'
+  };
 };
 
 const mapRequestSourceToStatusRawat = (source?: string | null): LabStatusRawat => {
@@ -1467,7 +1508,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [procedureStatusRawat, setProcedureStatusRawat] = useState<ProcedureStatusRawat>('Ralan');
   const [editingPrescriptionNo, setEditingPrescriptionNo] = useState<string | null>(null);
   const [deletingPrescriptionNo, setDeletingPrescriptionNo] = useState<string | null>(null);
-  const [medicationRequestFilter, setMedicationRequestFilter] = useState<MedicationRequestFilterValue>('umum');
+  const [medicationRequestFilter, setMedicationRequestFilter] = useState<MedicationRequestFilterValue>('all');
   const [medicationDataTab, setMedicationDataTab] = useState<'current' | 'history'>('history');
   const [medicationCurrentCareTab, setMedicationCurrentCareTab] = useState<CareSectionTabValue>(preferredCareSectionTab);
   const [showAllOutpatientMedicationRequests, setShowAllOutpatientMedicationRequests] = useState(false);
@@ -3643,6 +3684,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     return items.map((med, index) => {
       const allowedToDelete = canDeletePrescription(med);
       const isPrescriptionVerified = !isPrescriptionPendingService(med);
+      const medicationTypeMeta = getMedicationRequestTypeMeta(med);
       const compoundItems = Array.isArray(med?.compounds) ? med.compounds : [];
       const hasCompoundItems = compoundItems.length > 0;
       const hasCompoundItemsOriginal = Boolean(med?.__has_compounds_original) || hasCompoundItems;
@@ -3687,7 +3729,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <p className="font-medium">{med.no_rawat}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Sumber</p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">Sumber</p>
+                <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium', medicationTypeMeta.className)}>
+                  {medicationTypeMeta.label}
+                </span>
+              </div>
               <p className="font-medium">{med.source}</p>
               {med.is_package ? (
                 <p className="text-xs text-emerald-700">
@@ -11609,15 +11656,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                     <h3 className="text-lg font-semibold">Riwayat Resep Obat</h3>
                     <div className="flex flex-wrap gap-2">
                       {[
+                        { value: 'all', label: 'Semua' },
                         { value: 'umum', label: 'Umum' },
                         { value: 'racikan', label: 'Racikan' },
+                        { value: 'package', label: 'Paket Obat & BHP' },
                         ...(medicationCurrentCareTab === 'inpatient'
                           ? [
-                              { value: 'pulang', label: 'Obat Pulang' },
-                              { value: 'ibs', label: 'Obat IBS' }
+                              { value: 'ibs', label: 'Obat IBS' },
+                              { value: 'pulang', label: 'Obat Pulang' }
                             ]
-                          : []),
-                        { value: 'package', label: 'Paket Obat & BHP' }
+                          : [])
                       ].map((filterOption) => (
                         <Button
                           key={filterOption.value}
