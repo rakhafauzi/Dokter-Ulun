@@ -268,9 +268,7 @@ class RawatInapDataService {
           FROM resume_pasien_ranap rpr_claim
           WHERE rpr_claim.no_rawat = ki.no_rawat
             AND rpr_claim.ket_keluar IS NULL
-            AND COALESCE(rpr_claim.ket_keadaan, '') NOT LIKE ?
         )`);
-        extraParams.push(usernameLike);
         if (normalizedClaimVerificationStatus === 'unverified') {
           extraConditions.push(`EXISTS (
             SELECT 1

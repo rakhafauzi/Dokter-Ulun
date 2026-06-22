@@ -616,6 +616,8 @@ class GetMedicalRecordService {
         p1.*,
         p2.nama,
         CASE
+          WHEN LOWER(COALESCE(TRIM(mu.role), '')) = 'paramedis'
+            AND LOWER(COALESCE(TRIM(p3.bidang), '')) = 'irsyad' THEN 'terapis'
           WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
           WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
           ELSE ''
@@ -623,6 +625,7 @@ class GetMedicalRecordService {
       FROM ${table} p1
       LEFT JOIN pegawai p2 ON p2.nik = p1.nip
       LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
+      LEFT JOIN pegawai p3 ON TRIM(p3.nik) = TRIM(mu.username)
       WHERE p1.no_rawat = ?
       ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
     `;
@@ -2087,6 +2090,8 @@ class GetMedicalRecordService {
           p1.*,
           p2.nama,
           CASE
+            WHEN LOWER(COALESCE(TRIM(mu.role), '')) = 'paramedis'
+              AND LOWER(COALESCE(TRIM(p3.bidang), '')) = 'irsyad' THEN 'terapis'
             WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
             WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
             ELSE ''
@@ -2097,6 +2102,7 @@ class GetMedicalRecordService {
         INNER JOIN reg_periksa r ON r.no_rawat = p1.no_rawat
         LEFT JOIN pegawai p2 ON p2.nik = p1.nip
         LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
+        LEFT JOIN pegawai p3 ON TRIM(p3.nik) = TRIM(mu.username)
         WHERE r.no_rkm_medis = ? AND r.status_lanjut = ? ${focusFilter}
         ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
         LIMIT ? OFFSET ?

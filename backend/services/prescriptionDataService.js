@@ -358,6 +358,17 @@ class PrescriptionDataService {
       throw new Error('Kode bangsal stok resep tidak ditemukan');
     }
 
+    const [bangsalRows] = await connection.execute(
+      `
+        SELECT COALESCE(nm_bangsal, '') AS nm_bangsal
+        FROM bangsal
+        WHERE kd_bangsal = ?
+        LIMIT 1
+      `,
+      [kdBangsal]
+    );
+    const namaBangsal = String(bangsalRows?.[0]?.nm_bangsal || '').trim() || kdBangsal;
+
     const requestedByCode = new Map();
     for (const item of Array.isArray(medicines) ? medicines : []) {
       const code = String(item?.kode_brng || '').trim();
@@ -382,12 +393,14 @@ class PrescriptionDataService {
         SELECT
           gb.kode_brng,
           COALESCE(db.nama_brng, '') AS nama_brng,
+          COALESCE(b.nm_bangsal, '') AS nm_bangsal,
           SUM(COALESCE(gb.stok, 0)) AS stok
         FROM gudangbarang gb
         LEFT JOIN databarang db ON db.kode_brng = gb.kode_brng
+        LEFT JOIN bangsal b ON b.kd_bangsal = gb.kd_bangsal
         WHERE gb.kd_bangsal = ?
           AND gb.kode_brng IN (${placeholders})
-        GROUP BY gb.kode_brng, db.nama_brng
+        GROUP BY gb.kode_brng, db.nama_brng, b.nm_bangsal
       `,
       [kdBangsal, ...codes]
     );
@@ -410,7 +423,8 @@ class PrescriptionDataService {
     }
 
     if (shortages.length) {
-      throw new Error(`Stok tidak mencukupi di bangsal ${kdBangsal}: ${shortages.join('; ')}`);
+      const resolvedBangsalName = String(rows?.[0]?.nm_bangsal || '').trim() || namaBangsal;
+      throw new Error(`Stok tidak mencukupi di ${resolvedBangsalName} : ${shortages.join('; ')}`);
     }
   }
 

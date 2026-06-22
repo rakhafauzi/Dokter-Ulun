@@ -420,9 +420,9 @@ const PAGE_SIZE = 5;
 type VisitHistoryTabValue = 'outpatient' | 'inpatient';
 type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
 type CareSectionTabValue = 'outpatient' | 'inpatient';
-type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi';
+type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi' | 'terapis';
 type ExaminationRoleValue = Exclude<ExaminationRoleFilterValue, 'all'>;
-type MedicationRequestFilterValue = 'umum' | 'racikan' | 'pulang' | 'ibs' | 'package';
+type MedicationRequestFilterValue = 'all' | 'umum' | 'racikan' | 'pulang' | 'ibs' | 'package';
 type MedicalRecordFetchOptions = {
   reset?: boolean;
   outpatientPage?: number;
@@ -471,7 +471,8 @@ const EXAMINATION_ROLE_OPTIONS: Array<{ value: ExaminationRoleFilterValue; label
   { value: 'medis', label: 'Dokter' },
   { value: 'paramedis', label: 'Perawat' },
   { value: 'apoteker', label: 'Farmasi' },
-  { value: 'gizi', label: 'Gizi' }
+  { value: 'gizi', label: 'Gizi' },
+  { value: 'terapis', label: 'Terapis' }
 ];
 
 const resolveExaminationRole = (...values: Array<string | null | undefined>): ExaminationRoleValue | '' => {
@@ -480,10 +481,16 @@ const resolveExaminationRole = (...values: Array<string | null | undefined>): Ex
     .filter(Boolean);
 
   const explicitRole = normalizedValues.find(
-    (value) => value === 'medis' || value === 'paramedis' || value === 'apoteker' || value === 'gizi'
+    (value) => value === 'medis' || value === 'paramedis' || value === 'apoteker' || value === 'gizi' || value === 'terapis'
   );
 
-  if (explicitRole === 'medis' || explicitRole === 'paramedis' || explicitRole === 'apoteker' || explicitRole === 'gizi') {
+  if (
+    explicitRole === 'medis' ||
+    explicitRole === 'paramedis' ||
+    explicitRole === 'apoteker' ||
+    explicitRole === 'gizi' ||
+    explicitRole === 'terapis'
+  ) {
     return explicitRole;
   }
 
@@ -496,7 +503,13 @@ const resolveExaminationRole = (...values: Array<string | null | undefined>): Ex
 
 const normalizeExaminationRole = (value?: string | null): ExaminationRoleValue | '' => {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'medis' || normalized === 'paramedis' || normalized === 'apoteker' || normalized === 'gizi') {
+  if (
+    normalized === 'medis' ||
+    normalized === 'paramedis' ||
+    normalized === 'apoteker' ||
+    normalized === 'gizi' ||
+    normalized === 'terapis'
+  ) {
     return normalized;
   }
   return '';
@@ -512,6 +525,8 @@ const getExaminationRoleLabel = (value?: string | null) => {
       return 'Farmasi';
     case 'gizi':
       return 'Gizi';
+    case 'terapis':
+      return 'Terapis';
     default:
       return 'Tanpa Role';
   }
@@ -538,6 +553,11 @@ const getExaminationRoleStyles = (value?: string | null) => {
       return {
         badge: 'border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900 dark:text-amber-100',
         soap: 'border-amber-200 bg-amber-50/80 dark:border-amber-800 dark:bg-amber-950'
+      };
+    case 'terapis':
+      return {
+        badge: 'border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-700 dark:bg-rose-900 dark:text-rose-100',
+        soap: 'border-rose-200 bg-rose-50/80 dark:border-rose-800 dark:bg-rose-950'
       };
     default:
       return {
@@ -802,6 +822,8 @@ const matchesMedicationRequestFilter = (item: any, filter: MedicationRequestFilt
   const hasCompoundItems = Array.isArray(item?.compounds) && item.compounds.length > 0;
 
   switch (filter) {
+    case 'all':
+      return true;
     case 'racikan':
       return status !== 'Pulang' && status !== 'IBS' && !isPackage && hasCompoundItems;
     case 'pulang':
@@ -813,6 +835,45 @@ const matchesMedicationRequestFilter = (item: any, filter: MedicationRequestFilt
     default:
       return status !== 'Pulang' && status !== 'IBS' && !isPackage && !hasCompoundItems;
   }
+};
+
+const getMedicationRequestTypeMeta = (item: any) => {
+  const status = item?.status || mapPrescriptionSourceToStatus(item?.source);
+  const isPackage = Boolean(item?.is_package);
+  const hasCompoundItems = Array.isArray(item?.compounds) && item.compounds.length > 0;
+
+  if (isPackage) {
+    return {
+      label: 'Paket Obat & BHP',
+      className: 'border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900 dark:text-emerald-100'
+    };
+  }
+
+  if (status === 'Pulang') {
+    return {
+      label: 'Obat Pulang',
+      className: 'border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900 dark:text-amber-100'
+    };
+  }
+
+  if (status === 'IBS') {
+    return {
+      label: 'Obat IBS',
+      className: 'border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-700 dark:bg-rose-900 dark:text-rose-100'
+    };
+  }
+
+  if (hasCompoundItems) {
+    return {
+      label: 'Racikan',
+      className: 'border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-700 dark:bg-sky-900 dark:text-sky-100'
+    };
+  }
+
+  return {
+    label: 'Umum',
+    className: 'border-violet-200 bg-violet-100 text-violet-700 dark:border-violet-700 dark:bg-violet-900 dark:text-violet-100'
+  };
 };
 
 const mapRequestSourceToStatusRawat = (source?: string | null): LabStatusRawat => {
@@ -1447,7 +1508,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [procedureStatusRawat, setProcedureStatusRawat] = useState<ProcedureStatusRawat>('Ralan');
   const [editingPrescriptionNo, setEditingPrescriptionNo] = useState<string | null>(null);
   const [deletingPrescriptionNo, setDeletingPrescriptionNo] = useState<string | null>(null);
-  const [medicationRequestFilter, setMedicationRequestFilter] = useState<MedicationRequestFilterValue>('umum');
+  const [medicationRequestFilter, setMedicationRequestFilter] = useState<MedicationRequestFilterValue>('all');
   const [medicationDataTab, setMedicationDataTab] = useState<'current' | 'history'>('history');
   const [medicationCurrentCareTab, setMedicationCurrentCareTab] = useState<CareSectionTabValue>(preferredCareSectionTab);
   const [showAllOutpatientMedicationRequests, setShowAllOutpatientMedicationRequests] = useState(false);
@@ -3623,6 +3684,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     return items.map((med, index) => {
       const allowedToDelete = canDeletePrescription(med);
       const isPrescriptionVerified = !isPrescriptionPendingService(med);
+      const medicationTypeMeta = getMedicationRequestTypeMeta(med);
       const compoundItems = Array.isArray(med?.compounds) ? med.compounds : [];
       const hasCompoundItems = compoundItems.length > 0;
       const hasCompoundItemsOriginal = Boolean(med?.__has_compounds_original) || hasCompoundItems;
@@ -3667,7 +3729,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <p className="font-medium">{med.no_rawat}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Sumber</p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">Sumber</p>
+                <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium', medicationTypeMeta.className)}>
+                  {medicationTypeMeta.label}
+                </span>
+              </div>
               <p className="font-medium">{med.source}</p>
               {med.is_package ? (
                 <p className="text-xs text-emerald-700">
@@ -6408,6 +6475,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     user?.name
   ]);
 
+  const handleSelectBalanceCairanEntry = useCallback((entry: BalanceCairanEntry) => {
+    if (Number(selectedBalanceCairanId) === Number(entry.id)) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Pilih data balance cairan tanggal ${formatLongDateSafe(entry.tanggal)} jam ${String(entry.bc_ke || '-')}?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSelectedBalanceCairanId(entry.id);
+  }, [selectedBalanceCairanId]);
+
   const handleSaveEkstrapiramidal = useCallback(async () => {
     if (!formattedNoRawat) {
       toast({
@@ -8798,7 +8881,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         className="text-xs text-amber-700"
                         title={prbInfoText}
                       >
-                        (PRB : {prbInfoText})
+                        ({prbInfoText})
                       </p>
                     ) : null}
                   </div>
@@ -10613,7 +10696,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                                 type="button"
                                                 size="sm"
                                                 variant={selectedBalanceCairanId === entry.id ? 'default' : 'outline'}
-                                                onClick={() => setSelectedBalanceCairanId(entry.id)}
+                                                onClick={() => handleSelectBalanceCairanEntry(entry)}
                                               >
                                                 {selectedBalanceCairanId === entry.id ? 'Dipilih' : 'Pilih'}
                                               </Button>
@@ -11573,15 +11656,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                     <h3 className="text-lg font-semibold">Riwayat Resep Obat</h3>
                     <div className="flex flex-wrap gap-2">
                       {[
+                        { value: 'all', label: 'Semua' },
                         { value: 'umum', label: 'Umum' },
                         { value: 'racikan', label: 'Racikan' },
+                        { value: 'package', label: 'Paket Obat & BHP' },
                         ...(medicationCurrentCareTab === 'inpatient'
                           ? [
-                              { value: 'pulang', label: 'Obat Pulang' },
-                              { value: 'ibs', label: 'Obat IBS' }
+                              { value: 'ibs', label: 'Obat IBS' },
+                              { value: 'pulang', label: 'Obat Pulang' }
                             ]
-                          : []),
-                        { value: 'package', label: 'Paket Obat & BHP' }
+                          : [])
                       ].map((filterOption) => (
                         <Button
                           key={filterOption.value}
@@ -11936,12 +12020,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </Collapsible>
 
               {/* Drag & Drop Canvas */}
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 mb-6 bg-gray-50/50">
-                <h4 className="text-lg font-semibold mb-4 text-center">
+              <div className="mb-6 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
+                <h4 className="mb-4 text-center text-lg font-semibold dark:text-slate-100">
                   🧪 Drag & Drop Lab Results Canvas
                 </h4>
                 <div 
-                  className="min-h-[200px] bg-white border rounded-lg p-4"
+                  className="min-h-[200px] rounded-lg border bg-white p-4 dark:border-slate-700 dark:bg-slate-950/80"
                   onDrop={(e) => {
                     e.preventDefault();
                     if (draggingLab) {
@@ -11951,7 +12035,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   onDragOver={(e) => e.preventDefault()}
                 >
                   {canvasItems.length === 0 ? (
-                    <div className="text-center text-gray-500 py-8">
+                    <div className="py-8 text-center text-gray-500 dark:text-slate-400">
                       Drop lab results here...
                     </div>
                   ) : (
@@ -12378,12 +12462,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </Collapsible>
 
               {/* Drag & Drop Canvas */}
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 mb-6 bg-gray-50/50">
-                <h4 className="text-lg font-semibold mb-4 text-center">
+              <div className="mb-6 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
+                <h4 className="mb-4 text-center text-lg font-semibold dark:text-slate-100">
                   🏥 Drag & Drop Radiology Results Canvas
                 </h4>
                 <div 
-                  className="min-h-[200px] bg-white border rounded-lg p-4"
+                  className="min-h-[200px] rounded-lg border bg-white p-4 dark:border-slate-700 dark:bg-slate-950/80"
                   onDrop={(e) => {
                     e.preventDefault();
                     if (draggingRad) {
@@ -12393,7 +12477,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   onDragOver={(e) => e.preventDefault()}
                 >
                   {canvasItems.filter(item => item.type === 'radiology').length === 0 ? (
-                    <div className="text-center text-gray-500 py-8">
+                    <div className="py-8 text-center text-gray-500 dark:text-slate-400">
                       Drop radiology results here...
                     </div>
                   ) : (

@@ -145,6 +145,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   const inactiveItemClass = 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/[0.04]';
   const activeIconClass = 'text-primary dark:text-sky-300';
   const inactiveIconClass = 'text-slate-500 dark:text-slate-500';
+  const presensiItem = menuItems.find((item) => item.path === '/presensi');
+  const secondaryMenuItems = menuItems.filter((item) => item.path !== '/' && item.path !== '/presensi');
 
   return (
     <aside className="fixed left-0 top-0 z-30 flex h-[calc(100vh)] w-64 flex-col border-r bg-white shadow-sm transition-colors dark:border-white/10 dark:bg-[#101317] sm:top-16 sm:h-[calc(100vh-4rem)]">
@@ -191,6 +193,30 @@ const Sidebar: React.FC<SidebarProps> = ({
             </span>
             Dashboard
           </Link>
+
+          {presensiItem ? (
+            <Link
+              to={presensiItem.path}
+              className={`flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                isActive(presensiItem.path)
+                  ? 'bg-primary/10 text-primary dark:bg-sky-500/12 dark:text-sky-300'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'
+              }`}
+              onClick={onClose}
+            >
+              <span className={`mr-3 ${isActive(presensiItem.path) ? 'text-primary dark:text-sky-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                {presensiItem.icon}
+              </span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span>{presensiItem.name}</span>
+                {presensiItem.badge ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+                    {presensiItem.badge}
+                  </span>
+                ) : null}
+              </span>
+            </Link>
+          ) : null}
 
           <div>
             <Collapsible
@@ -287,7 +313,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </Collapsible>
           </div>
 
-          {menuItems.slice(1).map((item) => (
+          {secondaryMenuItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
