@@ -43,6 +43,8 @@ const Presensi = () => {
   const [todayAttendance, setTodayAttendance] = useState<any>(null);
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
   const [selectedShift, setSelectedShift] = useState<string>('');
+  const [serverTimestamp, setServerTimestamp] = useState<number | null>(null);
+  const [serverDate, setServerDate] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const isMobile = useIsMobile();
   const { user } = useAuth();
@@ -50,6 +52,14 @@ const Presensi = () => {
   const now = new Date();
   const wibNow = new Date(now.getTime() + (7 * 60 * 60 * 1000));
   const currentTime = `${String(wibNow.getUTCHours()).padStart(2, '0')}:${String(wibNow.getUTCMinutes()).padStart(2, '0')}`;
+
+  const formatServerClock = (timestamp: number) =>
+    new Intl.DateTimeFormat('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Jakarta'
+    }).format(new Date(timestamp));
   
   // Sample data for work schedule
   const workSchedule = [
@@ -206,17 +216,25 @@ const Presensi = () => {
       const data = await response.json();
       if (data?.success && data.data) {
         setTodayAttendance(data.data);
+        setServerTimestamp(typeof data.data.server_timestamp === 'number' ? data.data.server_timestamp : null);
+        setServerDate(data.data.server_date || '');
         // Set times from database - correct data structure
         if (data.data.attendance?.jam_datang) {
           const jamDatang = new Date(data.data.attendance.jam_datang);
           setCheckInTime(`${String(jamDatang.getHours()).padStart(2, '0')}:${String(jamDatang.getMinutes()).padStart(2, '0')}`);
+        } else {
+          setCheckInTime('');
         }
         if (data.data.attendance?.jam_pulang) {
           const jamPulang = new Date(data.data.attendance.jam_pulang);
           setCheckOutTime(`${String(jamPulang.getHours()).padStart(2, '0')}:${String(jamPulang.getMinutes()).padStart(2, '0')}`);
+        } else {
+          setCheckOutTime('');
         }
       } else {
         setTodayAttendance(null);
+        setServerTimestamp(null);
+        setServerDate('');
         setCheckInTime('');
         setCheckOutTime('');
       }
@@ -354,6 +372,26 @@ const Presensi = () => {
     }
   }, [date, user?.username]);
 
+  useEffect(() => {
+    if (serverTimestamp === null) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setServerTimestamp((previous) => (previous === null ? previous : previous + 1000));
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [serverTimestamp !== null]);
+
+  const selectedDateString = date ? format(date, 'yyyy-MM-dd') : '';
+  const isViewingServerToday = !!serverDate && selectedDateString === serverDate;
+  const liveServerTime = serverTimestamp !== null ? formatServerClock(serverTimestamp) : '';
+  const displayedCheckInTime = checkInTime || (isViewingServerToday ? liveServerTime : '');
+  const displayedCheckOutTime = checkOutTime || (isViewingServerToday ? liveServerTime : '');
+
   // Format attendance history for display
   const formattedHistory = attendanceHistory.map(record => {
     const tanggal = new Date(record.tanggal);
@@ -484,7 +522,7 @@ const Presensi = () => {
                     <div className="flex flex-col sm:flex-row gap-2">
                       <Input 
                         type="text" 
-                        value={checkInTime} 
+                        value={displayedCheckInTime} 
                         readOnly 
                         placeholder="--:--" 
                         className="text-xs sm:text-sm"
@@ -505,7 +543,7 @@ const Presensi = () => {
                     <div className="flex flex-col sm:flex-row gap-2">
                       <Input 
                         type="text" 
-                        value={checkOutTime} 
+                        value={displayedCheckOutTime} 
                         readOnly 
                         placeholder="--:--" 
                         className="text-xs sm:text-sm"

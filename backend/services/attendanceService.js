@@ -110,8 +110,14 @@ class AttendanceService {
         jam_pulang: row.jam_pulang
       }));
       
+      // Use WIB as the server clock reference for attendance.
+      const now = new Date();
+      const wibNow = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+      const serverDate = wibNow.toISOString().split('T')[0];
+      const serverTime = wibNow.toISOString().split('T')[1].slice(0, 8);
+
       // Get today's attendance
-      const targetDate = date || new Date().toISOString().split('T')[0];
+      const targetDate = date || serverDate;
       
       const attendanceQuery = `
         SELECT 
@@ -137,6 +143,9 @@ class AttendanceService {
           nama: user.nama,
           departemen: user.departemen
         },
+        server_timestamp: now.getTime(),
+        server_date: serverDate,
+        server_time: serverTime,
         shifts: shifts,
         attendance: attendanceRows.length > 0 ? {
           shift: attendanceRows[0].shift,

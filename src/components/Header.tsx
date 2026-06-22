@@ -670,66 +670,65 @@ const Header: React.FC<HeaderProps> = ({
       );
     }
 
-    return items.map((item) => {
+    return items.flatMap((item, index) => {
       const TypeIcon = getNotificationTypeIcon(item.type);
       const priorityLabel = getNotificationPriorityLabel(item);
       const isResultReady = isResultReadyNotification(item);
 
-      return (
-        <React.Fragment key={item.id}>
-          <DropdownMenuItem
-            className={cn(
-              'block rounded-md border px-3 py-3 cursor-pointer',
-              getNotificationAccentClassName(item)
-            )}
-            onClick={() => handleOpenNotification(item)}
-          >
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-full bg-primary/10 p-2 text-primary">
-                <TypeIcon className="h-4 w-4" />
+      return [
+        <DropdownMenuItem
+          key={item.id}
+          className={cn(
+            'block rounded-md border px-3 py-3 cursor-pointer',
+            getNotificationAccentClassName(item)
+          )}
+          onClick={() => handleOpenNotification(item)}
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-full bg-primary/10 p-2 text-primary">
+              <TypeIcon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {item.patient_name || 'Pasien'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {getNotificationTypeLabel(item.type)} • {item.reference_id}
+                  </p>
+                </div>
+                <span className={cn('shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold', getNotificationStatusClassName(item.status))}>
+                  {item.status_label}
+                </span>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {item.patient_name || 'Pasien'}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {getNotificationTypeLabel(item.type)} • {item.reference_id}
-                    </p>
-                  </div>
-                  <span className={cn('shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold', getNotificationStatusClassName(item.status))}>
-                    {item.status_label}
+              {priorityLabel ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={cn(
+                    'rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide',
+                    isResultReady ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white'
+                  )}>
+                    {priorityLabel}
                   </span>
-                </div>
-                {priorityLabel ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className={cn(
-                      'rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide',
-                      isResultReady ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white'
-                    )}>
-                      {priorityLabel}
+                  {isResultReady ? (
+                    <span className="text-[11px] font-medium text-emerald-700">
+                      Hasil pemeriksaan sudah tersedia
                     </span>
-                    {isResultReady ? (
-                      <span className="text-[11px] font-medium text-emerald-700">
-                        Hasil pemeriksaan sudah tersedia
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-                  {item.description}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                  <span>No. RM {item.no_rkm_medis || '-'}</span>
-                  <span>{getNotificationTimeText(item)}</span>
+                  ) : null}
                 </div>
+              ) : null}
+              <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                {item.description}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                <span>No. RM {item.no_rkm_medis || '-'}</span>
+                <span>{getNotificationTimeText(item)}</span>
               </div>
             </div>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-        </React.Fragment>
-      );
+          </div>
+        </DropdownMenuItem>,
+        index < items.length - 1 ? <DropdownMenuSeparator key={`${item.id}-separator`} /> : null
+      ];
     });
   };
 
