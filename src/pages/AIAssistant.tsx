@@ -196,20 +196,20 @@ const getAssistantModeMeta = (intent?: string | null) => {
   if (intent === 'natural_select') {
     return {
       label: 'Natural SQL',
-      className: 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/60 dark:text-emerald-200'
     };
   }
 
   if (intent === 'intro') {
     return {
       label: 'Sistem',
-      className: 'border-slate-200 bg-slate-50 text-slate-700'
+      className: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
     };
   }
 
   return {
     label: 'Intent',
-    className: 'border-blue-200 bg-blue-50 text-blue-700'
+    className: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/60 dark:text-blue-200'
   };
 };
 
@@ -591,7 +591,7 @@ const AIAssistant = () => {
                       className={`max-w-[90%] rounded-lg px-4 py-3 shadow-sm ${
                         turn.role === 'user'
                           ? 'bg-primary text-primary-foreground'
-                          : 'bg-white border'
+                          : 'border bg-white text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100'
                       }`}
                     >
                       {turn.role === 'assistant' ? (() => {
@@ -620,7 +620,7 @@ const AIAssistant = () => {
                               </Button>
                             ) : null}
                           </div>
-                          <div className="whitespace-pre-wrap text-sm">{turn.message}</div>
+                          <div className="whitespace-pre-wrap text-sm text-inherit">{turn.message}</div>
                           {turn.payload?.sqlPreview && isSqlPreviewExpanded ? (
                             <div className="mt-2 rounded-md bg-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
                               <span className="font-semibold">SQL Preview:</span> {turn.payload.sqlPreview}
@@ -704,7 +704,7 @@ const AIAssistant = () => {
 
                 {loading && (
                   <div className="flex justify-start">
-                    <div className="rounded-lg border bg-white px-4 py-3 shadow-sm">
+                    <div className="rounded-lg border bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span>Memproses pertanyaan...</span>
@@ -713,7 +713,7 @@ const AIAssistant = () => {
                   </div>
                 )}
                 {!loading && filteredChatHistory.length === 0 ? (
-                  <div className="rounded-md border border-dashed bg-white/80 px-4 py-6 text-center text-sm text-muted-foreground">
+                  <div className="rounded-md border border-dashed bg-white/80 px-4 py-6 text-center text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-900/80">
                     Belum ada chat yang cocok untuk filter ini.
                   </div>
                 ) : null}
