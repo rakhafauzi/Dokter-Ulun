@@ -436,6 +436,8 @@ const RawatJalanTabs = () => {
     no_reg: patient.no_reg,
     no_rawat: patient.no_rawat,
     name: patient.nm_pasien,
+    prb: patient.prb || '',
+    prb_program: patient.prb_program || '',
     age: patient.tgl_lahir ? new Date().getFullYear() - new Date(patient.tgl_lahir).getFullYear() : '-',
     gender: patient.jk === 'L' ? 'Laki-laki' : 'Perempuan',
     doctor: patient.nm_dokter,

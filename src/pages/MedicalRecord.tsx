@@ -8834,7 +8834,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         className="text-xs text-amber-700"
                         title={prbInfoText}
                       >
-                        (PRB : {prbInfoText})
+                        ({prbInfoText})
                       </p>
                     ) : null}
                   </div>

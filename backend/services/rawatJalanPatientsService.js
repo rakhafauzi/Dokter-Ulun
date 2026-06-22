@@ -380,6 +380,19 @@ class RawatJalanPatientsService {
           p.alamat,
           p.jk,
           p.tgl_lahir,
+          (
+            SELECT bp.prb
+            FROM bpjs_prb bp
+            INNER JOIN bridging_sep bs ON bs.no_sep = bp.no_sep
+            WHERE bs.no_rawat = rp.no_rawat
+            LIMIT 1
+          ) AS prb,
+          (
+            SELECT pp.nm_program
+            FROM peserta_prb pp
+            WHERE pp.no_peserta = p.no_peserta
+            LIMIT 1
+          ) AS prb_program,
           ${doctorNameColumn} as nm_dokter,
           ${poliNameColumn} as nm_poli,
           COALESCE(pj.png_jawab, 'Umum') as png_jawab
@@ -456,6 +469,8 @@ class RawatJalanPatientsService {
         alamat: row.alamat,
         jk: row.jk,
         tgl_lahir: row.tgl_lahir,
+        prb: row.prb || '',
+        prb_program: row.prb_program || '',
         nm_dokter: row.nm_dokter,
         nm_poli: row.nm_poli,
         png_jawab: row.png_jawab,

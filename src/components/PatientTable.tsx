@@ -285,7 +285,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
                   <TableCell key={colIndex} className="py-2 px-2 sm:py-3 sm:px-4 whitespace-nowrap">
                       {column.render ? (
                         column.render(patient)
-                      ) : column.accessor === 'nama' ? (
+                      ) : column.accessor === 'nama' || column.accessor === 'name' ? (
                         <div className="flex items-center">
                           <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300 sm:h-8 sm:w-8">
                             <User size={isMobile ? 14 : 16} />
@@ -294,7 +294,17 @@ const PatientTable: React.FC<PatientTableProps> = ({
                             "ml-2 font-medium text-slate-900 dark:text-slate-100 sm:ml-4",
                             isMobile ? "text-xs sm:text-sm max-w-[120px] truncate" : ""
                           )}>
-                            {patient[column.accessor]}
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span>{patient[column.accessor]}</span>
+                              {(String(patient.prb || '').trim() || String(patient.prb_program || '').trim()) ? (
+                                <p
+                                  className="text-xs font-normal text-amber-700 dark:text-amber-400"
+                                  title={[patient.prb, patient.prb_program].filter(Boolean).join(', ')}
+                                >
+                                  ({[patient.prb, patient.prb_program].filter(Boolean).join(', ')})
+                                </p>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       ) : column.accessor === 'status' ? (
