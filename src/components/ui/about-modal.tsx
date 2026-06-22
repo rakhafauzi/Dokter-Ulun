@@ -39,6 +39,7 @@ export function AboutModal({ open, onOpenChange }: AboutModalProps) {
                 <li>Nora (Nora Gusti Salsabila, S.Kom)</li>
                 <li>Reza (Muhammad Reza, S.Kom)</li>
                 <li>Rakha (Rakha Fauziannur, S.Kom)</li>
+                <li>Ariz (Ahmad Akhyar Ariz, S.T)</li>
                 <li>Mukhdi (Muhammad Mukhdi, S.Kom)</li>
                 <li>Pebrie (Muhammad Pebrie Budiman, S.Kom)</li>
                 <li>Ana (Erliana, A.Md.Kom)</li> 
