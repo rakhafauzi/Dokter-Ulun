@@ -841,9 +841,6 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                 >
                   <TableCell>
                     <div className="font-medium text-primary">{item.nm_pasien}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {formatDateTime(item.tgl_registrasi, item.jam_reg)}
-                    </div>
                   </TableCell>
                   <TableCell>{item.no_rkm_medis}</TableCell>
                   <TableCell>{item.nm_dokter || '-'}</TableCell>
