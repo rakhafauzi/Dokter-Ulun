@@ -9,6 +9,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Plus, Trash2, Calculator, Save, Check, ChevronsUpDown } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { cn } from "@/lib/utils";
 import { InacbgTariffSimulationDialog } from './InacbgTariffSimulationDialog';
 
@@ -111,6 +112,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({
   noRawat,
   defaultStatusLayanan = 'Ralan'
 }) => {
+  const { user } = useAuth();
   const fallbackStatusLayanan = normalizeServiceStatus(defaultStatusLayanan);
   const [activeTab, setActiveTab] = useState('icd10');
   const [icd10Data, setIcd10Data] = useState<ICD10Data[]>([]);
@@ -128,6 +130,8 @@ export const ICDModal: React.FC<ICDModalProps> = ({
   const [snomedSearchQueryByKey, setSnomedSearchQueryByKey] = useState<Record<string, string>>({});
   const [snomedSearchResultsByKey, setSnomedSearchResultsByKey] = useState<Record<string, any[]>>({});
   const [snomedSearchLoadingByKey, setSnomedSearchLoadingByKey] = useState<Record<string, boolean>>({});
+  const currentUsername = String(user?.username || '').trim();
+  const currentUserName = String(user?.name || user?.username || '').trim();
 
   const { toast } = useToast();
 
@@ -392,12 +396,19 @@ export const ICDModal: React.FC<ICDModalProps> = ({
     try {
       const response = await fetch(API_URLS.ICD_MANAGEMENT, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUsername,
+          'x-username': currentUsername,
+          'x-user-name': currentUserName
+        },
         body: JSON.stringify({
           no_rawat: noRawat,
           icdType: tab,
           prioritas: item.prioritas,
           status_layanan: item.status_layanan,
+          username: currentUsername,
+          nama: currentUserName,
           ...(tab === 'icd10'
             ? { kd_penyakit: (item as ICD10Data).kd_penyakit }
             : { kode: (item as ICD9Data).kode })
@@ -441,11 +452,18 @@ export const ICDModal: React.FC<ICDModalProps> = ({
 
         const response = await fetch(API_URLS.ICD_MANAGEMENT, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': currentUsername,
+            'x-username': currentUsername,
+            'x-user-name': currentUserName
+          },
           body: JSON.stringify({
             no_rawat: noRawat,
             icdType: 'icd10',
             status_layanan: fallbackStatusLayanan,
+            username: currentUsername,
+            nama: currentUserName,
             items: validItems
           })
         });
@@ -464,11 +482,18 @@ export const ICDModal: React.FC<ICDModalProps> = ({
 
         const response = await fetch(API_URLS.ICD_MANAGEMENT, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': currentUsername,
+            'x-username': currentUsername,
+            'x-user-name': currentUserName
+          },
           body: JSON.stringify({
             no_rawat: noRawat,
             icdType: 'icd9',
             status_layanan: fallbackStatusLayanan,
+            username: currentUsername,
+            nama: currentUserName,
             items: validItems
           })
         });
