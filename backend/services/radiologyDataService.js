@@ -236,7 +236,8 @@ class RadiologyDataService {
         SELECT COUNT(DISTINCT rp.no_rawat) AS total
         FROM reg_periksa rp
         INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        LEFT JOIN permintaan_radiologi prr ON prr.no_rawat = rp.no_rawat
+        LEFT JOIN dokter d ON prr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_radiologi pr ON rp.no_rawat = pr.no_rawat
         INNER JOIN jns_perawatan_radiologi layanan ON pr.kd_jenis_prw = layanan.kd_jenis_prw
         ${whereClause}
@@ -251,11 +252,12 @@ class RadiologyDataService {
           rp.status_lanjut,
           p.nm_pasien,
           p.umur,
-          COALESCE(d.nm_dokter, '') AS nm_dokter,
+          COALESCE(GROUP_CONCAT(DISTINCT d.nm_dokter ORDER BY d.nm_dokter SEPARATOR ' | '), '') AS nm_dokter,
           GROUP_CONCAT(DISTINCT layanan.nm_perawatan ORDER BY layanan.nm_perawatan SEPARATOR ' | ') AS pemeriksaan
         FROM reg_periksa rp
         INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        LEFT JOIN permintaan_radiologi prr ON prr.no_rawat = rp.no_rawat
+        LEFT JOIN dokter d ON prr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_radiologi pr ON rp.no_rawat = pr.no_rawat
         INNER JOIN jns_perawatan_radiologi layanan ON pr.kd_jenis_prw = layanan.kd_jenis_prw
         ${whereClause}
@@ -266,8 +268,7 @@ class RadiologyDataService {
           rp.jam_reg,
           rp.status_lanjut,
           p.nm_pasien,
-          p.umur,
-          d.nm_dokter
+          p.umur
         ORDER BY rp.tgl_registrasi DESC, rp.jam_reg DESC
         ${limit === 10000 ? '' : 'LIMIT ? OFFSET ?'}
       `;
@@ -314,11 +315,12 @@ class RadiologyDataService {
           rp.kd_pj,
           p.nm_pasien,
           p.umur,
-          COALESCE(d.nm_dokter, '') AS nm_dokter,
+          COALESCE(GROUP_CONCAT(DISTINCT d.nm_dokter ORDER BY d.nm_dokter SEPARATOR ' | '), '') AS nm_dokter,
           GROUP_CONCAT(DISTINCT layanan.nm_perawatan ORDER BY layanan.nm_perawatan SEPARATOR ' | ') AS nm_perawatan
         FROM reg_periksa rp
         INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        LEFT JOIN permintaan_radiologi prr ON prr.no_rawat = rp.no_rawat
+        LEFT JOIN dokter d ON prr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_radiologi pr ON rp.no_rawat = pr.no_rawat
         INNER JOIN jns_perawatan_radiologi layanan ON pr.kd_jenis_prw = layanan.kd_jenis_prw
         WHERE rp.no_rawat = ?
@@ -328,8 +330,7 @@ class RadiologyDataService {
           rp.status_lanjut,
           rp.kd_pj,
           p.nm_pasien,
-          p.umur,
-          d.nm_dokter
+          p.umur
         LIMIT 1
       `;
 

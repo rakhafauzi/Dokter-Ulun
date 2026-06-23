@@ -841,13 +841,25 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                 >
                   <TableCell>
                     <div className="font-medium text-primary">{item.nm_pasien}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {formatDateTime(item.tgl_registrasi, item.jam_reg)}
-                    </div>
                   </TableCell>
                   <TableCell>{item.no_rkm_medis}</TableCell>
                   <TableCell>{item.nm_dokter || '-'}</TableCell>
-                  <TableCell className="max-w-[420px] whitespace-normal">{item.pemeriksaan || '-'}</TableCell>
+                  <TableCell className="max-w-[420px] whitespace-normal">
+                    {String(item.pemeriksaan || '').trim()
+                      ? (
+                          <div className="space-y-1">
+                            {String(item.pemeriksaan)
+                              .split(' | ')
+                              .map((pemeriksaan, index) => (
+                                <div key={`${pemeriksaan}-${index}`} className="flex items-start gap-2">
+                                  <span className="mt-1 text-xs leading-none">•</span>
+                                  <span>{pemeriksaan}</span>
+                                </div>
+                              ))}
+                          </div>
+                        )
+                      : '-'}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -921,7 +933,20 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                       <CardTitle className="text-base">Pemeriksaan</CardTitle>
                     </CardHeader>
                     <CardContent className="text-sm">
-                      {activeDetail.nm_perawatan || '-'}
+                      {String(activeDetail.nm_perawatan || '').trim()
+                        ? (
+                            <div className="space-y-1">
+                              {String(activeDetail.nm_perawatan)
+                                .split(' | ')
+                                .map((item, index) => (
+                                  <div key={`${item}-${index}`} className="flex items-start gap-2">
+                                    <span className="mt-1 text-xs leading-none">•</span>
+                                    <span>{item}</span>
+                                  </div>
+                                ))}
+                            </div>
+                          )
+                        : '-'}
                     </CardContent>
                   </Card>
                 </div>

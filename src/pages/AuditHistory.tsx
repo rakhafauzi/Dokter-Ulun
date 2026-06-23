@@ -55,6 +55,37 @@ const formatJson = (value: unknown) => {
   }
 };
 
+const getPayloadRecord = (value: unknown): Record<string, unknown> => (
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+);
+
+const getAuditActorDisplay = (entry: AuditLogEntry) => {
+  const payload = getPayloadRecord(entry.request_payload);
+  const actorId = String(
+    entry.actor_id
+    || payload.username
+    || payload.userId
+    || payload.id_user
+    || payload.kd_dokter
+    || ''
+  ).trim();
+  const actorName = String(
+    entry.actor_name
+    || payload.nama
+    || payload.doctorName
+    || payload.nm_dokter
+    || payload.dokter
+    || payload.username
+    || ''
+  ).trim();
+
+  return actorId
+    ? `${actorId}${actorName && actorName !== actorId ? ` - ${actorName}` : ''}`
+    : actorName || '-';
+};
+
 const AuditHistory: React.FC = () => {
   const { user } = useAuth();
   const [checkingAccess, setCheckingAccess] = React.useState(true);
@@ -302,19 +333,7 @@ const AuditHistory: React.FC = () => {
                     </p>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {(() => {
-                      const actorId = String(entry.actor_id || '').trim();
-                      const actorName = String(entry.actor_name || '').trim();
-                      const display = actorId
-                        ? `${actorId}${actorName && actorName !== actorId ? ` - ${actorName}` : ''}`
-                        : actorName || '-';
-
-                      return (
-                        <>
-                          Aktor: <span className="font-medium text-foreground">{display}</span>
-                        </>
-                      );
-                    })()}
+                    Aktor: <span className="font-medium text-foreground">{getAuditActorDisplay(entry)}</span>
                   </div>
                 </div>
               </CardHeader>
