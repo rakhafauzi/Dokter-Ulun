@@ -171,7 +171,7 @@ const Panduan: React.FC = () => {
                 membuka rekam medik, mengelola data klinis, hingga memakai fitur pendukung.
               </CardDescription>
             </div>
-            <div className="rounded-lg border bg-white/80 px-4 py-3 text-sm shadow-sm">
+            <div className="rounded-lg border bg-white/80 px-4 py-3 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
               <p className="text-muted-foreground">Login sebagai</p>
               <p className="font-semibold text-foreground">{user?.name || user?.username || 'Dokter'}</p>
             </div>
