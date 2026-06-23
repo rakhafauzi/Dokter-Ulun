@@ -347,7 +347,8 @@ class LaboratoryDataService {
         SELECT COUNT(DISTINCT rp.no_rawat) AS total
         FROM reg_periksa rp
         INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        LEFT JOIN permintaan_lab plr ON plr.no_rawat = rp.no_rawat
+        LEFT JOIN dokter d ON plr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
         INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
         ${whereClause}
@@ -362,11 +363,12 @@ class LaboratoryDataService {
           rp.status_lanjut,
           p.nm_pasien,
           p.umur,
-          COALESCE(d.nm_dokter, '') AS nm_dokter,
+          COALESCE(GROUP_CONCAT(DISTINCT d.nm_dokter ORDER BY d.nm_dokter SEPARATOR ' | '), '') AS nm_dokter,
           GROUP_CONCAT(DISTINCT layanan.nm_perawatan ORDER BY layanan.nm_perawatan SEPARATOR ' | ') AS pemeriksaan
         FROM reg_periksa rp
         INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        LEFT JOIN permintaan_lab plr ON plr.no_rawat = rp.no_rawat
+        LEFT JOIN dokter d ON plr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
         INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
         ${whereClause}
@@ -377,8 +379,7 @@ class LaboratoryDataService {
           rp.jam_reg,
           rp.status_lanjut,
           p.nm_pasien,
-          p.umur,
-          d.nm_dokter
+          p.umur
         ORDER BY rp.tgl_registrasi DESC, rp.jam_reg DESC
         ${limit === 10000 ? '' : 'LIMIT ? OFFSET ?'}
       `;
@@ -425,11 +426,12 @@ class LaboratoryDataService {
           rp.kd_pj,
           p.nm_pasien,
           p.umur,
-          COALESCE(d.nm_dokter, '') AS nm_dokter,
+          COALESCE(GROUP_CONCAT(DISTINCT d.nm_dokter ORDER BY d.nm_dokter SEPARATOR ' | '), '') AS nm_dokter,
           GROUP_CONCAT(DISTINCT layanan.nm_perawatan ORDER BY layanan.nm_perawatan SEPARATOR ' | ') AS nm_perawatan
         FROM reg_periksa rp
         INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
-        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        LEFT JOIN permintaan_lab plr ON plr.no_rawat = rp.no_rawat
+        LEFT JOIN dokter d ON plr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
         INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
         WHERE rp.no_rawat = ?
@@ -439,8 +441,7 @@ class LaboratoryDataService {
           rp.status_lanjut,
           rp.kd_pj,
           p.nm_pasien,
-          p.umur,
-          d.nm_dokter
+          p.umur
         LIMIT 1
       `;
 
