@@ -139,7 +139,7 @@ class ResumePasienDataService {
     return Array.from(new Set([
       ...this.parseDoctorCodeTrace(existingValue),
       String(currentDoctorCode || '').trim()
-    ].filter(Boolean))).join(', ');
+    ].filter(Boolean))).join(',');
   }
 
   async resolveDoctorTraceDisplay(traceValue = '', fallbackDoctorCode = '') {
