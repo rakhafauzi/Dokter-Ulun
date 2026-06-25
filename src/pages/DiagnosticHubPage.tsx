@@ -178,7 +178,7 @@ const buildPacsPreviewUrl = (instanceId?: string, width = 500) => {
     return '';
   }
 
-  return `${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/preview/${encodeURIComponent(normalizedInstanceId)}?width=${width}`;
+  return `${API_CONFIG.PACS_ORIGIN}/api/pacs/preview/${encodeURIComponent(normalizedInstanceId)}?width=${width}`;
 };
 
 const buildViewerImageUrl = (instanceId?: string, modality?: string) => {
@@ -678,7 +678,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       params.set('exam_name', examName);
     }
 
-    const response = await fetch(`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/radiology-images?${params.toString()}`, {
+    const response = await fetch(`${API_CONFIG.PACS_ORIGIN}/api/pacs/radiology-images?${params.toString()}`, {
       credentials: 'include'
     });
     const responseJson = await response.json().catch(() => null);
@@ -750,41 +750,6 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
           downloadName: `radiologi-${fullResult.pemeriksaan || 'gambar'}-${index + 1}.jpg`,
           instanceId: item.instance_id
         })).filter((item) => Boolean(item.src));
-
-        // #region debug-point B:frontend-full-stack-order
-        fetch('http://127.0.0.1:7777/event', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: 'ct-slice-order',
-            runId: 'post-fix',
-            hypothesisId: 'B',
-            location: 'src/pages/DiagnosticHubPage.tsx:openRadiologyPacsViewer',
-            msg: '[DEBUG] Frontend received CT full stack',
-            data: {
-              api_origin: API_CONFIG.BASE_URL_WITHOUT_API,
-              no_rawat: noRawat,
-              pemeriksaan: fullResult.pemeriksaan || '',
-              total_images: Number(fullResult.pacs_total_images) || fullImages.length,
-              head_instance_ids: fullImages.slice(0, 5).map((image) => image.instanceId || ''),
-              tail_instance_ids: fullImages.slice(-5).map((image) => image.instanceId || ''),
-              head_raw: (Array.isArray(fullResult.pacs_images) ? fullResult.pacs_images : []).slice(0, 5).map((item: any) => ({
-                instance_id: item?.instance_id || '',
-                series_id: item?.series_id || '',
-                modality: item?.modality || '',
-                description: item?.description || ''
-              })),
-              tail_raw: (Array.isArray(fullResult.pacs_images) ? fullResult.pacs_images : []).slice(-5).map((item: any) => ({
-                instance_id: item?.instance_id || '',
-                series_id: item?.series_id || '',
-                modality: item?.modality || '',
-                description: item?.description || ''
-              }))
-            },
-            ts: Date.now()
-          })
-        }).catch(() => {});
-        // #endregion
 
         updateRadiologyResultPacs(fullResult);
 

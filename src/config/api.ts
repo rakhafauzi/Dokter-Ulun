@@ -31,13 +31,24 @@ const getOriginBaseUrl = (apiBaseUrl: string) => {
   return '';
 };
 
+const getPacsOriginBaseUrl = (fallbackOrigin: string) => {
+  const configuredPacsOrigin = String(import.meta.env.VITE_PACS_API_ORIGIN || '').trim();
+  if (configuredPacsOrigin) {
+    return trimTrailingSlash(configuredPacsOrigin);
+  }
+
+  return fallbackOrigin;
+};
+
 const API_BASE_URL = getApiBaseUrl();
 const API_ORIGIN = getOriginBaseUrl(API_BASE_URL);
+const PACS_ORIGIN = getPacsOriginBaseUrl(API_ORIGIN);
 
 // API Configuration
 export const API_CONFIG = {
   BASE_URL: API_BASE_URL,
   BASE_URL_WITHOUT_API: API_ORIGIN,
+  PACS_ORIGIN,
   ENDPOINTS: {
     STATISTICS_DATA: '/statistics-data',
     AUTH: '/auth',

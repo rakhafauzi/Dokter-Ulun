@@ -11,40 +11,6 @@ class GetMedicalRecordService {
   static orthancInstanceMetaCache = new Map();
   static orthancInstanceMetaInFlight = new Map();
 
-  // #region debug-point A:debug-reporting
-  static reportDebugEvent(hypothesisId, location, msg, data = {}) {
-    fetch('http://127.0.0.1:7777/event', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId: 'ct-slice-order',
-        runId: 'post-fix',
-        hypothesisId,
-        location,
-        msg,
-        data,
-        ts: Date.now()
-      })
-    }).catch(() => {});
-  }
-
-  static buildSortDebugSample(images = []) {
-    const normalize = (image) => ({
-      instance_id: image?.instance_id || '',
-      instance_number: image?.instance_number ?? null,
-      image_position_z: image?.image_position_z ?? null,
-      slice_location: image?.slice_location ?? null,
-      acquisition_number: image?.acquisition_number ?? null,
-      series_id: image?.series_id || ''
-    });
-
-    return {
-      head: images.slice(0, 5).map(normalize),
-      tail: images.slice(-5).map(normalize)
-    };
-  }
-  // #endregion
-
   static getCacheEntry(cacheStore, cacheKey) {
     const cached = cacheStore.get(cacheKey);
     if (!cached) {
@@ -494,12 +460,18 @@ class GetMedicalRecordService {
 
     const baseUrl = orthancConfig.server.replace(/\/+$/, '');
     const authToken = Buffer.from(`${orthancConfig.username}:${orthancConfig.password}`).toString('base64');
+    const normalizedHeaders = {
+      Authorization: `Basic ${authToken}`,
+      ...(init.headers || {})
+    };
+
+    if (init.body && !normalizedHeaders['Content-Type'] && !normalizedHeaders['content-type']) {
+      normalizedHeaders['Content-Type'] = 'application/json';
+    }
+
     const response = await fetch(`${baseUrl}${pathname}`, {
       ...init,
-      headers: {
-        Authorization: `Basic ${authToken}`,
-        ...(init.headers || {})
-      }
+      headers: normalizedHeaders
     });
 
     if (!response.ok) {
@@ -734,35 +706,7 @@ class GetMedicalRecordService {
           })
         );
 
-        // #region debug-point A:series-before-after-sort
-        this.reportDebugEvent(
-          'A',
-          'backend/services/getMedicalRecordService.js:sortMatchedRadiologySeries:before-sort',
-          '[DEBUG] CT series sort input captured',
-          {
-            series_id: series?.series_id || '',
-            modality: series?.modality || '',
-            image_count: enrichedImages.length,
-            sample: this.buildSortDebugSample(enrichedImages)
-          }
-        );
-        // #endregion
-
         enrichedImages.sort((left, right) => this.compareRadiologyPacsImageOrder(left, right));
-
-        // #region debug-point A:series-after-sort
-        this.reportDebugEvent(
-          'A',
-          'backend/services/getMedicalRecordService.js:sortMatchedRadiologySeries:after-sort',
-          '[DEBUG] CT series sort output captured',
-          {
-            series_id: series?.series_id || '',
-            modality: series?.modality || '',
-            image_count: enrichedImages.length,
-            sample: this.buildSortDebugSample(enrichedImages)
-          }
-        );
-        // #endregion
 
         return {
           ...series,
@@ -854,27 +798,6 @@ class GetMedicalRecordService {
         const orderedSeries = mode === 'full'
           ? await this.sortMatchedRadiologySeries(matchedSeries)
           : matchedSeries;
-
-        // #region debug-point C:matched-series-summary
-        this.reportDebugEvent(
-          'C',
-          'backend/services/getMedicalRecordService.js:getRadiologyPacsImages',
-          '[DEBUG] PACS payload series selected',
-          {
-            no_rawat: String(noRawat || '').trim(),
-            mode,
-            exam_date: this.formatDateOnly(examDate),
-            exam_name: String(examName || '').trim(),
-            series: orderedSeries.map((series) => ({
-              series_id: series?.series_id || '',
-              modality: series?.modality || '',
-              description: series?.description || '',
-              image_count: Array.isArray(series?.images) ? series.images.length : 0,
-              sample_instance_ids: (Array.isArray(series?.images) ? series.images : []).slice(0, 5).map((image) => image?.instance_id || '')
-            }))
-          }
-        );
-        // #endregion
 
         return this.buildRadiologyPacsPayload(orderedSeries, { mode });
       }
