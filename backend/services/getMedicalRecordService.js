@@ -2,6 +2,103 @@ import db from '../config/database.js';
 
 class GetMedicalRecordService {
   static DEFAULT_LIMIT = 5;
+  static ORTHANC_CACHE_TTL_MS = 5 * 60 * 1000;
+  static ORTHANC_PAYLOAD_CACHE_TTL_MS = 2 * 60 * 1000;
+  static orthancStudyCache = new Map();
+  static orthancStudyInFlight = new Map();
+  static radiologyPacsPayloadCache = new Map();
+  static radiologyPacsPayloadInFlight = new Map();
+  static orthancInstanceMetaCache = new Map();
+  static orthancInstanceMetaInFlight = new Map();
+
+  // #region debug-point A:debug-reporting
+  static reportDebugEvent(hypothesisId, location, msg, data = {}) {
+    fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'ct-slice-order',
+        runId: 'post-fix',
+        hypothesisId,
+        location,
+        msg,
+        data,
+        ts: Date.now()
+      })
+    }).catch(() => {});
+  }
+
+  static buildSortDebugSample(images = []) {
+    const normalize = (image) => ({
+      instance_id: image?.instance_id || '',
+      instance_number: image?.instance_number ?? null,
+      image_position_z: image?.image_position_z ?? null,
+      slice_location: image?.slice_location ?? null,
+      acquisition_number: image?.acquisition_number ?? null,
+      series_id: image?.series_id || ''
+    });
+
+    return {
+      head: images.slice(0, 5).map(normalize),
+      tail: images.slice(-5).map(normalize)
+    };
+  }
+  // #endregion
+
+  static getCacheEntry(cacheStore, cacheKey) {
+    const cached = cacheStore.get(cacheKey);
+    if (!cached) {
+      return null;
+    }
+
+    if (cached.expiresAt <= Date.now()) {
+      cacheStore.delete(cacheKey);
+      return null;
+    }
+
+    return cached.value;
+  }
+
+  static setCacheEntry(cacheStore, cacheKey, value, ttlMs) {
+    cacheStore.set(cacheKey, {
+      value,
+      expiresAt: Date.now() + ttlMs
+    });
+    return value;
+  }
+
+  static async withPromiseCache({ cacheStore, inFlightStore, cacheKey, ttlMs, factory }) {
+    const cachedValue = this.getCacheEntry(cacheStore, cacheKey);
+    if (cachedValue !== null) {
+      return cachedValue;
+    }
+
+    const existingPromise = inFlightStore.get(cacheKey);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const nextPromise = (async () => {
+      try {
+        const result = await factory();
+        return this.setCacheEntry(cacheStore, cacheKey, result, ttlMs);
+      } finally {
+        inFlightStore.delete(cacheKey);
+      }
+    })();
+
+    inFlightStore.set(cacheKey, nextPromise);
+    return nextPromise;
+  }
+
+  static buildRadiologyPacsPayloadCacheKey(noRawat, examDate, examName, mode) {
+    return [
+      String(noRawat || '').trim(),
+      this.formatDateOnly(examDate),
+      this.normalizeSearchText(examName),
+      String(mode || 'summary').trim().toLowerCase()
+    ].join('|');
+  }
 
   static getIgdPoliCodes() {
     const rawValue = String(process.env.IGD_POLI_CODES || '').trim();
@@ -442,69 +539,79 @@ class GetMedicalRecordService {
       return [];
     }
 
+    const cacheKey = `${String(noRawat || '').trim()}|${patientId}|${studyStartDate}|${studyEndDate}`;
+
     try {
-      const findResponse = await this.requestOrthanc('/tools/find', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          Level: 'Study',
-          Expand: true,
-          Query: {
-            StudyDate: `${studyStartDate}-${studyEndDate}`,
-            PatientID: patientId
+      return await this.withPromiseCache({
+        cacheStore: this.orthancStudyCache,
+        inFlightStore: this.orthancStudyInFlight,
+        cacheKey,
+        ttlMs: this.ORTHANC_CACHE_TTL_MS,
+        factory: async () => {
+          const findResponse = await this.requestOrthanc('/tools/find', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              Level: 'Study',
+              Expand: true,
+              Query: {
+                StudyDate: `${studyStartDate}-${studyEndDate}`,
+                PatientID: patientId
+              }
+            })
+          });
+
+          const studies = await findResponse.json();
+          if (!Array.isArray(studies) || studies.length === 0) {
+            return [];
           }
-        })
+
+          const seriesIds = studies.flatMap((study) => Array.isArray(study?.Series) ? study.Series : []);
+          if (seriesIds.length === 0) {
+            return [];
+          }
+
+          const seriesResults = await Promise.all(
+            seriesIds.map(async (seriesId) => {
+              try {
+                const seriesResponse = await this.requestOrthanc(`/series/${seriesId}`);
+                const seriesData = await seriesResponse.json();
+                const seriesDate = this.normalizePacsDate(
+                  seriesData?.MainDicomTags?.SeriesDate || seriesData?.MainDicomTags?.StudyDate || ''
+                );
+                const description =
+                  seriesData?.MainDicomTags?.AcquisitionDeviceProcessingDescription ||
+                  seriesData?.MainDicomTags?.SeriesDescription ||
+                  '';
+                const modality = String(
+                  seriesData?.MainDicomTags?.Modality ||
+                  seriesData?.RequestedTags?.Modality ||
+                  ''
+                ).trim().toUpperCase();
+                const instances = Array.isArray(seriesData?.Instances) ? seriesData.Instances : [];
+
+                return {
+                  series_id: seriesId,
+                  series_date: seriesDate,
+                  description,
+                  modality,
+                  images: instances.map((instanceId) => ({
+                    instance_id: instanceId,
+                    series_id: seriesId
+                  }))
+                };
+              } catch (error) {
+                console.error(`Error loading Orthanc series ${seriesId}:`, error);
+                return null;
+              }
+            })
+          );
+
+          return seriesResults.filter(Boolean);
+        }
       });
-
-      const studies = await findResponse.json();
-      if (!Array.isArray(studies) || studies.length === 0) {
-        return [];
-      }
-
-      const seriesIds = studies.flatMap((study) => Array.isArray(study?.Series) ? study.Series : []);
-      if (seriesIds.length === 0) {
-        return [];
-      }
-
-      const seriesResults = await Promise.all(
-        seriesIds.map(async (seriesId) => {
-          try {
-            const seriesResponse = await this.requestOrthanc(`/series/${seriesId}`);
-            const seriesData = await seriesResponse.json();
-            const seriesDate = this.normalizePacsDate(
-              seriesData?.MainDicomTags?.SeriesDate || seriesData?.MainDicomTags?.StudyDate || ''
-            );
-            const description =
-              seriesData?.MainDicomTags?.AcquisitionDeviceProcessingDescription ||
-              seriesData?.MainDicomTags?.SeriesDescription ||
-              '';
-            const modality = String(
-              seriesData?.MainDicomTags?.Modality ||
-              seriesData?.RequestedTags?.Modality ||
-              ''
-            ).trim().toUpperCase();
-            const instances = Array.isArray(seriesData?.Instances) ? seriesData.Instances : [];
-
-            return {
-              series_id: seriesId,
-              series_date: seriesDate,
-              description,
-              modality,
-              images: instances.map((instanceId) => ({
-                instance_id: instanceId,
-                series_id: seriesId
-              }))
-            };
-          } catch (error) {
-            console.error(`Error loading Orthanc series ${seriesId}:`, error);
-            return null;
-          }
-        })
-      );
-
-      return seriesResults.filter(Boolean);
     } catch (error) {
       console.error(`Error fetching PACS radiology series for ${noRawat}:`, error);
       return [];
@@ -535,6 +642,138 @@ class GetMedicalRecordService {
     return matchedSeries.length ? matchedSeries : datedSeries;
   }
 
+  static parseNumberTag(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    const normalized = Number(String(value).trim());
+    return Number.isFinite(normalized) ? normalized : null;
+  }
+
+  static parseImagePositionZ(value) {
+    if (Array.isArray(value) && value.length >= 3) {
+      const z = Number(value[2]);
+      return Number.isFinite(z) ? z : null;
+    }
+
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const parts = normalized.split('\\').map((entry) => Number(String(entry).trim()));
+    if (parts.length >= 3 && Number.isFinite(parts[2])) {
+      return parts[2];
+    }
+
+    return null;
+  }
+
+  static async getOrthancInstanceSortMetadata(instanceId) {
+    const normalizedInstanceId = String(instanceId || '').trim();
+    if (!normalizedInstanceId) {
+      return null;
+    }
+
+    return this.withPromiseCache({
+      cacheStore: this.orthancInstanceMetaCache,
+      inFlightStore: this.orthancInstanceMetaInFlight,
+      cacheKey: normalizedInstanceId,
+      ttlMs: this.ORTHANC_CACHE_TTL_MS,
+      factory: async () => {
+        const response = await this.requestOrthanc(`/instances/${encodeURIComponent(normalizedInstanceId)}`);
+        const instanceData = await response.json();
+        const tags = instanceData?.MainDicomTags || instanceData?.SimplifiedTags || instanceData?.RequestedTags || {};
+
+        return {
+          instance_number: this.parseNumberTag(tags?.InstanceNumber),
+          acquisition_number: this.parseNumberTag(tags?.AcquisitionNumber),
+          slice_location: this.parseNumberTag(tags?.SliceLocation),
+          image_position_z: this.parseImagePositionZ(tags?.ImagePositionPatient)
+        };
+      }
+    });
+  }
+
+  static compareRadiologyPacsImageOrder(left, right) {
+    const pairComparisons = [
+      [left?.instance_number, right?.instance_number],
+      [left?.image_position_z, right?.image_position_z],
+      [left?.slice_location, right?.slice_location],
+      [left?.acquisition_number, right?.acquisition_number]
+    ];
+
+    for (const [leftValue, rightValue] of pairComparisons) {
+      if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
+        return leftValue - rightValue;
+      }
+    }
+
+    return (left?.original_index || 0) - (right?.original_index || 0);
+  }
+
+  static async sortMatchedRadiologySeries(matchedSeries) {
+    const normalizedSeries = Array.isArray(matchedSeries) ? matchedSeries.filter(Boolean) : [];
+
+    const sortedSeries = await Promise.all(
+      normalizedSeries.map(async (series) => {
+        const images = Array.isArray(series?.images) ? series.images.filter(Boolean) : [];
+        if (images.length <= 1) {
+          return series;
+        }
+
+        const enrichedImages = await Promise.all(
+          images.map(async (image, index) => {
+            const sortMetadata = await this.getOrthancInstanceSortMetadata(image?.instance_id);
+            return {
+              ...image,
+              ...sortMetadata,
+              original_index: index
+            };
+          })
+        );
+
+        // #region debug-point A:series-before-after-sort
+        this.reportDebugEvent(
+          'A',
+          'backend/services/getMedicalRecordService.js:sortMatchedRadiologySeries:before-sort',
+          '[DEBUG] CT series sort input captured',
+          {
+            series_id: series?.series_id || '',
+            modality: series?.modality || '',
+            image_count: enrichedImages.length,
+            sample: this.buildSortDebugSample(enrichedImages)
+          }
+        );
+        // #endregion
+
+        enrichedImages.sort((left, right) => this.compareRadiologyPacsImageOrder(left, right));
+
+        // #region debug-point A:series-after-sort
+        this.reportDebugEvent(
+          'A',
+          'backend/services/getMedicalRecordService.js:sortMatchedRadiologySeries:after-sort',
+          '[DEBUG] CT series sort output captured',
+          {
+            series_id: series?.series_id || '',
+            modality: series?.modality || '',
+            image_count: enrichedImages.length,
+            sample: this.buildSortDebugSample(enrichedImages)
+          }
+        );
+        // #endregion
+
+        return {
+          ...series,
+          images: enrichedImages.map(({ original_index, ...image }) => image)
+        };
+      })
+    );
+
+    return sortedSeries;
+  }
+
   static serializeRadiologyPacsImage(image, series = {}) {
     return {
       ...image,
@@ -545,19 +784,46 @@ class GetMedicalRecordService {
   }
 
   static buildRadiologyPacsPayload(matchedSeries, options = {}) {
-    const { limitCtToThumbnail = false } = options;
+    const {
+      limitCtToThumbnail = false,
+      mode = 'summary',
+      nonCtPreviewLimit = 6
+    } = options;
+    const normalizedMode = String(mode || 'summary').trim().toLowerCase() === 'full' ? 'full' : 'summary';
     const pacsModality = matchedSeries.find((series) => series?.modality)?.modality || '';
     const allImages = matchedSeries.flatMap((series) =>
       (series.images || []).map((image) => this.serializeRadiologyPacsImage(image, series))
     );
     const totalImages = allImages.length;
-    const shouldLimitCtImages = limitCtToThumbnail && pacsModality === 'CT' && totalImages > 0;
+    const shouldLimitCtImages = (limitCtToThumbnail || normalizedMode === 'summary') && pacsModality === 'CT' && totalImages > 0;
+    const normalizedNonCtPreviewLimit = Math.max(1, Number(nonCtPreviewLimit) || 6);
+
+    const limitImagesForResponse = (images, modality) => {
+      if (normalizedMode === 'full') {
+        return images;
+      }
+
+      if (modality === 'CT') {
+        return images.slice(0, 1);
+      }
+
+      return images.slice(0, normalizedNonCtPreviewLimit);
+    };
+
+    const responseImages = shouldLimitCtImages
+      ? allImages.slice(0, 1)
+      : limitImagesForResponse(allImages, pacsModality);
 
     return {
       pacs_modality: pacsModality,
       pacs_total_images: totalImages,
+      pacs_metadata_only: normalizedMode !== 'full',
+      pacs_full_loaded: responseImages.length >= totalImages,
       pacs_series: matchedSeries.map((series) => {
         const seriesImages = (series.images || []).map((image) => this.serializeRadiologyPacsImage(image, series));
+        const responseSeriesImages = shouldLimitCtImages && series.modality === 'CT'
+          ? seriesImages.slice(0, 1)
+          : limitImagesForResponse(seriesImages, series.modality);
 
         return {
           series_id: series.series_id || '',
@@ -566,18 +832,53 @@ class GetMedicalRecordService {
           modality: series.modality || '',
           image_count: seriesImages.length,
           thumbnail_instance_id: seriesImages.length > 0 ? seriesImages[0].instance_id : '',
-          images: shouldLimitCtImages ? seriesImages.slice(0, 1) : seriesImages
+          images: responseSeriesImages
         };
       }),
-      pacs_images: shouldLimitCtImages ? allImages.slice(0, 1) : allImages
+      pacs_images: responseImages
     };
   }
 
-  static async getRadiologyPacsImages(noRawat, examDate, examName) {
-    const pacsSeries = await this.fetchRadiologyPacsSeries(noRawat);
-    const matchedSeries = this.matchRadiologyPacsSeries(pacsSeries, examDate, examName);
+  static async getRadiologyPacsImages(noRawat, examDate, examName, options = {}) {
+    const mode = String(options?.mode || 'summary').trim().toLowerCase() === 'full' ? 'full' : 'summary';
+    const cacheKey = this.buildRadiologyPacsPayloadCacheKey(noRawat, examDate, examName, mode);
 
-    return this.buildRadiologyPacsPayload(matchedSeries);
+    return this.withPromiseCache({
+      cacheStore: this.radiologyPacsPayloadCache,
+      inFlightStore: this.radiologyPacsPayloadInFlight,
+      cacheKey,
+      ttlMs: this.ORTHANC_PAYLOAD_CACHE_TTL_MS,
+      factory: async () => {
+        const pacsSeries = await this.fetchRadiologyPacsSeries(noRawat);
+        const matchedSeries = this.matchRadiologyPacsSeries(pacsSeries, examDate, examName);
+        const orderedSeries = mode === 'full'
+          ? await this.sortMatchedRadiologySeries(matchedSeries)
+          : matchedSeries;
+
+        // #region debug-point C:matched-series-summary
+        this.reportDebugEvent(
+          'C',
+          'backend/services/getMedicalRecordService.js:getRadiologyPacsImages',
+          '[DEBUG] PACS payload series selected',
+          {
+            no_rawat: String(noRawat || '').trim(),
+            mode,
+            exam_date: this.formatDateOnly(examDate),
+            exam_name: String(examName || '').trim(),
+            series: orderedSeries.map((series) => ({
+              series_id: series?.series_id || '',
+              modality: series?.modality || '',
+              description: series?.description || '',
+              image_count: Array.isArray(series?.images) ? series.images.length : 0,
+              sample_instance_ids: (Array.isArray(series?.images) ? series.images : []).slice(0, 5).map((image) => image?.instance_id || '')
+            }))
+          }
+        );
+        // #endregion
+
+        return this.buildRadiologyPacsPayload(orderedSeries, { mode });
+      }
+    });
   }
 
   static async getOrthancRenderedImage(instanceId, width = 500) {

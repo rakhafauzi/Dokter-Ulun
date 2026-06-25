@@ -930,6 +930,7 @@ app.get('/api/pacs/radiology-images', async (req, res) => {
     const noRawat = String(req.query.no_rawat || '').trim();
     const examDate = String(req.query.exam_date || '').trim();
     const examName = String(req.query.exam_name || '').trim();
+    const mode = String(req.query.mode || 'summary').trim().toLowerCase() === 'full' ? 'full' : 'summary';
 
     if (!noRawat || !examDate) {
       return res.status(400).json({
@@ -938,7 +939,9 @@ app.get('/api/pacs/radiology-images', async (req, res) => {
       });
     }
 
-    const pacsResult = await GetMedicalRecordService.getRadiologyPacsImages(noRawat, examDate, examName);
+    const pacsResult = await GetMedicalRecordService.getRadiologyPacsImages(noRawat, examDate, examName, {
+      mode
+    });
 
     res.json({
       success: true,

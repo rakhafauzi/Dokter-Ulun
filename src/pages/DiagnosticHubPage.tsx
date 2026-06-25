@@ -85,6 +85,8 @@ interface RadiologyPacsResult {
   pacs_modality?: string;
   pacs_images?: RadiologyPacsImage[];
   pacs_total_images?: number;
+  pacs_metadata_only?: boolean;
+  pacs_full_loaded?: boolean;
 }
 
 interface RadiologyDetail {
@@ -179,6 +181,11 @@ const buildPacsPreviewUrl = (instanceId?: string, width = 500) => {
   return `${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/preview/${encodeURIComponent(normalizedInstanceId)}?width=${width}`;
 };
 
+const buildViewerImageUrl = (instanceId?: string, modality?: string) => {
+  const normalizedModality = String(modality || '').trim().toUpperCase();
+  return buildPacsPreviewUrl(instanceId, normalizedModality === 'CT' ? 768 : 1200);
+};
+
 const isImageUrl = (value?: string) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(String(value || '').trim());
 
 const getLabResultRowTone = (keterangan?: string) => {
@@ -242,6 +249,8 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
     modality: string;
     isPlaying: boolean;
     playbackSpeed: number;
+    totalImages: number;
+    loading: boolean;
   }>({
     open: false,
     title: '',
@@ -250,15 +259,21 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
     zoom: 1,
     modality: '',
     isPlaying: false,
-    playbackSpeed: 180
+    playbackSpeed: 180,
+    totalImages: 0,
+    loading: false
   });
   const [checkingAccess, setCheckingAccess] = React.useState(true);
   const [canAccess, setCanAccess] = React.useState(false);
   const [accessError, setAccessError] = React.useState('');
+  const [viewerFrameReady, setViewerFrameReady] = React.useState(false);
 
   const selectedNoRawat = String(searchParams.get('no_rawat') || '').trim();
   const username = String(user?.username || '').trim();
   const radiologyDetailRequestRef = React.useRef(0);
+  const imageViewerRequestRef = React.useRef(0);
+  const loadedCtViewerFramesRef = React.useRef<Set<string>>(new Set());
+  const loadingCtViewerFramesRef = React.useRef<Set<string>>(new Set());
   const { paginationState, updatePagination, handlePageChange, handleItemsPerPageChange } = usePagination({
     initialItemsPerPage: 10
   });
@@ -527,7 +542,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
     images: ViewerImageItem[],
     startIndex = 0,
     title = 'Viewer Gambar',
-    options?: { modality?: string }
+    options?: { modality?: string; totalImages?: number; loading?: boolean }
   ) => {
     if (!images.length) {
       return;
@@ -546,7 +561,9 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       zoom: 1,
       modality: normalizedModality,
       isPlaying: isCtViewer && images.length > 1,
-      playbackSpeed: 180
+      playbackSpeed: 180,
+      totalImages: Math.max(Number(options?.totalImages) || 0, images.length),
+      loading: Boolean(options?.loading)
     });
   };
 
@@ -555,11 +572,14 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       ...previous,
       open: false,
       zoom: 1,
-      isPlaying: false
+      isPlaying: false,
+      loading: false
     }));
+    setViewerFrameReady(false);
   };
 
   const goToViewerImage = (direction: number) => {
+    setViewerFrameReady(false);
     setImageViewer((previous) => {
       if (!previous.images.length) {
         return previous;
@@ -603,7 +623,203 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
         isPlaying: false
       };
     });
+    setViewerFrameReady(false);
   }, [imageViewer.images.length, imageViewer.modality]);
+
+  const prefetchCtViewerFrame = React.useCallback((image?: ViewerImageItem | null) => {
+    if (!image?.instanceId) {
+      return;
+    }
+
+    const src = buildViewerImageUrl(image.instanceId, 'CT');
+    if (!src || loadedCtViewerFramesRef.current.has(src) || loadingCtViewerFramesRef.current.has(src)) {
+      return;
+    }
+
+    loadingCtViewerFramesRef.current.add(src);
+    const frameImage = new Image();
+    frameImage.onload = () => {
+      loadingCtViewerFramesRef.current.delete(src);
+      loadedCtViewerFramesRef.current.add(src);
+    };
+    frameImage.onerror = () => {
+      loadingCtViewerFramesRef.current.delete(src);
+    };
+    frameImage.src = src;
+  }, []);
+
+  const getRadiologyPacsResultKey = React.useCallback((noRawat: string, result: RadiologyPacsResult) => {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    const examDate = String(result?.tgl_periksa || String(result?.tanggal || '').split(' ')[0] || '').trim();
+    const examName = String(result?.pemeriksaan || result?.judul || '').trim();
+    return `${normalizedNoRawat}::${examDate}::${examName}`;
+  }, []);
+
+  const fetchRadiologyResultPacs = React.useCallback(async (
+    noRawat: string,
+    result: RadiologyPacsResult,
+    mode: 'summary' | 'full' = 'full'
+  ) => {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    const examDate = String(result?.tgl_periksa || String(result?.tanggal || '').split(' ')[0] || '').trim();
+    const examName = String(result?.pemeriksaan || result?.judul || '').trim();
+
+    if (!normalizedNoRawat || !examDate) {
+      throw new Error('Data PACS radiologi belum lengkap');
+    }
+
+    const params = new URLSearchParams({
+      no_rawat: normalizedNoRawat,
+      exam_date: examDate,
+      mode
+    });
+
+    if (examName) {
+      params.set('exam_name', examName);
+    }
+
+    const response = await fetch(`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/radiology-images?${params.toString()}`, {
+      credentials: 'include'
+    });
+    const responseJson = await response.json().catch(() => null);
+
+    if (!response.ok || !responseJson?.success) {
+      throw new Error(responseJson?.error || 'Gagal memuat PACS radiologi');
+    }
+
+    return {
+      ...result,
+      pacs_modality: responseJson.pacs_modality || result?.pacs_modality || '',
+      pacs_total_images: Number(responseJson.pacs_total_images) || 0,
+      pacs_metadata_only: responseJson.pacs_metadata_only === true,
+      pacs_full_loaded: responseJson.pacs_full_loaded === true,
+      pacs_images: Array.isArray(responseJson.pacs_images) ? responseJson.pacs_images.filter(Boolean) : []
+    } as RadiologyPacsResult;
+  }, []);
+
+  const updateRadiologyResultPacs = React.useCallback((nextResult: RadiologyPacsResult) => {
+    setRadiologyDetail((previous) => {
+      if (!previous) {
+        return previous;
+      }
+
+      const targetKey = getRadiologyPacsResultKey(previous.no_rawat, nextResult);
+
+      return {
+        ...previous,
+        pacs_results: previous.pacs_results.map((item) => (
+          getRadiologyPacsResultKey(previous.no_rawat, item) === targetKey ? { ...item, ...nextResult } : item
+        ))
+      };
+    });
+  }, [getRadiologyPacsResultKey]);
+
+  const openRadiologyPacsViewer = React.useCallback(async (result: RadiologyPacsResult, imageIndex = 0) => {
+    const noRawat = String(radiologyDetail?.no_rawat || selectedNoRawat || '').trim();
+    const modality = String(result?.pacs_modality || '').trim().toUpperCase();
+    const currentImages = Array.isArray(result?.pacs_images) ? result.pacs_images.filter(Boolean) : [];
+    const totalImages = Math.max(Number(result?.pacs_total_images) || 0, currentImages.length);
+    const viewerImages = currentImages.map((item, index) => ({
+      src: buildViewerImageUrl(item.instance_id, modality),
+      title: `${result.pemeriksaan || 'Radiologi'} ${index + 1}`,
+      description: formatDateTime(result.tanggal),
+      downloadName: `radiologi-${result.pemeriksaan || 'gambar'}-${index + 1}.jpg`,
+      instanceId: item.instance_id
+    })).filter((item) => Boolean(item.src));
+    const shouldFetchFullCt = modality === 'CT' && totalImages > viewerImages.length;
+    const requestId = ++imageViewerRequestRef.current;
+
+    openImageViewer(
+      viewerImages,
+      imageIndex,
+      result.pemeriksaan || 'Radiologi',
+      { modality, totalImages, loading: shouldFetchFullCt }
+    );
+
+    if (!shouldFetchFullCt || !noRawat) {
+      return;
+    }
+
+    window.setTimeout(async () => {
+      try {
+        const fullResult = await fetchRadiologyResultPacs(noRawat, result, 'full');
+        const fullImages = (Array.isArray(fullResult.pacs_images) ? fullResult.pacs_images : []).map((item, index) => ({
+          src: buildViewerImageUrl(item.instance_id, modality),
+          title: `${fullResult.pemeriksaan || 'Radiologi'} ${index + 1}`,
+          description: formatDateTime(fullResult.tanggal),
+          downloadName: `radiologi-${fullResult.pemeriksaan || 'gambar'}-${index + 1}.jpg`,
+          instanceId: item.instance_id
+        })).filter((item) => Boolean(item.src));
+
+        // #region debug-point B:frontend-full-stack-order
+        fetch('http://127.0.0.1:7777/event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: 'ct-slice-order',
+            runId: 'post-fix',
+            hypothesisId: 'B',
+            location: 'src/pages/DiagnosticHubPage.tsx:openRadiologyPacsViewer',
+            msg: '[DEBUG] Frontend received CT full stack',
+            data: {
+              api_origin: API_CONFIG.BASE_URL_WITHOUT_API,
+              no_rawat: noRawat,
+              pemeriksaan: fullResult.pemeriksaan || '',
+              total_images: Number(fullResult.pacs_total_images) || fullImages.length,
+              head_instance_ids: fullImages.slice(0, 5).map((image) => image.instanceId || ''),
+              tail_instance_ids: fullImages.slice(-5).map((image) => image.instanceId || ''),
+              head_raw: (Array.isArray(fullResult.pacs_images) ? fullResult.pacs_images : []).slice(0, 5).map((item: any) => ({
+                instance_id: item?.instance_id || '',
+                series_id: item?.series_id || '',
+                modality: item?.modality || '',
+                description: item?.description || ''
+              })),
+              tail_raw: (Array.isArray(fullResult.pacs_images) ? fullResult.pacs_images : []).slice(-5).map((item: any) => ({
+                instance_id: item?.instance_id || '',
+                series_id: item?.series_id || '',
+                modality: item?.modality || '',
+                description: item?.description || ''
+              }))
+            },
+            ts: Date.now()
+          })
+        }).catch(() => {});
+        // #endregion
+
+        updateRadiologyResultPacs(fullResult);
+
+        if (imageViewerRequestRef.current !== requestId) {
+          return;
+        }
+
+        setImageViewer((previous) => ({
+          ...previous,
+          images: fullImages.length > 0 ? fullImages : previous.images,
+          currentIndex: modality === 'CT' && fullImages.length > 1 && previous.images.length <= 1
+            ? Math.floor(fullImages.length / 2)
+            : Math.min(previous.currentIndex, Math.max((fullImages.length || previous.images.length) - 1, 0)),
+          totalImages: Math.max(previous.totalImages, Number(fullResult.pacs_total_images) || fullImages.length),
+          loading: false,
+          isPlaying: fullImages.length > 1
+        }));
+      } catch (error) {
+        if (imageViewerRequestRef.current !== requestId) {
+          return;
+        }
+
+        setImageViewer((previous) => ({
+          ...previous,
+          loading: false,
+          isPlaying: false
+        }));
+        toast({
+          title: 'Gagal memuat PACS',
+          description: error instanceof Error ? error.message : 'Slice CT gagal dimuat',
+          variant: 'destructive'
+        });
+      }
+    }, 0);
+  }, [fetchRadiologyResultPacs, formatDateTime, openImageViewer, radiologyDetail?.no_rawat, selectedNoRawat, updateRadiologyResultPacs]);
 
   const zoomInViewer = () => {
     setImageViewer((previous) => ({
@@ -710,11 +926,51 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
   }, [labDetail?.results, mode]);
 
   React.useEffect(() => {
-    if (!imageViewer.open || !imageViewer.isPlaying || !isCtImageViewer || imageViewer.images.length <= 1) {
+    if (!imageViewer.open || !isCtImageViewer || !activeViewerImage?.src) {
       return;
     }
 
-    const timer = window.setInterval(() => {
+    if (loadedCtViewerFramesRef.current.has(activeViewerImage.src)) {
+      setViewerFrameReady(true);
+      return;
+    }
+
+    setViewerFrameReady(false);
+  }, [activeViewerImage?.src, imageViewer.open, isCtImageViewer]);
+
+  React.useEffect(() => {
+    if (!imageViewer.open || !isCtImageViewer || imageViewer.images.length <= 1) {
+      return;
+    }
+
+    const indexesToPrefetch = [
+      imageViewer.currentIndex,
+      imageViewer.currentIndex + 1,
+      imageViewer.currentIndex + 2,
+      imageViewer.currentIndex - 1,
+      imageViewer.currentIndex - 2
+    ].map((index) => {
+      const total = imageViewer.images.length;
+      return ((index % total) + total) % total;
+    });
+
+    indexesToPrefetch.forEach((index) => {
+      prefetchCtViewerFrame(imageViewer.images[index] || null);
+    });
+  }, [imageViewer.currentIndex, imageViewer.images, imageViewer.open, isCtImageViewer, prefetchCtViewerFrame]);
+
+  React.useEffect(() => {
+    if (
+      !imageViewer.open ||
+      !imageViewer.isPlaying ||
+      !isCtImageViewer ||
+      imageViewer.images.length <= 1 ||
+      !viewerFrameReady
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
       setImageViewer((previous) => {
         if (!previous.images.length) {
           return previous;
@@ -725,10 +981,11 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
           currentIndex: (previous.currentIndex + 1) % previous.images.length
         };
       });
+      setViewerFrameReady(false);
     }, imageViewer.playbackSpeed);
 
-    return () => window.clearInterval(timer);
-  }, [imageViewer.images.length, imageViewer.isPlaying, imageViewer.open, imageViewer.playbackSpeed, isCtImageViewer]);
+    return () => window.clearTimeout(timer);
+  }, [imageViewer.images.length, imageViewer.isPlaying, imageViewer.open, imageViewer.playbackSpeed, isCtImageViewer, viewerFrameReady]);
 
   if (checkingAccess) {
     return (
@@ -1259,19 +1516,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                                       type="button"
                                       className="overflow-hidden rounded-lg border bg-black/5 hover:border-primary"
                                       onClick={() => {
-                                        const viewerImages = result.pacs_images?.map((item, index) => ({
-                                          src: buildPacsPreviewUrl(item.instance_id, 1200),
-                                          title: `${result.pemeriksaan || 'Radiologi'} ${index + 1}`,
-                                          description: formatDateTime(result.tanggal),
-                                          downloadName: `radiologi-${result.pemeriksaan || 'gambar'}-${index + 1}.jpg`,
-                                          instanceId: item.instance_id
-                                        })).filter((item) => Boolean(item.src)) || [];
-                                        openImageViewer(
-                                          viewerImages,
-                                          imageIndex,
-                                          result.pemeriksaan || 'Radiologi',
-                                          { modality: result.pacs_modality || '' }
-                                        );
+                                        void openRadiologyPacsViewer(result, imageIndex);
                                       }}
                                     >
                                       <img
@@ -1371,6 +1616,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
 
       <Dialog open={imageViewer.open} onOpenChange={(open) => {
         if (!open) {
+          imageViewerRequestRef.current += 1;
           closeImageViewer();
         }
       }}>
@@ -1383,7 +1629,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="text-sm text-muted-foreground">
                 {activeViewerImage
-                  ? `${isCtImageViewer ? 'Slice' : 'Gambar'} ${imageViewer.currentIndex + 1} dari ${imageViewer.images.length}`
+                  ? `${isCtImageViewer ? 'Slice' : 'Gambar'} ${imageViewer.currentIndex + 1} dari ${Math.max(imageViewer.totalImages || 0, imageViewer.images.length)}`
                   : 'Tidak ada gambar'}
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1412,7 +1658,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                     variant="outline"
                     size="sm"
                     onClick={() => setImageViewer((previous) => ({ ...previous, isPlaying: !previous.isPlaying }))}
-                    disabled={imageViewer.images.length <= 1}
+                    disabled={imageViewer.loading || imageViewer.images.length <= 1}
                   >
                     {imageViewer.isPlaying ? (
                       <>
@@ -1436,10 +1682,24 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
             >
               {activeViewerImage ? (
                 <img
+                  key={activeViewerImage.instanceId || activeViewerImage.src}
                   src={activeViewerImage.src}
                   alt={activeViewerImage.title}
                   className="max-h-[75vh] max-w-full object-contain transition-transform duration-200"
                   style={isCtImageViewer ? undefined : { transform: `scale(${imageViewer.zoom})` }}
+                  onLoad={() => {
+                    if (isCtImageViewer && activeViewerImage?.src) {
+                      loadedCtViewerFramesRef.current.add(activeViewerImage.src);
+                      loadingCtViewerFramesRef.current.delete(activeViewerImage.src);
+                    }
+                    setViewerFrameReady(true);
+                  }}
+                  onError={() => {
+                    if (isCtImageViewer && activeViewerImage?.src) {
+                      loadingCtViewerFramesRef.current.delete(activeViewerImage.src);
+                    }
+                    setViewerFrameReady(true);
+                  }}
                 />
               ) : (
                 <div className="text-sm text-white/80">Gambar tidak tersedia</div>
@@ -1448,11 +1708,20 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
               {activeViewerImage && isCtImageViewer ? (
                 <div className="absolute left-4 top-4 rounded-md bg-black/65 px-3 py-2 text-xs text-white shadow">
                   <div className="font-medium">
-                    Slice {imageViewer.currentIndex + 1} / {imageViewer.images.length}
+                    Slice {imageViewer.currentIndex + 1} / {Math.max(imageViewer.totalImages || 0, imageViewer.images.length)}
                   </div>
                   <div className="mt-1 text-white/80">
-                    {imageViewer.isPlaying ? 'Mode: Play' : 'Mode: Manual'}
+                    {imageViewer.loading ? 'Mode: Loading' : imageViewer.isPlaying ? 'Mode: Play' : 'Mode: Manual'}
                   </div>
+                    <div className="mt-1 text-emerald-300">
+                      Urutan slice: metadata-sorted
+                    </div>
+                </div>
+              ) : null}
+
+              {imageViewer.loading ? (
+                <div className="absolute right-4 top-4 rounded-md bg-black/65 px-3 py-2 text-xs text-white shadow">
+                  Memuat slice CT {imageViewer.images.length}/{Math.max(imageViewer.totalImages || 0, imageViewer.images.length)}
                 </div>
               ) : null}
 
@@ -1484,13 +1753,15 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
               ) : null}
             </div>
 
-            {isCtImageViewer && imageViewer.images.length > 1 ? (
+            {isCtImageViewer && Math.max(imageViewer.totalImages || 0, imageViewer.images.length) > 1 ? (
               <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="text-sm font-medium">CT Stack Player</p>
                     <p className="text-xs text-muted-foreground">
-                      Gunakan play untuk memutar slice otomatis atau geser slider untuk memilih slice tertentu.
+                      {imageViewer.loading
+                        ? `Viewer sudah terbuka. Sedang memuat daftar slice CT ${imageViewer.images.length}/${Math.max(imageViewer.totalImages || 0, imageViewer.images.length)}.`
+                        : 'Gunakan play untuk memutar slice otomatis atau geser slider untuk memilih slice tertentu.'}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1512,7 +1783,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Slice 1</span>
                   <span>Slice {imageViewer.currentIndex + 1}</span>
-                  <span>Slice {imageViewer.images.length}</span>
+                    <span>Slice {Math.max(imageViewer.totalImages || 0, imageViewer.images.length)}</span>
                 </div>
                 <input
                   type="range"
@@ -1522,6 +1793,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                   value={imageViewer.currentIndex}
                   onChange={(event) => {
                     const nextIndex = Number(event.target.value) || 0;
+                        setViewerFrameReady(false);
                     setImageViewer((previous) => ({
                       ...previous,
                       currentIndex: nextIndex,
@@ -1549,7 +1821,10 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                     key={`${image.src}-${index}`}
                     type="button"
                     className={`overflow-hidden rounded-md border ${index === imageViewer.currentIndex ? 'ring-2 ring-primary' : 'opacity-80 hover:opacity-100'}`}
-                    onClick={() => setImageViewer((previous) => ({ ...previous, currentIndex: index, zoom: 1 }))}
+                    onClick={() => {
+                      setViewerFrameReady(false);
+                      setImageViewer((previous) => ({ ...previous, currentIndex: index, zoom: 1 }));
+                    }}
                   >
                     <img
                       src={image.src}
