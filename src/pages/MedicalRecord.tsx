@@ -4941,7 +4941,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return;
       }
 
-      const previewUrl = `${API_CONFIG.PACS_ORIGIN}/api/pacs/preview/${encodeURIComponent(instanceId)}`;
+      const previewUrl = `${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/preview/${encodeURIComponent(instanceId)}`;
       if (prefetchedPacsPreviewUrlsRef.current.has(previewUrl)) {
         return;
       }
@@ -7853,7 +7853,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     params.set('mode', mode);
 
-    const response = await fetch(`${API_CONFIG.PACS_ORIGIN}/api/pacs/radiology-images?${params.toString()}`);
+    const response = await fetch(`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/radiology-images?${params.toString()}`);
     const responseJson = await response.json().catch(() => null);
 
     if (!response.ok || !responseJson?.success) {
@@ -8195,11 +8195,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     const encodedInstanceId = encodeURIComponent(instanceId);
 
     if (preferPreview) {
-      return `${API_CONFIG.PACS_ORIGIN}${basePath}/${encodedInstanceId}`;
+      return `${API_CONFIG.BASE_URL_WITHOUT_API}${basePath}/${encodedInstanceId}`;
     }
 
     const width = options?.width || 500;
-    return `${API_CONFIG.PACS_ORIGIN}${basePath}/${encodedInstanceId}?width=${width}`;
+    return `${API_CONFIG.BASE_URL_WITHOUT_API}${basePath}/${encodedInstanceId}?width=${width}`;
   };
 
   const zoomOutPacsPreview = () => {
@@ -13052,7 +13052,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             </DialogTitle>
           </DialogHeader>
 
-          <div className="max-h-[calc(90vh-88px)] space-y-4 overflow-y-auto p-6">
+          <div className="space-y-4 p-6">
             {activePacsImage ? (
               <Suspense
                 fallback={(
@@ -13071,7 +13071,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   zoomLevel={pacsZoomLevel}
                   isPlaying={isPacsPlaying}
                   playbackSpeed={pacsPlaybackSpeed}
-                  sliceOrderLabel={isCtPacsPreview ? 'Urutan slice: metadata-sorted' : undefined}
                   onWheel={handleCtWheelNavigation}
                   onPrev={() => goToPacsImage(pacsPreviewModal.currentIndex - 1)}
                   onNext={() => goToPacsImage(pacsPreviewModal.currentIndex + 1)}

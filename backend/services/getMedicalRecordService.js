@@ -460,18 +460,12 @@ class GetMedicalRecordService {
 
     const baseUrl = orthancConfig.server.replace(/\/+$/, '');
     const authToken = Buffer.from(`${orthancConfig.username}:${orthancConfig.password}`).toString('base64');
-    const normalizedHeaders = {
-      Authorization: `Basic ${authToken}`,
-      ...(init.headers || {})
-    };
-
-    if (init.body && !normalizedHeaders['Content-Type'] && !normalizedHeaders['content-type']) {
-      normalizedHeaders['Content-Type'] = 'application/json';
-    }
-
     const response = await fetch(`${baseUrl}${pathname}`, {
       ...init,
-      headers: normalizedHeaders
+      headers: {
+        Authorization: `Basic ${authToken}`,
+        ...(init.headers || {})
+      }
     });
 
     if (!response.ok) {

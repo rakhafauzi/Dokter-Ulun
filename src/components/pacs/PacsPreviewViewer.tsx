@@ -41,7 +41,6 @@ interface PacsPreviewViewerProps {
   onResetZoom: () => void;
   onZoomIn: () => void;
   getImageUrl: (instanceId: string, options?: PacsImageUrlOptions) => string;
-  sliceOrderLabel?: string;
 }
 
 const PacsPreviewViewer: React.FC<PacsPreviewViewerProps> = ({
@@ -63,8 +62,7 @@ const PacsPreviewViewer: React.FC<PacsPreviewViewerProps> = ({
   onZoomOut,
   onResetZoom,
   onZoomIn,
-  getImageUrl,
-  sliceOrderLabel
+  getImageUrl
 }) => {
   const isCtPacsPreview = String(modality || '').toUpperCase() === 'CT';
   const totalImagesLabel = Math.max(Number(totalImages) || 0, images.length);
@@ -213,14 +211,7 @@ const PacsPreviewViewer: React.FC<PacsPreviewViewerProps> = ({
         <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-medium">CT Stack Player</p>
-                {sliceOrderLabel ? (
-                  <div className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                    {sliceOrderLabel}
-                  </div>
-                ) : null}
-              </div>
+              <p className="font-medium">CT Stack Player</p>
               <p className="text-sm text-muted-foreground">
                 {loading
                   ? `Modal sudah tampil. Viewer CT sedang memuat daftar slice (${images.length}/${totalImagesLabel}).`
