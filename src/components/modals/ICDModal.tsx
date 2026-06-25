@@ -585,8 +585,11 @@ export const ICDModal: React.FC<ICDModalProps> = ({
       return (
         <div
           key={fieldKey}
-          className="grid grid-cols-1 gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.7fr)_150px_minmax(0,1.7fr)_140px_140px] md:items-end"
+          className="grid grid-cols-1 gap-3 rounded-lg border p-3 md:rounded-none md:border-0 md:border-b md:p-0 md:pb-3 md:last:border-b-0 md:last:pb-0 md:grid-cols-[minmax(0,1.7fr)_150px_minmax(0,1.7fr)_140px_140px] md:items-end"
         >
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground md:hidden">
+            Baris {index + 1}
+          </div>
           <div className="space-y-2">
             <Label className="md:hidden">{tab === 'icd10' ? 'Cari ICD-10' : 'Cari ICD-9-CM'}</Label>
             <div className="space-y-2">
@@ -613,7 +616,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent disablePortal className="w-[350px] p-0 md:w-[520px]" align="start">
+                <PopoverContent disablePortal className="w-[calc(100vw-2rem)] max-w-[520px] p-0" align="start">
                   <Command shouldFilter={false}>
                     <CommandInput
                       placeholder={tab === 'icd10' ? 'Cari kode atau nama penyakit...' : 'Cari kode atau deskripsi tindakan...'}
@@ -713,7 +716,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent disablePortal className="w-[350px] p-0 md:w-[520px]" align="start">
+                <PopoverContent disablePortal className="w-[calc(100vw-2rem)] max-w-[520px] p-0" align="start">
                   <Command shouldFilter={false}>
                     <CommandInput
                       placeholder="Cari concept id atau istilah SNOMED-CT..."
@@ -789,39 +792,139 @@ export const ICDModal: React.FC<ICDModalProps> = ({
     });
   };
 
+  const renderSavedDataCards = (tab: TabType) => {
+    if (currentSavedData.length === 0) {
+      return (
+        <div className="rounded-lg border bg-background p-4 text-sm text-center text-muted-foreground">
+          {tab === 'icd10'
+            ? 'Belum ada data ICD-10 yang disimpan.'
+            : 'Belum ada data ICD-9 yang disimpan.'}
+        </div>
+      );
+    }
+
+    return currentSavedData.map((item: ICD10Data | ICD9Data, index: number) => {
+      if (tab === 'icd10') {
+        const icd10Item = item as ICD10Data;
+
+        return (
+          <div key={icd10Item.kd_penyakit || icd10Item.id || index} className="rounded-lg border bg-background p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Kode</p>
+                <p className="font-mono text-sm break-all">{icd10Item.kd_penyakit || '-'}</p>
+              </div>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="shrink-0"
+                onClick={() => handleDeleteSaved('icd10', icd10Item)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Nama Penyakit</p>
+              <p className="text-sm">{icd10Item.nm_penyakit || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">SNOMED-CT</p>
+              <p className="font-mono text-sm break-all">{icd10Item.snomed_concept_id || '-'}</p>
+              <p className="text-sm text-muted-foreground">{icd10Item.snomed_term || '-'}</p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-xs text-muted-foreground">Prioritas</p>
+                <p className="text-sm">{icd10Item.prioritas}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Status</p>
+                <p className="text-sm">{icd10Item.status_layanan}</p>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      const icd9Item = item as ICD9Data;
+
+      return (
+        <div key={icd9Item.kode || icd9Item.id || index} className="rounded-lg border bg-background p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Kode</p>
+              <p className="font-mono text-sm break-all">{formatIcd9ProcedureCode(icd9Item.kode) || '-'}</p>
+            </div>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="shrink-0"
+              onClick={() => handleDeleteSaved('icd9', icd9Item)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Deskripsi Pendek</p>
+            <p className="text-sm">{icd9Item.deskripsi_pendek || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">SNOMED-CT</p>
+            <p className="font-mono text-sm break-all">{icd9Item.snomed_concept_id || '-'}</p>
+            <p className="text-sm text-muted-foreground">{icd9Item.snomed_term || '-'}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <p className="text-xs text-muted-foreground">Prioritas</p>
+              <p className="text-sm">{icd9Item.prioritas}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Status</p>
+              <p className="text-sm">{icd9Item.status_layanan}</p>
+            </div>
+          </div>
+        </div>
+      );
+    });
+  };
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-6xl overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>ICD Management System</DialogTitle>
           </DialogHeader>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="icd10">ICD-10</TabsTrigger>
-              <TabsTrigger value="icd9">ICD-9-CM</TabsTrigger>
+            <TabsList className="grid h-auto w-full grid-cols-2">
+              <TabsTrigger value="icd10" className="px-2 text-xs sm:text-sm">
+                ICD-10
+              </TabsTrigger>
+              <TabsTrigger value="icd9" className="px-2 text-xs sm:text-sm">
+                ICD-9-CM
+              </TabsTrigger>
             </TabsList>
 
             <div className="space-y-4 mt-4">
               <div className="rounded-lg border bg-muted/30 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="font-medium">No. Rawat: {noRawat || '-'}</p>
+                    <p className="font-medium break-all">No. Rawat: {noRawat || '-'}</p>
                     <p className="text-sm text-muted-foreground">
                       Gunakan input ringkas untuk ICD, prioritas, SNOMED-CT, dan status layanan per baris.
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" onClick={() => addDraftRow(activeTab as TabType)}>
+                  <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+                    <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => addDraftRow(activeTab as TabType)}>
                       <Plus className="h-4 w-4 mr-2" />
                       Tambah Baris
                     </Button>
-                    <Button type="button" onClick={handleSave} disabled={savingData || loadingSavedData}>
+                    <Button type="button" className="w-full sm:w-auto" onClick={handleSave} disabled={savingData || loadingSavedData}>
                       <Save className="h-4 w-4 mr-2" />
                       {savingData ? 'Menyimpan...' : 'Simpan Data'}
                     </Button>
-                    <Button type="button" variant="outline" onClick={handleTariffSimulation}>
+                    <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={handleTariffSimulation}>
                       <Calculator className="h-4 w-4 mr-2" />
                       Tarif INACBG's
                     </Button>
@@ -846,7 +949,11 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                   </div>
                 </div>
 
-                <div className="border rounded-lg">
+                <div className="space-y-3 md:hidden">
+                  {renderSavedDataCards('icd10')}
+                </div>
+
+                <div className="hidden rounded-lg border md:block">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -912,7 +1019,11 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                   </div>
                 </div>
 
-                <div className="border rounded-lg">
+                <div className="space-y-3 md:hidden">
+                  {renderSavedDataCards('icd9')}
+                </div>
+
+                <div className="hidden rounded-lg border md:block">
                   <Table>
                     <TableHeader>
                       <TableRow>

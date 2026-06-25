@@ -345,7 +345,7 @@ const SearchableMedicalCodeField: React.FC<SearchableMedicalCodeFieldProps> = ({
               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[420px] p-0" align="start">
+          <PopoverContent className="w-[calc(100vw-2rem)] max-w-[420px] p-0" align="start">
             <Command shouldFilter={false}>
               <CommandInput
                 placeholder="Ketik kode atau nama..."
@@ -1656,9 +1656,9 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-6xl overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex flex-wrap items-center gap-2">
             <FileText className="h-5 w-5" />
             Resume Pasien
           </DialogTitle>
@@ -1672,16 +1672,16 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground">No. Rawat</p>
-                <p className="font-medium">{formData.no_rawat || '-'}</p>
+                <p className="font-medium break-all">{formData.no_rawat || '-'}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">No. RM / Pasien</p>
-                <p className="font-medium">{formData.no_rkm_medis || '-'} {formData.nm_pasien ? `- ${formData.nm_pasien}` : ''}</p>
+                <p className="font-medium break-words">{formData.no_rkm_medis || '-'} {formData.nm_pasien ? `- ${formData.nm_pasien}` : ''}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Dokter Penulis</p>
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">{formData.dokter_penulis || currentDoctorName}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium break-words">{formData.dokter_penulis || currentDoctorName}</p>
                   {!isRalan && isRanapVerified ? (
                     <span
                       className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-700"
@@ -1725,21 +1725,22 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+                <CardTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <span>{formData.has_resume ? 'Edit Resume Pasien' : 'Tambah Resume Pasien'}</span>
-                  <div className="flex gap-2">
+                  <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                     {formData.has_resume ? (
-                      <Button variant="destructive" onClick={handleDelete} disabled={deleting || saving || verifying || isRanapVerified}>
+                      <Button className="w-full sm:w-auto" variant="destructive" onClick={handleDelete} disabled={deleting || saving || verifying || isRanapVerified}>
                         {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
                         Hapus
                       </Button>
                     ) : null}
-                    <Button onClick={handleSave} disabled={saving || deleting || verifying}>
+                    <Button className="w-full sm:w-auto" onClick={handleSave} disabled={saving || deleting || verifying}>
                       {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                       {formData.has_resume ? 'Update' : 'Simpan'}
                     </Button>
                     <Button
                       type="button"
+                      className="w-full sm:w-auto"
                       variant="outline"
                       onClick={() => {
                         setHistoryOpen(true);
@@ -1753,6 +1754,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     {canVerifyRanap ? (
                       <Button
                         type="button"
+                        className="w-full sm:w-auto"
                         variant={isRanapVerified ? 'outline' : 'default'}
                         onClick={handleToggleVerification}
                         disabled={saving || deleting || verifying || !formData.has_resume}
@@ -1975,7 +1977,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
         </div>
 
         <Dialog open={Boolean(pickerTarget)} onOpenChange={(open) => { if (!open) closePicker(); }}>
-          <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] max-w-3xl overflow-hidden flex flex-col p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle>{pickerConfig?.title || 'Pilih Data Resume'}</DialogTitle>
             </DialogHeader>
@@ -2081,7 +2083,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                 )}
               </div>
 
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={closePicker}>
                   Batal
                 </Button>
@@ -2094,9 +2096,9 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
         </Dialog>
 
         <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] max-w-3xl overflow-y-auto p-4 sm:p-6">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+              <DialogTitle className="flex flex-wrap items-center gap-2">
                 <History className="h-5 w-5" />
                 Log Resume
               </DialogTitle>
@@ -2105,7 +2107,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
             <div className="space-y-3">
               <div className="rounded-md border bg-muted/30 p-3 text-sm">
                 <p className="font-medium">No. Rawat</p>
-                <p className="text-muted-foreground">{noRawat || '-'}</p>
+                <p className="break-all text-muted-foreground">{noRawat || '-'}</p>
               </div>
 
               {historyLoading ? (
