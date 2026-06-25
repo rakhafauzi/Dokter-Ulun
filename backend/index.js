@@ -1726,6 +1726,28 @@ app.delete('/api/laboratory-data', async (req, res) => {
 });
 
 // Medical Scribe endpoint
+app.get('/api/doctor-ai-assistant/logs', async (req, res) => {
+  try {
+    const { page = '1', limit = '50', username = '', status = '', search = '' } = req.query;
+    const result = await DoctorAiAssistantService.getAiAssistantLogs({
+      page,
+      limit,
+      username,
+      status,
+      search
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Doctor AI assistant logs error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memuat log AI assistant'
+    });
+  }
+});
+
+// Medical Scribe endpoint
 app.post('/api/doctor-ai-assistant', async (req, res) => {
   try {
     const { message, username, doctorName, conversationHistory } = req.body;
@@ -1741,7 +1763,11 @@ app.post('/api/doctor-ai-assistant', async (req, res) => {
       message,
       username,
       doctorName,
-      conversationHistory
+      conversationHistory,
+      requestMeta: {
+        ipAddress: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+        userAgent: req.headers['user-agent'] || ''
+      }
     });
 
     res.json(result);

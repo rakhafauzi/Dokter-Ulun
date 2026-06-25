@@ -1,12 +1,16 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { Bot, Loader2, RotateCcw, Send, Sparkles, User2 } from 'lucide-react';
+import { Bot, ChevronLeft, ChevronRight, History, Loader2, RotateCcw, Search, Send, Sparkles, User2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
+import { formatUIDateTime } from '@/lib/date-utils';
 
 interface AssistantPayload {
   intent: string;
@@ -40,6 +44,35 @@ interface ChatTurn {
   role: 'user' | 'assistant';
   message: string;
   payload?: AssistantPayload;
+}
+
+interface AssistantLogHistoryEntry {
+  role: 'user' | 'assistant';
+  message: string;
+}
+
+interface AssistantLogEntry {
+  timestamp: string;
+  event?: string;
+  status?: 'success' | 'error' | string;
+  username?: string;
+  doctor_name?: string;
+  ip_address?: string;
+  user_agent?: string;
+  message?: string;
+  conversation_history?: AssistantLogHistoryEntry[];
+  plan?: Record<string, unknown> | null;
+  intent?: string | null;
+  answer?: string;
+  row_count?: number;
+  error?: string;
+}
+
+interface AssistantLogPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 type ChatFilterMode = 'all' | 'intent' | 'natural';
@@ -229,6 +262,20 @@ const matchesChatFilter = (turn: ChatTurn, filterMode: ChatFilterMode) => {
   return Boolean(turn.payload?.intent && turn.payload.intent !== 'natural_select');
 };
 
+const getAssistantLogStatusBadgeClassName = (status?: string) => {
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+
+  if (normalizedStatus === 'success') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/60 dark:text-emerald-200';
+  }
+
+  if (normalizedStatus === 'error') {
+    return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/70 dark:bg-red-950/60 dark:text-red-200';
+  }
+
+  return 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200';
+};
+
 const getRowValue = (row: Record<string, unknown>, keys: readonly string[]) => {
   for (const key of keys) {
     const value = row[key];
@@ -348,6 +395,20 @@ const AIAssistant = () => {
   const { user } = useAuth();
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [logDialogOpen, setLogDialogOpen] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [assistantLogs, setAssistantLogs] = useState<AssistantLogEntry[]>([]);
+  const [assistantLogPagination, setAssistantLogPagination] = useState<AssistantLogPagination>({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1
+  });
+  const [logFilters, setLogFilters] = useState({
+    username: '',
+    status: 'all',
+    search: ''
+  });
   const [selectedContext, setSelectedContext] = useState<AssistantContext | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([createInitialAssistantTurn()]);
   const [chatFilterMode, setChatFilterMode] = useState<ChatFilterMode>('all');
@@ -404,6 +465,80 @@ const AIAssistant = () => {
       title: 'Konteks Direset',
       description: 'Percakapan AI dimulai ulang tanpa konteks pasien atau tanggal sebelumnya.'
     });
+  };
+
+  const fetchAssistantLogs = async (nextPage = 1, overrideFilters?: Partial<typeof logFilters>) => {
+    setLogsLoading(true);
+    try {
+      const effectiveFilters = {
+        ...logFilters,
+        ...overrideFilters
+      };
+      const params = new URLSearchParams();
+      params.set('page', String(nextPage));
+      params.set('limit', String(assistantLogPagination.limit));
+
+      if (effectiveFilters.username.trim()) {
+        params.set('username', effectiveFilters.username.trim());
+      }
+
+      if (effectiveFilters.status !== 'all') {
+        params.set('status', effectiveFilters.status);
+      }
+
+      if (effectiveFilters.search.trim()) {
+        params.set('search', effectiveFilters.search.trim());
+      }
+
+      const response = await fetch(`${API_URLS.DOCTOR_AI_ASSISTANT_LOGS}?${params.toString()}`, {
+        credentials: 'include'
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || 'Gagal memuat log AI assistant');
+      }
+
+      setAssistantLogs(Array.isArray(payload.data) ? payload.data : []);
+      setAssistantLogPagination(
+        payload.pagination || {
+          page: nextPage,
+          limit: assistantLogPagination.limit,
+          total: 0,
+          totalPages: 1
+        }
+      );
+    } catch (error) {
+      console.error('Failed to fetch AI assistant logs:', error);
+      toast({
+        title: 'Gagal Memuat Log',
+        description: error instanceof Error ? error.message : 'Terjadi kesalahan saat memuat log AI assistant',
+        variant: 'destructive'
+      });
+      setAssistantLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const handleOpenLogDialog = () => {
+    setLogDialogOpen(true);
+    void fetchAssistantLogs(1);
+  };
+
+  const handleApplyLogFilters = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await fetchAssistantLogs(1);
+  };
+
+  const handleResetLogFilters = () => {
+    const nextFilters = {
+      username: '',
+      status: 'all',
+      search: ''
+    };
+    setLogFilters(nextFilters);
+    void fetchAssistantLogs(1, nextFilters);
   };
 
   const handleSelectRowContext = (row: Record<string, unknown>, payload?: AssistantPayload) => {
@@ -525,10 +660,16 @@ const AIAssistant = () => {
               Asisten ini menerima pertanyaan natural seperti percakapan biasa. Sistem memprioritaskan intent klinis yang sudah dikenal, lalu memakai fallback query `SELECT` yang aman untuk pertanyaan yang lebih bebas.
             </p>
           </div>
-          <Button type="button" variant="outline" onClick={handleResetContext} disabled={loading}>
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Reset Konteks
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="button" variant="outline" onClick={handleOpenLogDialog} disabled={loading}>
+              <History className="mr-2 h-4 w-4" />
+              Log AI Assistant
+            </Button>
+            <Button type="button" variant="outline" onClick={handleResetContext} disabled={loading}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reset Konteks
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-6">
@@ -762,6 +903,187 @@ const AIAssistant = () => {
             </CardContent>
           </Card>
         </div>
+        <Dialog open={logDialogOpen} onOpenChange={setLogDialogOpen}>
+          <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle className="flex flex-wrap items-center gap-2">
+                <History className="h-5 w-5" />
+                Log AI Assistant
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col gap-4">
+              <form onSubmit={handleApplyLogFilters} className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Cari isi pertanyaan/chat</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={logFilters.search}
+                      onChange={(event) => setLogFilters((previous) => ({ ...previous, search: event.target.value }))}
+                      className="pl-9"
+                      placeholder="Cari pertanyaan, jawaban, atau riwayat chat..."
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Username</label>
+                  <Input
+                    value={logFilters.username}
+                    onChange={(event) => setLogFilters((previous) => ({ ...previous, username: event.target.value }))}
+                    placeholder="Filter username / dokter"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Status</label>
+                  <Select
+                    value={logFilters.status}
+                    onValueChange={(value) => setLogFilters((previous) => ({ ...previous, status: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua</SelectItem>
+                      <SelectItem value="success">Sukses</SelectItem>
+                      <SelectItem value="error">Error</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-2 self-end sm:flex-row">
+                  <Button type="button" variant="outline" onClick={handleResetLogFilters} disabled={logsLoading}>
+                    Reset
+                  </Button>
+                  <Button type="submit" disabled={logsLoading}>
+                    {logsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Terapkan
+                  </Button>
+                </div>
+              </form>
+
+              <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+                <p>
+                  Total log: <span className="font-medium text-foreground">{assistantLogPagination.total}</span>
+                </p>
+                <p>
+                  Halaman {assistantLogPagination.page} dari {assistantLogPagination.totalPages}
+                </p>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {logsLoading ? (
+                  <div className="flex items-center justify-center rounded-lg border py-10 text-sm text-muted-foreground">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Memuat log AI assistant...
+                  </div>
+                ) : assistantLogs.length === 0 ? (
+                  <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+                    Belum ada log AI assistant yang cocok dengan filter saat ini.
+                  </div>
+                ) : (
+                  assistantLogs.map((entry, index) => (
+                    <div key={`${entry.timestamp}-${entry.username}-${index}`} className="rounded-lg border bg-background p-4 space-y-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${getAssistantLogStatusBadgeClassName(entry.status)}`}>
+                              {String(entry.status || 'unknown').trim() || 'unknown'}
+                            </span>
+                            <Badge variant="outline">{entry.intent || 'tanpa intent'}</Badge>
+                          </div>
+                          <div className="text-sm">
+                            <p className="font-medium">{entry.doctor_name || entry.username || 'Pengguna tidak diketahui'}</p>
+                            <p className="text-muted-foreground">
+                              Username: {entry.username || '-'}
+                              {entry.row_count !== undefined ? ` | Rows: ${entry.row_count}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {entry.timestamp ? formatUIDateTime(entry.timestamp) : '-'}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pertanyaan</p>
+                        <p className="whitespace-pre-wrap break-words text-sm">{entry.message || '-'}</p>
+                      </div>
+
+                      {entry.answer ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Jawaban</p>
+                          <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{entry.answer}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.error ? (
+                        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/60 dark:text-red-200">
+                          {entry.error}
+                        </div>
+                      ) : null}
+
+                      <details className="rounded-md border bg-muted/20 p-3">
+                        <summary className="cursor-pointer text-sm font-medium">
+                          Riwayat chat yang dipakai ({Array.isArray(entry.conversation_history) ? entry.conversation_history.length : 0})
+                        </summary>
+                        <div className="mt-3 space-y-2">
+                          {Array.isArray(entry.conversation_history) && entry.conversation_history.length > 0 ? (
+                            entry.conversation_history.map((historyItem, historyIndex) => (
+                              <div key={`${entry.timestamp}-history-${historyIndex}`} className="rounded-md border bg-background p-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {historyItem.role === 'assistant' ? 'AI' : 'Dokter'}
+                                </p>
+                                <p className="mt-1 whitespace-pre-wrap break-words text-sm">{historyItem.message || '-'}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-muted-foreground">Tidak ada riwayat chat yang terekam.</p>
+                          )}
+                        </div>
+                      </details>
+
+                      {entry.plan ? (
+                        <details className="rounded-md border bg-muted/20 p-3">
+                          <summary className="cursor-pointer text-sm font-medium">Plan / intent yang dipakai</summary>
+                          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                            {JSON.stringify(entry.plan, null, 2)}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Menampilkan {assistantLogs.length} log dari total {assistantLogPagination.total}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={logsLoading || assistantLogPagination.page <= 1}
+                    onClick={() => void fetchAssistantLogs(assistantLogPagination.page - 1)}
+                  >
+                    <ChevronLeft className="mr-1 h-4 w-4" />
+                    Sebelumnya
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={logsLoading || assistantLogPagination.page >= assistantLogPagination.totalPages}
+                    onClick={() => void fetchAssistantLogs(assistantLogPagination.page + 1)}
+                  >
+                    Berikutnya
+                    <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
   );
 };

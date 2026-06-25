@@ -1,12 +1,19 @@
+import fs from 'fs/promises';
+import path from 'path';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 import { executeQuery } from '../config/database.js';
 import { getAccessibleDoctorCodesByPhpNative } from './doctorAccessMapping.js';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 class DoctorAiAssistantService {
   constructor() {
     this.openAIApiKey = process.env.OPENAI_API_KEY;
+    this.aiAssistantLogFilePath = path.resolve(__dirname, '../logs/doctor-ai-assistant.jsonl');
     this.defaultSuggestions = [
       'Tampilkan data pasien saya hari ini',
       'Tampilkan data pasien saya kemarin',
@@ -32,6 +39,117 @@ class DoctorAiAssistantService {
 
     if (!this.openAIApiKey) {
       console.warn('OPENAI_API_KEY not found in environment variables');
+    }
+  }
+
+  sanitizeLogValue(value, maxLength = 4000) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    return String(value).replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  }
+
+  sanitizeLogHistory(history = []) {
+    if (!Array.isArray(history)) {
+      return [];
+    }
+
+    return history.slice(-12).map((entry) => ({
+      role: entry?.role === 'assistant' ? 'assistant' : 'user',
+      message: this.sanitizeLogValue(entry?.message || '', 4000)
+    }));
+  }
+
+  async appendAiAssistantLog(entry = {}) {
+    try {
+      await fs.mkdir(path.dirname(this.aiAssistantLogFilePath), { recursive: true });
+      await fs.appendFile(
+        this.aiAssistantLogFilePath,
+        `${JSON.stringify({
+          timestamp: new Date().toISOString(),
+          ...entry
+        })}\n`,
+        'utf8'
+      );
+    } catch (error) {
+      console.error('Failed to write AI assistant log:', error);
+    }
+  }
+
+  async getAiAssistantLogs({ page = 1, limit = 50, username = '', status = '', search = '' } = {}) {
+    const normalizedPage = Math.max(parseInt(page, 10) || 1, 1);
+    const normalizedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+    const normalizedUsername = String(username || '').trim().toLowerCase();
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const normalizedSearch = String(search || '').trim().toLowerCase();
+
+    try {
+      const rawContent = await fs.readFile(this.aiAssistantLogFilePath, 'utf8');
+      const parsedLogs = rawContent
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch (_error) {
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      const filteredLogs = parsedLogs
+        .filter((entry) => {
+          const matchesUsername = !normalizedUsername
+            || String(entry?.username || '').trim().toLowerCase().includes(normalizedUsername)
+            || String(entry?.doctor_name || '').trim().toLowerCase().includes(normalizedUsername);
+          const matchesStatus = !normalizedStatus
+            || String(entry?.status || '').trim().toLowerCase() === normalizedStatus;
+          const conversationHistoryText = Array.isArray(entry?.conversation_history)
+            ? entry.conversation_history
+                .map((historyItem) => String(historyItem?.message || '').trim().toLowerCase())
+                .join(' ')
+            : '';
+          const matchesSearch = !normalizedSearch
+            || String(entry?.message || '').trim().toLowerCase().includes(normalizedSearch)
+            || String(entry?.answer || '').trim().toLowerCase().includes(normalizedSearch)
+            || conversationHistoryText.includes(normalizedSearch);
+
+          return matchesUsername && matchesStatus && matchesSearch;
+        })
+        .sort((left, right) => new Date(right?.timestamp || 0).getTime() - new Date(left?.timestamp || 0).getTime());
+
+      const total = filteredLogs.length;
+      const totalPages = total > 0 ? Math.ceil(total / normalizedLimit) : 1;
+      const offset = (normalizedPage - 1) * normalizedLimit;
+      const data = filteredLogs.slice(offset, offset + normalizedLimit);
+
+      return {
+        success: true,
+        data,
+        pagination: {
+          page: normalizedPage,
+          limit: normalizedLimit,
+          total,
+          totalPages
+        }
+      };
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        return {
+          success: true,
+          data: [],
+          pagination: {
+            page: normalizedPage,
+            limit: normalizedLimit,
+            total: 0,
+            totalPages: 1
+          }
+        };
+      }
+
+      throw error;
     }
   }
 
@@ -1062,92 +1180,149 @@ Balas JSON saja dengan skema:
     });
   }
 
-  async ask({ message, username, doctorName, conversationHistory = [] }) {
-    if (!this.openAIApiKey) {
-      throw new Error('OpenAI API key is not configured');
-    }
-
+  async ask({ message, username, doctorName, conversationHistory = [], requestMeta = {} }) {
+    const normalizedDoctorName = String(doctorName || '').trim();
     const normalizedMessage = String(message || '').trim();
     const normalizedUsername = String(username || '').trim();
-
-    if (!normalizedMessage) {
-      throw new Error('Pertanyaan tidak boleh kosong');
-    }
-
-    if (!normalizedUsername) {
-      throw new Error('Username dokter wajib dikirim');
-    }
-
     const normalizedHistory = this.normalizeHistory(conversationHistory);
-    const conversationContext = this.extractConversationContext(normalizedHistory);
-    const plan = await this.createExecutionPlan({
-      message: normalizedMessage,
-      username: normalizedUsername,
-      doctorName: String(doctorName || '').trim(),
-      conversationContext,
-      normalizedHistory
-    });
-    const resolvedPlan = this.resolvePlanWithContext(plan, normalizedMessage, conversationContext);
+    const sanitizedHistoryForLog = this.sanitizeLogHistory(normalizedHistory);
 
-    if (this.shouldUseNaturalSqlFallback(resolvedPlan)) {
-      try {
-        const naturalResponse = await this.tryNaturalSqlFallback({
-          message: normalizedMessage,
-          username: normalizedUsername,
-          doctorName: String(doctorName || '').trim(),
-          conversationContext,
-          normalizedHistory
-        });
+    let resolvedPlan = null;
 
-        if (naturalResponse) {
-          return naturalResponse;
-        }
-      } catch (error) {
-        console.error('Natural SQL fallback error:', error);
+    try {
+      if (!this.openAIApiKey) {
+        throw new Error('OpenAI API key is not configured');
       }
-    }
 
-    switch (resolvedPlan.intent) {
-      case 'patient_medical_record_search':
-        return this.handlePatientMedicalRecordSearch(resolvedPlan, normalizedUsername, conversationContext);
-      case 'patient_search_by_identifier':
-        return this.handlePatientSearchByIdentifier(resolvedPlan, normalizedUsername, conversationContext);
-      case 'today_patient_list':
-        return this.handleTodayPatientList(resolvedPlan, normalizedUsername, conversationContext);
-      case 'today_patient_count':
-        return this.handleTodayPatientCount(resolvedPlan, normalizedUsername, conversationContext);
-      case 'inpatient_operational_summary':
-        return this.handleInpatientOperationalSummary(resolvedPlan, normalizedUsername, conversationContext);
-      case 'lab_results_by_patient_date':
-        return this.handleLabResultsByPatientDate(resolvedPlan, normalizedUsername, conversationContext);
-      case 'patient_last_visit_summary':
-        return this.handlePatientLastVisitSummary(resolvedPlan, normalizedUsername, conversationContext);
-      case 'diagnosis_history_by_patient':
-        return this.handleDiagnosisHistoryByPatient(resolvedPlan, normalizedUsername, conversationContext);
-      case 'prescription_history_by_patient':
-        return this.handlePrescriptionHistoryByPatient(resolvedPlan, normalizedUsername, conversationContext);
-      case 'radiology_results_by_patient_date':
-        return this.handleRadiologyResultsByPatientDate(resolvedPlan, normalizedUsername, conversationContext);
-      case 'inpatient_history_by_patient':
-        return this.handleInpatientHistoryByPatient(resolvedPlan, normalizedUsername, conversationContext);
-      case 'operation_report_by_patient':
-        return this.handleOperationReportByPatient(resolvedPlan, normalizedUsername, conversationContext);
-      case 'inpatient_resume_status_list':
-        return this.handleInpatientResumeStatusList(resolvedPlan, normalizedUsername, conversationContext);
-      case 'inpatient_movement_list':
-        return this.handleInpatientMovementList(resolvedPlan, normalizedUsername, conversationContext);
-      case 'inpatient_collaboration_list':
-        return this.handleInpatientCollaborationList(resolvedPlan, normalizedUsername, conversationContext);
-      default:
-        return this.buildResponse({
-          intent: 'unsupported',
-          answer: 'Saat ini saya bisa membantu pencarian rekam medis pasien, pencarian pasien via nomor identitas, daftar pasien dokter, ringkasan operasional rawat inap, status resume rawat inap, pasien pindah kamar, rawat bersama, rawat gabung, kunjungan terakhir, diagnosis, resep, hasil lab, hasil radiologi, rawat inap, laporan operasi, dan jumlah pasien dokter.',
-          rows: [],
-          sql: null,
-          suggestions: this.defaultSuggestions,
-          plan: resolvedPlan,
-          previousContext: conversationContext
-        });
+      if (!normalizedMessage) {
+        throw new Error('Pertanyaan tidak boleh kosong');
+      }
+
+      if (!normalizedUsername) {
+        throw new Error('Username dokter wajib dikirim');
+      }
+
+      const conversationContext = this.extractConversationContext(normalizedHistory);
+      const plan = await this.createExecutionPlan({
+        message: normalizedMessage,
+        username: normalizedUsername,
+        doctorName: normalizedDoctorName,
+        conversationContext,
+        normalizedHistory
+      });
+      resolvedPlan = this.resolvePlanWithContext(plan, normalizedMessage, conversationContext);
+
+      let result;
+
+      if (this.shouldUseNaturalSqlFallback(resolvedPlan)) {
+        try {
+          const naturalResponse = await this.tryNaturalSqlFallback({
+            message: normalizedMessage,
+            username: normalizedUsername,
+            doctorName: normalizedDoctorName,
+            conversationContext,
+            normalizedHistory
+          });
+
+          if (naturalResponse) {
+            result = naturalResponse;
+          }
+        } catch (error) {
+          console.error('Natural SQL fallback error:', error);
+        }
+      }
+
+      if (!result) {
+        switch (resolvedPlan.intent) {
+          case 'patient_medical_record_search':
+            result = await this.handlePatientMedicalRecordSearch(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'patient_search_by_identifier':
+            result = await this.handlePatientSearchByIdentifier(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'today_patient_list':
+            result = await this.handleTodayPatientList(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'today_patient_count':
+            result = await this.handleTodayPatientCount(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'inpatient_operational_summary':
+            result = await this.handleInpatientOperationalSummary(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'lab_results_by_patient_date':
+            result = await this.handleLabResultsByPatientDate(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'patient_last_visit_summary':
+            result = await this.handlePatientLastVisitSummary(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'diagnosis_history_by_patient':
+            result = await this.handleDiagnosisHistoryByPatient(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'prescription_history_by_patient':
+            result = await this.handlePrescriptionHistoryByPatient(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'radiology_results_by_patient_date':
+            result = await this.handleRadiologyResultsByPatientDate(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'inpatient_history_by_patient':
+            result = await this.handleInpatientHistoryByPatient(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'operation_report_by_patient':
+            result = await this.handleOperationReportByPatient(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'inpatient_resume_status_list':
+            result = await this.handleInpatientResumeStatusList(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'inpatient_movement_list':
+            result = await this.handleInpatientMovementList(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          case 'inpatient_collaboration_list':
+            result = await this.handleInpatientCollaborationList(resolvedPlan, normalizedUsername, conversationContext);
+            break;
+          default:
+            result = this.buildResponse({
+              intent: 'unsupported',
+              answer: 'Saat ini saya bisa membantu pencarian rekam medis pasien, pencarian pasien via nomor identitas, daftar pasien dokter, ringkasan operasional rawat inap, status resume rawat inap, pasien pindah kamar, rawat bersama, rawat gabung, kunjungan terakhir, diagnosis, resep, hasil lab, hasil radiologi, rawat inap, laporan operasi, dan jumlah pasien dokter.',
+              rows: [],
+              sql: null,
+              suggestions: this.defaultSuggestions,
+              plan: resolvedPlan,
+              previousContext: conversationContext
+            });
+            break;
+        }
+      }
+
+      await this.appendAiAssistantLog({
+        event: 'chat',
+        status: 'success',
+        username: normalizedUsername,
+        doctor_name: normalizedDoctorName,
+        ip_address: this.sanitizeLogValue(requestMeta?.ipAddress || '', 255),
+        user_agent: this.sanitizeLogValue(requestMeta?.userAgent || '', 500),
+        message: this.sanitizeLogValue(normalizedMessage, 8000),
+        conversation_history: sanitizedHistoryForLog,
+        plan: resolvedPlan,
+        intent: result?.data?.intent || resolvedPlan?.intent || null,
+        answer: this.sanitizeLogValue(result?.data?.answer || '', 8000),
+        row_count: Array.isArray(result?.data?.rows) ? result.data.rows.length : 0
+      });
+
+      return result;
+    } catch (error) {
+      await this.appendAiAssistantLog({
+        event: 'chat',
+        status: 'error',
+        username: normalizedUsername,
+        doctor_name: normalizedDoctorName,
+        ip_address: this.sanitizeLogValue(requestMeta?.ipAddress || '', 255),
+        user_agent: this.sanitizeLogValue(requestMeta?.userAgent || '', 500),
+        message: this.sanitizeLogValue(normalizedMessage, 8000),
+        conversation_history: sanitizedHistoryForLog,
+        plan: resolvedPlan,
+        error: this.sanitizeLogValue(error?.message || 'Unknown error', 2000)
+      });
+      throw error;
     }
   }
 
