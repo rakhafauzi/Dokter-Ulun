@@ -2424,6 +2424,28 @@ app.get('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   }
 });
 
+app.get('/api/resume-pasien-data/:no_rawat/logs', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+
+    if (!no_rawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat is required'
+      });
+    }
+
+    const result = await ResumePasienDataService.getResumeHistoryLogs(no_rawat);
+    res.json(result);
+  } catch (error) {
+    console.error('Resume history log error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
@@ -2438,6 +2460,18 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
     }
 
     const result = await ResumePasienDataService.saveResume(no_rawat, resumeData, statusRawat);
+    await ResumePasienDataService.appendResumeHistoryLog(no_rawat, {
+      action: result?.action_type || 'update',
+      status_rawat: result?.status_rawat || statusRawat,
+      actor: ResumePasienDataService.normalizeResumeHistoryActor({
+        username: req.body?.actor_username || req.body?.username || '',
+        doctor_code: req.body?.kd_dokter || '',
+        doctor_name: req.body?.actor_name || req.body?.dokter_penulis || '',
+        ip_address: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+        user_agent: req.headers['user-agent'] || ''
+      }),
+      message: result?.message || 'Resume berhasil disimpan'
+    });
     await auditCrudSuccess(req, 'resume_pasien', 'upsert', result, { no_rawat, reference_id: no_rawat });
     res.json(result);
   } catch (error) {
@@ -2463,6 +2497,18 @@ app.post('/api/resume-pasien-data/:no_rawat/verification', async (req, res) => {
     }
 
     const result = await ResumePasienDataService.setResumeVerification(no_rawat, kd_dokter, Boolean(verified));
+    await ResumePasienDataService.appendResumeHistoryLog(no_rawat, {
+      action: result?.action_type || (Boolean(verified) ? 'verify' : 'unverify'),
+      status_rawat: result?.status_rawat || 'Ranap',
+      actor: ResumePasienDataService.normalizeResumeHistoryActor({
+        username: req.body?.actor_username || req.body?.username || '',
+        doctor_code: kd_dokter,
+        doctor_name: req.body?.actor_name || '',
+        ip_address: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+        user_agent: req.headers['user-agent'] || ''
+      }),
+      message: result?.message || 'Status verifikasi resume diperbarui'
+    });
     await auditCrudSuccess(req, 'resume_verification', 'update', result, { no_rawat, reference_id: no_rawat });
     res.json(result);
   } catch (error) {
@@ -2488,6 +2534,18 @@ app.delete('/api/resume-pasien-data/:no_rawat', async (req, res) => {
     }
 
     const result = await ResumePasienDataService.deleteResume(no_rawat, status_rawat, kd_dokter);
+    await ResumePasienDataService.appendResumeHistoryLog(no_rawat, {
+      action: result?.action_type || 'delete',
+      status_rawat: result?.status_rawat || status_rawat,
+      actor: ResumePasienDataService.normalizeResumeHistoryActor({
+        username: req.query?.actor_username || req.query?.username || '',
+        doctor_code: kd_dokter,
+        doctor_name: req.query?.actor_name || '',
+        ip_address: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+        user_agent: req.headers['user-agent'] || ''
+      }),
+      message: result?.message || 'Resume berhasil dihapus'
+    });
     await auditCrudSuccess(req, 'resume_pasien', 'delete', result, { no_rawat, reference_id: no_rawat });
     res.json(result);
   } catch (error) {

@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from '@/lib/utils';
-import { BadgeCheck, Check, ChevronsUpDown, FileText, Loader2, Paperclip, Search, Trash2 } from 'lucide-react';
+import { BadgeCheck, Check, ChevronsUpDown, FileText, History, Loader2, Paperclip, Search, Trash2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -149,6 +149,21 @@ interface ResumePickerConfig {
   emptyMessage: string;
   multiple: boolean;
   items: ResumePickerItem[];
+}
+
+interface ResumeHistoryLogEntry {
+  no_rawat: string;
+  timestamp: string;
+  action: 'create' | 'update' | 'delete' | 'verify' | 'unverify' | string;
+  status_rawat?: 'Ralan' | 'Ranap' | string;
+  message?: string;
+  actor?: {
+    username?: string;
+    doctor_code?: string;
+    doctor_name?: string;
+    ip_address?: string;
+    user_agent?: string;
+  };
 }
 
 interface ResumePickerTimelineItem {
@@ -432,6 +447,9 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
   const [pickerTarget, setPickerTarget] = useState<ResumePickerTarget | null>(null);
   const [pickerSearch, setPickerSearch] = useState('');
   const [selectedPickerItems, setSelectedPickerItems] = useState<string[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<ResumeHistoryLogEntry[]>([]);
   const isRanapVerified = !isRalan && String(formData?.ket_dilanjutkan || '').trim() === 'Selesai';
   const canVerifyRanap = !isRalan && Number(formData?.is_dpjp_utama || 0) === 1;
 
@@ -497,6 +515,34 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       setSourceData(createEmptySourceData());
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchResumeHistory = async () => {
+    if (!noRawat) {
+      setHistoryEntries([]);
+      return;
+    }
+
+    setHistoryLoading(true);
+    try {
+      const response = await fetch(`${API_URLS.RESUME_PASIEN_DATA}/${encodeURIComponent(noRawat)}/logs`);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal memuat log resume');
+      }
+
+      setHistoryEntries(Array.isArray(result.data) ? result.data : []);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Gagal memuat log resume",
+        variant: "destructive",
+      });
+      setHistoryEntries([]);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -614,6 +660,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
           ...formData,
           diagnosa_awal: isRalan ? formData.diagnosa_awal : formatDiagnosaMasukText(formData.diagnosa_awal),
           kd_dokter: currentDoctorCode,
+          actor_username: user?.username || '',
+          actor_name: currentDoctorName,
           no_rawat: noRawat,
           status_rawat: currentStatusRawat,
         }),
@@ -658,7 +706,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       try {
         setDeleting(true);
         const response = await fetch(
-          `${API_URLS.RESUME_PASIEN_DATA}/${encodeURIComponent(noRawat)}?status_rawat=${encodeURIComponent(currentStatusRawat)}&kd_dokter=${encodeURIComponent(currentDoctorCode)}`,
+          `${API_URLS.RESUME_PASIEN_DATA}/${encodeURIComponent(noRawat)}?status_rawat=${encodeURIComponent(currentStatusRawat)}&kd_dokter=${encodeURIComponent(currentDoctorCode)}&actor_username=${encodeURIComponent(user?.username || '')}&actor_name=${encodeURIComponent(currentDoctorName)}`,
           {
           method: 'DELETE',
           }
@@ -726,6 +774,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          actor_name: currentDoctorName,
+          actor_username: user?.username || '',
           kd_dokter: currentDoctorCode,
           verified: !isRanapVerified,
         }),
@@ -1444,6 +1494,40 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
     </div>
   );
 
+  const getResumeHistoryActionLabel = (action?: string) => {
+    switch (String(action || '').trim().toLowerCase()) {
+      case 'create':
+        return 'Simpan';
+      case 'update':
+        return 'Update';
+      case 'delete':
+        return 'Hapus';
+      case 'verify':
+        return 'Verifikasi';
+      case 'unverify':
+        return 'Batal Verifikasi';
+      default:
+        return String(action || 'Aksi');
+    }
+  };
+
+  const getResumeHistoryActionBadgeClassName = (action?: string) => {
+    switch (String(action || '').trim().toLowerCase()) {
+      case 'create':
+        return 'bg-emerald-500/10 text-emerald-700';
+      case 'update':
+        return 'bg-sky-500/10 text-sky-700';
+      case 'delete':
+        return 'bg-rose-500/10 text-rose-700';
+      case 'verify':
+        return 'bg-violet-500/10 text-violet-700';
+      case 'unverify':
+        return 'bg-amber-500/10 text-amber-700';
+      default:
+        return 'bg-muted text-muted-foreground';
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -1527,6 +1611,18 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     <Button onClick={handleSave} disabled={saving || deleting || verifying || isRanapVerified}>
                       {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                       {formData.has_resume ? 'Update' : 'Simpan'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setHistoryOpen(true);
+                        void fetchResumeHistory();
+                      }}
+                      disabled={saving || deleting || verifying || !noRawat}
+                    >
+                      <History className="h-4 w-4 mr-2" />
+                      Log Resume
                     </Button>
                     {canVerifyRanap ? (
                       <Button
@@ -1867,6 +1963,67 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                   Masukkan ke Field
                 </Button>
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Log Resume
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <p className="font-medium">No. Rawat</p>
+                <p className="text-muted-foreground">{noRawat || '-'}</p>
+              </div>
+
+              {historyLoading ? (
+                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Memuat log resume...
+                </div>
+              ) : historyEntries.length === 0 ? (
+                <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  Belum ada log resume untuk nomor rawat ini.
+                </div>
+              ) : (
+                <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+                  {historyEntries.map((entry, index) => (
+                    <div key={`${entry.timestamp}-${entry.action}-${index}`} className="rounded-lg border p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', getResumeHistoryActionBadgeClassName(entry.action))}>
+                              {getResumeHistoryActionLabel(entry.action)}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {entry.status_rawat || '-'}
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium">
+                            {entry.actor?.doctor_name || entry.actor?.username || 'Pengguna tidak diketahui'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {entry.actor?.doctor_code ? `Kode dokter: ${entry.actor.doctor_code}` : 'Kode dokter tidak tersedia'}
+                            {entry.actor?.username ? ` | Username: ${entry.actor.username}` : ''}
+                          </p>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {entry.timestamp ? formatUIDateTime(entry.timestamp) : '-'}
+                        </div>
+                      </div>
+                      {entry.message ? (
+                        <p className="mt-3 text-sm text-muted-foreground">{entry.message}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </DialogContent>
         </Dialog>

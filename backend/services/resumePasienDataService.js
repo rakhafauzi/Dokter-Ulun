@@ -1,5 +1,11 @@
 import { executeQuery } from '../config/database.js';
 import { getAccessibleDoctorCodesByPhpNative } from './doctorAccessMapping.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class ResumePasienDataService {
   enumCaraKeluar = ['Atas Izin Dokter', 'Pindah RS', 'Pulang Atas Permintaan Sendiri', 'Lainnya'];
@@ -7,6 +13,7 @@ class ResumePasienDataService {
   enumDilanjutkan = ['Kembali Ke RS', 'RS Lain', 'Dokter Luar', 'Puskesmes', 'Lainnya'];
   enumKondisiPulangRalan = ['Hidup', 'Meninggal'];
   enumKondisiPulangRanap = ['Membaik', 'APS', 'Rujuk', 'Meninggal'];
+  resumeHistoryDirectory = path.resolve(__dirname, '../storage/resume-history');
 
   buildInClausePlaceholders(values = []) {
     return values.map(() => '?').join(', ');
@@ -110,6 +117,85 @@ class ResumePasienDataService {
   normalizeStatusRawat(statusRawat) {
     const normalized = String(statusRawat || 'Ranap').trim().toLowerCase();
     return normalized === 'ralan' ? 'Ralan' : 'Ranap';
+  }
+
+  sanitizeNoRawatForFilename(noRawat = '') {
+    return String(noRawat || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  getResumeHistoryFilePath(noRawat = '') {
+    return path.join(
+      this.resumeHistoryDirectory,
+      `${this.sanitizeNoRawatForFilename(noRawat) || 'unknown'}.log`
+    );
+  }
+
+  normalizeResumeHistoryActor(actor = {}) {
+    return {
+      username: String(actor?.username || '').trim(),
+      doctor_code: String(actor?.doctor_code || actor?.kd_dokter || '').trim(),
+      doctor_name: String(actor?.doctor_name || '').trim(),
+      ip_address: String(actor?.ip_address || '').trim(),
+      user_agent: String(actor?.user_agent || '').trim()
+    };
+  }
+
+  async appendResumeHistoryLog(noRawat, entry = {}) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    if (!normalizedNoRawat) {
+      return;
+    }
+
+    const payload = {
+      no_rawat: normalizedNoRawat,
+      timestamp: new Date().toISOString(),
+      ...entry
+    };
+
+    await fs.mkdir(this.resumeHistoryDirectory, { recursive: true });
+    await fs.appendFile(
+      this.getResumeHistoryFilePath(normalizedNoRawat),
+      `${JSON.stringify(payload)}\n`,
+      'utf8'
+    );
+  }
+
+  async getResumeHistoryLogs(noRawat) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    if (!normalizedNoRawat) {
+      throw new Error('no_rawat is required');
+    }
+
+    try {
+      const rawContent = await fs.readFile(this.getResumeHistoryFilePath(normalizedNoRawat), 'utf8');
+      const data = rawContent
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch (error) {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
+
+      return {
+        success: true,
+        data
+      };
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        return {
+          success: true,
+          data: []
+        };
+      }
+
+      throw error;
+    }
   }
 
   resolveResumeStatusByDoctorTrace(ketKeadaan = '', userDoctorCode = '', hasResume = false) {
@@ -1319,7 +1405,9 @@ class ResumePasienDataService {
 
       return {
         success: true,
-        message: 'Resume berhasil disimpan'
+        message: 'Resume berhasil disimpan',
+        action_type: existingRows.length > 0 ? 'update' : 'create',
+        status_rawat: 'Ranap'
       };
     } catch (error) {
       console.error('Error saving resume:', error);
@@ -1452,7 +1540,9 @@ class ResumePasienDataService {
 
       return {
         success: true,
-        message: 'Resume rawat jalan berhasil disimpan'
+        message: 'Resume rawat jalan berhasil disimpan',
+        action_type: existingRows.length > 0 ? 'update' : 'create',
+        status_rawat: 'Ralan'
       };
     } catch (error) {
       console.error('Error saving ralan resume:', error);
@@ -1494,7 +1584,9 @@ class ResumePasienDataService {
 
       return {
         success: true,
-        message: 'Resume deleted successfully'
+        message: 'Resume deleted successfully',
+        action_type: 'delete',
+        status_rawat: 'Ranap'
       };
     } catch (error) {
       console.error('Error deleting resume:', error);
@@ -1526,7 +1618,9 @@ class ResumePasienDataService {
 
       return {
         success: true,
-        message: 'Resume rawat jalan berhasil dihapus'
+        message: 'Resume rawat jalan berhasil dihapus',
+        action_type: 'delete',
+        status_rawat: 'Ralan'
       };
     } catch (error) {
       console.error('Error deleting ralan resume:', error);
@@ -1578,7 +1672,9 @@ class ResumePasienDataService {
 
     return {
       success: true,
-      message: verified ? 'Resume berhasil diverifikasi' : 'Verifikasi resume berhasil dibatalkan'
+      message: verified ? 'Resume berhasil diverifikasi' : 'Verifikasi resume berhasil dibatalkan',
+      action_type: verified ? 'verify' : 'unverify',
+      status_rawat: 'Ranap'
     };
   }
 }
