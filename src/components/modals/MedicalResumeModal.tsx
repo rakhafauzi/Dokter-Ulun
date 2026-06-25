@@ -131,6 +131,15 @@ interface ResumePickerItem {
   code?: string;
   badgeLabel?: string;
   badgeClassName?: string;
+  laboratoryPanels?: Array<{
+    groupName: string;
+    tests: Array<{
+      pemeriksaan?: string;
+      hasil?: string;
+      rujukan?: string;
+      keterangan?: string;
+    }>;
+  }>;
 }
 
 interface ResumePickerConfig {
@@ -826,6 +835,31 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
     ].filter(Boolean).join('\n');
   };
 
+  const buildLaboratoryPickerPanels = (item: any) => {
+    const groupedTests = ((Array.isArray(item?.pemeriksaan) ? item.pemeriksaan : []) as any[]).reduce<
+      Record<string, Array<{ pemeriksaan?: string; hasil?: string; rujukan?: string; keterangan?: string }>>
+    >((groups, detail) => {
+      const groupName = String(detail?.nama || 'Laboratorium').trim() || 'Laboratorium';
+      if (!groups[groupName]) {
+        groups[groupName] = [];
+      }
+
+      groups[groupName].push({
+        pemeriksaan: String(detail?.pemeriksaan || '').trim(),
+        hasil: String(detail?.hasil || '').trim(),
+        rujukan: String(detail?.rujukan || '').trim(),
+        keterangan: String(detail?.keterangan || '').trim()
+      });
+
+      return groups;
+    }, {});
+
+    return Object.entries(groupedTests).map(([groupName, tests]) => ({
+      groupName,
+      tests
+    }));
+  };
+
   const buildRadiologyResultText = (item: any) => {
     const formattedDate = item.tanggal ? formatUIDate(item.tanggal) : '';
 
@@ -1135,7 +1169,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                 title: item.tanggal ? formatUIDate(item.tanggal) : `Laboratorium ${index + 1}`,
                 subtitle: 'Pemeriksaan Laboratorium',
                 description: buildLaboratoryResultText(item),
-                value: buildLaboratoryResultText(item)
+                value: buildLaboratoryResultText(item),
+                laboratoryPanels: buildLaboratoryPickerPanels(item)
               }
             })),
             ...currentSourceData.radiologyResults.map((item, index) => ({
@@ -1168,7 +1203,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
               title: item.tanggal ? formatUIDate(item.tanggal) : `Hasil Laboratorium ${index + 1}`,
               subtitle: 'Hasil Pemeriksaan Lab',
               description: buildLaboratoryResultText(item),
-              value: buildLaboratoryResultText(item)
+              value: buildLaboratoryResultText(item),
+              laboratoryPanels: buildLaboratoryPickerPanels(item)
             }))
             .filter((item) => item.value.trim())
         };
@@ -1783,7 +1819,35 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                               {item.subtitle ? (
                                 <p className="cursor-text select-text text-xs text-muted-foreground">{item.subtitle}</p>
                               ) : null}
-                              {item.description ? (
+                              {Array.isArray(item.laboratoryPanels) && item.laboratoryPanels.length > 0 ? (
+                                <div className="space-y-2 pt-1">
+                                  {item.laboratoryPanels.map((panel, panelIndex) => (
+                                    <div
+                                      key={`${panel.groupName}-${panelIndex}`}
+                                      className="rounded-md border bg-background/70 p-2 dark:border-slate-800 dark:bg-slate-950/60"
+                                    >
+                                      <p className="cursor-text select-text text-sm font-semibold text-primary">
+                                        {panel.groupName}
+                                      </p>
+                                      <div className="mt-2 space-y-1">
+                                        {panel.tests.map((test, testIndex) => (
+                                          <div
+                                            key={`${panel.groupName}-${testIndex}`}
+                                            className={cn(
+                                              "cursor-text select-text rounded px-2 py-1 text-sm",
+                                              test.keterangan === 'H' && "bg-red-100 text-red-900 dark:bg-red-950/40 dark:text-red-200",
+                                              test.keterangan === 'L' && "bg-yellow-100 text-yellow-900 dark:bg-yellow-950/40 dark:text-yellow-200"
+                                            )}
+                                          >
+                                            <span className="font-medium">{test.pemeriksaan || '-'}</span>: {test.hasil || '-'} ({test.rujukan || '-'})
+                                            {test.keterangan ? ` - ${test.keterangan}` : ''}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : item.description ? (
                                 <p className="cursor-text whitespace-pre-line break-words select-text text-sm text-muted-foreground">{item.description}</p>
                               ) : null}
                             </div>
