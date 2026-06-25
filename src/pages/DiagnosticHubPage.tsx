@@ -178,7 +178,7 @@ const buildPacsPreviewUrl = (instanceId?: string, width = 500) => {
     return '';
   }
 
-  return `${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/preview/${encodeURIComponent(normalizedInstanceId)}?width=${width}`;
+  return `${API_CONFIG.BASE_URL}/pacs/preview/${encodeURIComponent(normalizedInstanceId)}?width=${width}`;
 };
 
 const buildViewerImageUrl = (instanceId?: string, modality?: string) => {
@@ -678,7 +678,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       params.set('exam_name', examName);
     }
 
-    const response = await fetch(`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/radiology-images?${params.toString()}`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/pacs/radiology-images?${params.toString()}`, {
       credentials: 'include'
     });
     const responseJson = await response.json().catch(() => null);

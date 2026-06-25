@@ -4941,7 +4941,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return;
       }
 
-      const previewUrl = `${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/preview/${encodeURIComponent(instanceId)}`;
+      const previewUrl = `${API_CONFIG.BASE_URL}/pacs/preview/${encodeURIComponent(instanceId)}`;
       if (prefetchedPacsPreviewUrlsRef.current.has(previewUrl)) {
         return;
       }
@@ -7853,7 +7853,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     params.set('mode', mode);
 
-    const response = await fetch(`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/radiology-images?${params.toString()}`);
+    const response = await fetch(`${API_CONFIG.BASE_URL}/pacs/radiology-images?${params.toString()}`);
     const responseJson = await response.json().catch(() => null);
 
     if (!response.ok || !responseJson?.success) {
