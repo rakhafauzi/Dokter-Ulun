@@ -3835,9 +3835,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           ))}
           {hasCompoundItems ? (
             <div className="space-y-3 pt-2">
-              <h4 className="font-medium text-blue-700">Racikan:</h4>
+              <h4 className="font-medium text-blue-700 dark:text-blue-300">Racikan:</h4>
               {compoundItems.map((compound: any, compoundIndex: number) => (
-                <div key={`${compound.no_racik || compoundIndex}`} className="rounded border border-blue-200 bg-blue-50/40 p-3">
+                <div
+                  key={`${compound.no_racik || compoundIndex}`}
+                  className="rounded border border-blue-200 bg-blue-50/40 p-3 dark:border-blue-900/70 dark:bg-blue-950/30"
+                >
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Nama Racikan</p>
@@ -3861,7 +3864,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   ) : null}
                   <div className="mt-3 space-y-2">
                     {(Array.isArray(compound?.details) ? compound.details : []).map((detail: any, detailIndex: number) => (
-                      <div key={`${detail.kode_brng || detailIndex}`} className="grid grid-cols-1 gap-3 border-l-2 border-blue-300 pl-3 md:grid-cols-3">
+                      <div
+                        key={`${detail.kode_brng || detailIndex}`}
+                        className="grid grid-cols-1 gap-3 border-l-2 border-blue-300 pl-3 md:grid-cols-3 dark:border-blue-800"
+                      >
                         <div>
                           <p className="text-sm text-muted-foreground">Obat</p>
                           <p className="font-medium">{detail.nama_brng || detail.nama || '-'}</p>
@@ -11422,9 +11428,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
               {/* Form Resep Racikan */}
               <Collapsible open={isCompoundFormOpen} onOpenChange={setIsCompoundFormOpen}>
-                <div className="border rounded-lg p-4 mb-6 bg-blue-50/50">
+                <div className="mb-6 rounded-lg border bg-blue-50/50 p-4 dark:border-blue-900/70 dark:bg-blue-950/25">
                   <CollapsibleTrigger asChild>
-                    <button className="w-full flex items-center justify-between text-lg font-semibold mb-4 hover:text-blue-600 transition-colors text-blue-700">
+                    <button className="mb-4 flex w-full items-center justify-between text-lg font-semibold text-blue-700 transition-colors hover:text-blue-600 dark:text-blue-300 dark:hover:text-blue-200">
                       <div className="flex items-center">
                         <Plus className="h-5 w-5 mr-2" />
                         Form Resep Racikan
@@ -11444,9 +11450,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   >
                  
                  {compoundPrescriptions.map((compound, compoundIndex) => (
-                   <div key={compoundIndex} className="border rounded-lg p-4 mb-4 bg-background">
+                   <div key={compoundIndex} className="mb-4 rounded-lg border bg-background p-4 dark:border-slate-800 dark:bg-slate-950/70">
                      <div className="flex justify-between items-center mb-4">
-                       <h4 className="font-medium text-blue-700">Resep Racikan {compoundIndex + 1}</h4>
+                       <h4 className="font-medium text-blue-700 dark:text-blue-300">Resep Racikan {compoundIndex + 1}</h4>
                        {compoundPrescriptions.length > 1 && (
                          <Button variant="destructive" size="sm" onClick={() => removeCompoundPrescription(compoundIndex)}>
                            <Trash2 className="h-4 w-4" />
@@ -11691,9 +11697,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
               {effectiveStatusRawat === 'Ralan' || effectiveStatusRawat === 'Ranap' ? (
                 <Collapsible open={isPackageFormOpen} onOpenChange={setIsPackageFormOpen}>
-                  <div className="border rounded-lg p-4 mb-6 bg-emerald-50/40">
+                  <div className="mb-6 rounded-lg border bg-emerald-50/40 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/25">
                     <CollapsibleTrigger asChild>
-                      <button className="w-full flex items-center justify-between text-lg font-semibold mb-4 hover:text-emerald-700 transition-colors text-emerald-800">
+                      <button className="mb-4 flex w-full items-center justify-between text-lg font-semibold text-emerald-800 transition-colors hover:text-emerald-700 dark:text-emerald-300 dark:hover:text-emerald-200">
                         <div className="flex items-center">
                           <Plus className="h-5 w-5 mr-2" />
                           Form Paket Obat & BHP
@@ -11712,14 +11718,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         transition: 'height 0.2s ease-out, opacity 0.2s ease-out'
                       }}
                     >
-                      <div className="flex flex-col gap-3 rounded-md border border-emerald-200 bg-emerald-100/40 p-3 md:flex-row md:items-center md:justify-between">
+                      <div className="flex flex-col gap-3 rounded-md border border-emerald-200 bg-emerald-100/40 p-3 dark:border-emerald-900/70 dark:bg-emerald-950/35 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <p className="text-sm font-medium text-emerald-900">Paket Obat & BHP</p>
-                          <p className="text-xs text-emerald-800/80">
+                          <p className="text-sm font-medium text-emerald-900 dark:text-emerald-200">Paket Obat & BHP</p>
+                          <p className="text-xs text-emerald-800/80 dark:text-emerald-300/80">
                             Centang Paket IBS untuk ambil stok depo IBS dan simpan resep ke alur IBS.
                           </p>
                         </div>
-                        <label className="flex items-center gap-2 text-sm font-medium text-emerald-900">
+                        <label className="flex items-center gap-2 text-sm font-medium text-emerald-900 dark:text-emerald-200">
                           <input
                             type="checkbox"
                             className="h-4 w-4"
