@@ -9105,7 +9105,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   <p className="text-sm text-muted-foreground">Nama</p>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{currentPatient.nama}</p>
-                    {medicalData?.readmisi ? (
+                    {defaultExaminationStatusRawat === 'Ranap' && medicalData?.readmisi ? (
                       <span
                         className="inline-flex items-center rounded-sm border border-red-200 bg-red-50/80 px-2 py-0.5 text-xs font-medium text-red-700"
                         title={
