@@ -65,7 +65,7 @@ class IgdDataService {
     }
   }
 
-  static async getIgdData(page = 1, itemsPerPage = 10, search = '', statusFilter = '', triaseLevel = '', dateFrom = '', dateTo = '', tab = 'triase') {
+  static async getIgdData(page = 1, itemsPerPage = 10, search = '', statusFilter = '', doctorCode = '', triaseLevel = '', dateFrom = '', dateTo = '', tab = 'triase') {
     try {
       const igdPoliCodes = IgdDataService.getIgdPoliCodes();
       const limit = parseInt(itemsPerPage) === -1 || parseInt(itemsPerPage) > 1000 ? 10000 : Math.min(parseInt(itemsPerPage), 1000);
@@ -88,12 +88,17 @@ class IgdDataService {
 
       console.log('=== IGD Data Service Debug ===');
       console.log('Parameters received:', {
-        limit, offset, search, statusFilter, triaseLevel, dateFrom, dateTo, tab
+        limit, offset, search, statusFilter, doctorCode, triaseLevel, dateFrom, dateTo, tab
       });
 
       if (search) {
         baseWhereConditions.push(`(p.nm_pasien LIKE ? OR r.no_rkm_medis LIKE ?)`);
         baseQueryParams.push(`%${search}%`, `%${search}%`);
+      }
+
+      if (doctorCode && doctorCode !== 'all') {
+        baseWhereConditions.push(`r.kd_dokter = ?`);
+        baseQueryParams.push(doctorCode);
       }
 
       if (dateFrom) {

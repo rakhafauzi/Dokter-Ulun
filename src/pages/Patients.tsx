@@ -2124,10 +2124,14 @@ const IGDTabs = () => {
   const [activeTab, setActiveTab] = useState<typeof igdTabOptions[number]>(initialIGDTab);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || "");
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || "all");
+  const [doctorFilter, setDoctorFilter] = useState(searchParams.get('doctor') || "all");
   const [triaseLevel, setTriaseLevel] = useState(normalizeIgdTriaseFilter(searchParams.get('triase')));
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [pendingStatusFilter, setPendingStatusFilter] = useState(searchParams.get('status') || "all");
+  const [pendingDoctorFilter, setPendingDoctorFilter] = useState(searchParams.get('doctor') || "all");
   const [pendingTriaseLevel, setPendingTriaseLevel] = useState(normalizeIgdTriaseFilter(searchParams.get('triase')));
+  const [doctorOpen, setDoctorOpen] = useState(false);
+  const [doctors, setDoctors] = useState<any[]>([]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: parseDateParam(searchParams.get('from'), defaultIGDDate),
     to: parseDateParam(searchParams.get('to'), defaultIGDDate)
@@ -2145,6 +2149,7 @@ const IGDTabs = () => {
         itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString(),
         search: overrides.search ?? searchQuery,
         status: overrides.status ?? statusFilter,
+        kd_dokter: overrides.kd_dokter ?? doctorFilter,
         triase_level: overrides.triase_level ?? triaseLevel,
         date_from: overrides.date_from ?? (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
         date_to: overrides.date_to ?? (dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
@@ -2232,6 +2237,32 @@ const IGDTabs = () => {
     }
   };
 
+  const fetchIGDDoctors = async () => {
+    try {
+      const response = await fetch(API_URLS.BOOKING_REGISTRASI, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'getDoctors' })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch doctors');
+      }
+
+      setDoctors(data?.doctors || []);
+    } catch (error) {
+      console.error('Error fetching IGD doctors:', error);
+    }
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
 
@@ -2239,6 +2270,7 @@ const IGDTabs = () => {
     params.set('page', String(currentPage));
     params.set('itemsPerPage', String(itemsPerPage));
     params.set('status', statusFilter);
+    params.set('doctor', doctorFilter);
     params.set('triase', triaseLevel);
 
     if (dateRange?.from) {
@@ -2268,6 +2300,7 @@ const IGDTabs = () => {
     itemsPerPage,
     searchQuery,
     statusFilter,
+    doctorFilter,
     triaseLevel,
     dateRange?.from,
     dateRange?.to,
@@ -2277,7 +2310,11 @@ const IGDTabs = () => {
 
   useEffect(() => {
     fetchIGDData(activeTab);
-  }, [activeTab, currentPage, itemsPerPage, searchQuery, statusFilter, triaseLevel, dateRange?.from, dateRange?.to]);
+  }, [activeTab, currentPage, itemsPerPage, searchQuery, statusFilter, doctorFilter, triaseLevel, dateRange?.from, dateRange?.to]);
+
+  useEffect(() => {
+    fetchIGDDoctors();
+  }, []);
 
   useEffect(() => {
     if (!isFilterModalOpen) {
@@ -2285,15 +2322,19 @@ const IGDTabs = () => {
     }
 
     setPendingStatusFilter(statusFilter);
+    setPendingDoctorFilter(doctorFilter);
     setPendingTriaseLevel(triaseLevel);
-  }, [isFilterModalOpen, statusFilter, triaseLevel]);
+  }, [isFilterModalOpen, statusFilter, doctorFilter, triaseLevel]);
 
   const handleFilterApply = (tab: string) => {
     const nextStatusFilter = pendingStatusFilter || "all";
+    const nextDoctorFilter = pendingDoctorFilter || "all";
     const nextTriaseLevel = pendingTriaseLevel || "all";
 
     setStatusFilter(nextStatusFilter);
+    setDoctorFilter(nextDoctorFilter);
     setTriaseLevel(nextTriaseLevel);
+    setDoctorOpen(false);
     setIsFilterModalOpen(false);
 
     if (currentPage !== 1) {
@@ -2303,6 +2344,7 @@ const IGDTabs = () => {
 
     fetchIGDData(tab, {
       status: nextStatusFilter,
+      kd_dokter: nextDoctorFilter,
       triase_level: nextTriaseLevel
     });
   };
@@ -2310,9 +2352,12 @@ const IGDTabs = () => {
   const handleClearFilters = () => {
     setSearchQuery("");
     setStatusFilter("all");
+    setDoctorFilter("all");
     setTriaseLevel("all");
     setPendingStatusFilter("all");
+    setPendingDoctorFilter("all");
     setPendingTriaseLevel("all");
+    setDoctorOpen(false);
     setIsFilterModalOpen(false);
     setDateRange({
       from: defaultIGDDate,
@@ -2458,7 +2503,7 @@ const IGDTabs = () => {
           <DialogHeader>
             <DialogTitle>Filter Pasien IGD</DialogTitle>
             <DialogDescription>
-              Atur status dan level triase, lalu tekan Terapkan Filter.
+              Atur status, dokter, dan level triase, lalu tekan Terapkan Filter.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
@@ -2475,6 +2520,68 @@ const IGDTabs = () => {
                   <SelectItem value="Selesai">Selesai</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <div className="text-sm font-medium">Dokter</div>
+              <Popover open={doctorOpen} onOpenChange={setDoctorOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={doctorOpen}
+                    className="w-full justify-between"
+                  >
+                    {pendingDoctorFilter !== "all"
+                      ? doctors.find((doctor) => doctor.kd_dokter === pendingDoctorFilter)?.nm_dokter
+                      : "Semua Dokter"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                  <Command>
+                    <CommandInput placeholder="Cari dokter..." />
+                    <CommandList>
+                      <CommandEmpty>Tidak ada dokter ditemukan.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="all"
+                          onSelect={() => {
+                            setPendingDoctorFilter("all");
+                            setDoctorOpen(false);
+                          }}
+                        >
+                          <CheckIcon
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              pendingDoctorFilter === "all" ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          Semua Dokter
+                        </CommandItem>
+                        {doctors.map((doctor) => (
+                          <CommandItem
+                            key={doctor.kd_dokter}
+                            value={doctor.nm_dokter}
+                            onSelect={() => {
+                              setPendingDoctorFilter(doctor.kd_dokter);
+                              setDoctorOpen(false);
+                            }}
+                          >
+                            <CheckIcon
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                pendingDoctorFilter === doctor.kd_dokter ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {doctor.nm_dokter}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="grid gap-2">
