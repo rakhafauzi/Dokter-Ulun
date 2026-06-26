@@ -236,6 +236,16 @@ interface BalanceCairanEntry {
   is_intake_reference?: boolean;
 }
 
+interface VentilatorEntry {
+  id: number;
+  no_rawat: string;
+  jns_tindakan: string;
+  intubasi: string;
+  ekstubasi: string;
+  user: string;
+  created_at?: string;
+}
+
 interface EchoCardiographyEntry {
   no_rawat: string;
   tgl_periksa: string;
@@ -321,7 +331,7 @@ type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type OutpatientExaminationSectionTabValue = 'examinations' | 'rehab-medik';
-type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
+type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
 
 interface MedicalRecordData {
   patient: {
@@ -1489,6 +1499,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     bab: ''
   });
   const [savingBalanceCairan, setSavingBalanceCairan] = useState(false);
+  const [ventilatorEntries, setVentilatorEntries] = useState<VentilatorEntry[]>([]);
+  const [ventilatorLoading, setVentilatorLoading] = useState(false);
   const [ekstrapiramidalForm, setEkstrapiramidalForm] = useState(getDefaultEkstrapiramidalForm);
   const [savingEkstrapiramidal, setSavingEkstrapiramidal] = useState(false);
   const [echoCardiographyEntries, setEchoCardiographyEntries] = useState<EchoCardiographyEntry[]>([]);
@@ -6514,6 +6526,33 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   }, [formattedNoRawat]);
 
+  const fetchVentilatorEntries = useCallback(async () => {
+    if (!formattedNoRawat) {
+      setVentilatorEntries([]);
+      return;
+    }
+
+    try {
+      setVentilatorLoading(true);
+      const response = await fetch(`${API_URLS.VENTILATOR}/${encodeURIComponent(formattedNoRawat)}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      const entries = Array.isArray(responseJson.data) ? responseJson.data : [];
+      setVentilatorEntries(entries);
+    } catch (error) {
+      console.error('Error fetching ventilator:', error);
+      setVentilatorEntries([]);
+    } finally {
+      setVentilatorLoading(false);
+    }
+  }, [formattedNoRawat]);
+
   const handleSaveBalanceCairan = useCallback(async () => {
     if (!formattedNoRawat) {
       toast({
@@ -6828,6 +6867,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setBalanceCairanEntries([]);
     setSelectedBalanceCairanId(null);
   }, [fetchBalanceCairan, formattedNoRawat]);
+
+  useEffect(() => {
+    if (!formattedNoRawat) {
+      setVentilatorEntries([]);
+      return;
+    }
+
+    if (inpatientExaminationSectionTab === 'ventilator') {
+      void fetchVentilatorEntries();
+    }
+  }, [fetchVentilatorEntries, formattedNoRawat, inpatientExaminationSectionTab]);
 
   useEffect(() => {
     if (formattedNoRawat && echoCardiographyAccess) {
@@ -10689,6 +10739,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <TabsList>
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
                           <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
+                          <TabsTrigger value="ventilator">Ventilator</TabsTrigger>
                           <TabsTrigger value="ekstrapiramidal">Ekstrapiramidal</TabsTrigger>
                           {echoCardiographyAccess && (
                             <TabsTrigger value="echo-echocardiography">Echocardiography</TabsTrigger>
@@ -10953,6 +11004,63 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 )}
                               </div>
                             </>
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="ventilator" className="space-y-4">
+                          {!formattedNoRawat ? (
+                            <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+                              Pilih kunjungan rawat inap terlebih dahulu untuk melihat penggunaan ventilator.
+                            </div>
+                          ) : (
+                            <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <h4 className="font-medium">Penggunaan Ventilator</h4>
+                                  <p className="text-sm text-muted-foreground">
+                                    Riwayat intubasi dan ekstubasi pasien.
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void fetchVentilatorEntries()}
+                                  disabled={ventilatorLoading}
+                                >
+                                  {ventilatorLoading ? 'Memuat...' : 'Refresh'}
+                                </Button>
+                              </div>
+
+                              {ventilatorLoading ? (
+                                <div className="p-4 text-sm text-muted-foreground">Memuat data ventilator...</div>
+                              ) : ventilatorEntries.length === 0 ? (
+                                <div className="p-4 text-sm text-muted-foreground">Belum ada data ventilator untuk nomor rawat ini.</div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-muted/40">
+                                      <tr className="text-left">
+                                        <th className="px-3 py-2 font-medium">Jenis Tindakan</th>
+                                        <th className="px-3 py-2 font-medium">Intubasi</th>
+                                        <th className="px-3 py-2 font-medium">Ekstubasi</th>
+                                        <th className="px-3 py-2 font-medium">Petugas</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {ventilatorEntries.map((entry) => (
+                                        <tr key={entry.id} className="border-t">
+                                          <td className="px-3 py-2">{entry.jns_tindakan || '-'}</td>
+                                          <td className="px-3 py-2">{entry.intubasi || '-'}</td>
+                                          <td className="px-3 py-2">{entry.ekstubasi || '-'}</td>
+                                          <td className="px-3 py-2">{entry.user || '-'}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </TabsContent>
 
