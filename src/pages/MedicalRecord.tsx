@@ -11,7 +11,7 @@ import {
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, CreditCard,
   Copy, ChevronDown, ChevronUp, Brain, Check, ChevronsUpDown, Pencil, Play,
-  BadgeAlert, Maximize2
+  BadgeAlert, Maximize2, Mic, Square
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -236,6 +236,16 @@ interface BalanceCairanEntry {
   is_intake_reference?: boolean;
 }
 
+interface VentilatorEntry {
+  id: number;
+  no_rawat: string;
+  jns_tindakan: string;
+  intubasi: string;
+  ekstubasi: string;
+  user: string;
+  created_at?: string;
+}
+
 interface EchoCardiographyEntry {
   no_rawat: string;
   tgl_periksa: string;
@@ -321,7 +331,7 @@ type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type OutpatientExaminationSectionTabValue = 'examinations' | 'rehab-medik';
-type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
+type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
 
 interface MedicalRecordData {
   patient: {
@@ -1489,6 +1499,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     bab: ''
   });
   const [savingBalanceCairan, setSavingBalanceCairan] = useState(false);
+  const [ventilatorEntries, setVentilatorEntries] = useState<VentilatorEntry[]>([]);
+  const [ventilatorLoading, setVentilatorLoading] = useState(false);
   const [ekstrapiramidalForm, setEkstrapiramidalForm] = useState(getDefaultEkstrapiramidalForm);
   const [savingEkstrapiramidal, setSavingEkstrapiramidal] = useState(false);
   const [echoCardiographyEntries, setEchoCardiographyEntries] = useState<EchoCardiographyEntry[]>([]);
@@ -1543,6 +1555,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
   // Examination form states
   const [examinationForm, setExaminationForm] = useState(getDefaultExaminationForm);
+  const voiceRecognitionRef = useRef<any>(null);
+  const [voiceToSoapSupported, setVoiceToSoapSupported] = useState(false);
+  const [voiceToSoapModalOpen, setVoiceToSoapModalOpen] = useState(false);
+  const [voiceToSoapRecording, setVoiceToSoapRecording] = useState(false);
+  const [voiceToSoapTranscript, setVoiceToSoapTranscript] = useState('');
+  const [voiceToSoapInterimTranscript, setVoiceToSoapInterimTranscript] = useState('');
+  const [voiceToSoapGenerating, setVoiceToSoapGenerating] = useState(false);
   const [igdTriageForm, setIgdTriageForm] = useState<IgdTriageForm>(getDefaultIgdTriageForm);
   const [igdTriageMasterOptions, setIgdTriageMasterOptions] = useState<IgdTriageMasterOption[]>([]);
   const [loadingIgdTriage, setLoadingIgdTriage] = useState(false);
@@ -1646,6 +1665,178 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const radiologyHistoryCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [expandedVisitKeys, setExpandedVisitKeys] = useState<Record<string, boolean>>({});
   const [loadingVisitDetailsKeys, setLoadingVisitDetailsKeys] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setVoiceToSoapSupported(Boolean(SpeechRecognition));
+  }, []);
+
+  const stopVoiceToSoap = useCallback(() => {
+    const recognition = voiceRecognitionRef.current;
+    if (recognition) {
+      try {
+        recognition.onresult = null;
+        recognition.onend = null;
+        recognition.onerror = null;
+        recognition.stop?.();
+      } catch {}
+    }
+    setVoiceToSoapRecording(false);
+    voiceRecognitionRef.current = null;
+  }, []);
+
+  const startVoiceToSoap = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast({
+        title: 'Voice-to-SOAP',
+        description: 'Browser tidak mendukung speech recognition.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    stopVoiceToSoap();
+
+    const recognition = new SpeechRecognition();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'id-ID';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event: any) => {
+      const results = Array.from(event.results || []);
+      const finalParts: string[] = [];
+      const interimParts: string[] = [];
+
+      results.forEach((result: any) => {
+        const text = String(result?.[0]?.transcript || '').trim();
+        if (!text) {
+          return;
+        }
+        if (result.isFinal) {
+          finalParts.push(text);
+        } else {
+          interimParts.push(text);
+        }
+      });
+
+      if (finalParts.length) {
+        setVoiceToSoapTranscript((previous) => {
+          const base = String(previous || '').trim();
+          const next = finalParts.join(' ').trim();
+          return base ? `${base} ${next}`.trim() : next;
+        });
+      }
+      setVoiceToSoapInterimTranscript(interimParts.join(' ').trim());
+    };
+
+    recognition.onerror = () => {
+      stopVoiceToSoap();
+    };
+
+    recognition.onend = () => {
+      setVoiceToSoapRecording(false);
+      voiceRecognitionRef.current = null;
+    };
+
+    try {
+      setVoiceToSoapRecording(true);
+      recognition.start();
+    } catch (error) {
+      console.error('Error starting voice recognition:', error);
+      setVoiceToSoapRecording(false);
+      voiceRecognitionRef.current = null;
+    }
+  }, [stopVoiceToSoap, toast]);
+
+  const applyGeneratedSoapToForm = useCallback((payload: any) => {
+    const normalized = payload && typeof payload === 'object' ? payload : {};
+
+    const mergeValue = (previous: string, next: string) => {
+      const prevValue = String(previous || '').trim();
+      const nextValue = String(next || '').trim();
+      if (!nextValue) {
+        return prevValue;
+      }
+      if (!prevValue) {
+        return nextValue;
+      }
+      if (prevValue.includes(nextValue)) {
+        return prevValue;
+      }
+      return `${prevValue}\n${nextValue}`.trim();
+    };
+
+    setExaminationForm((prev) => ({
+      ...prev,
+      keluhan: mergeValue(prev.keluhan, normalized.s),
+      pemeriksaan: mergeValue(prev.pemeriksaan, normalized.o),
+      penilaian: mergeValue(prev.penilaian, normalized.a),
+      rtl: mergeValue(prev.rtl, normalized.p),
+      instruksi: mergeValue(prev.instruksi, normalized.i),
+      evaluasi: mergeValue(prev.evaluasi, normalized.e),
+    }));
+  }, []);
+
+  const handleGenerateSoapFromVoice = useCallback(async () => {
+    const transcript = `${String(voiceToSoapTranscript || '').trim()} ${String(voiceToSoapInterimTranscript || '').trim()}`.trim();
+    if (!transcript) {
+      toast({
+        title: 'Voice-to-SOAP',
+        description: 'Transkrip masih kosong.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setVoiceToSoapGenerating(true);
+      const response = await fetch(API_URLS.VOICE_TO_SOAP, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript,
+          context: {
+            no_rkm_medis: String(no_rkm_medis || '').trim(),
+            patient_name: String((medicalData as any)?.patient?.nm_pasien || '').trim(),
+            no_rawat: String(formattedNoRawat || '').trim(),
+            status_rawat: String(statusRawat || '').trim(),
+          },
+        }),
+      });
+
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      applyGeneratedSoapToForm(result.data);
+      toast({
+        title: 'Voice-to-SOAP',
+        description: 'SOAPIE berhasil diisi dari voice.',
+      });
+      setVoiceToSoapModalOpen(false);
+    } catch (error) {
+      console.error('Error generating SOAP from voice:', error);
+      toast({
+        title: 'Voice-to-SOAP',
+        description: 'Gagal membuat SOAPIE dari voice.',
+        variant: 'destructive',
+      });
+    } finally {
+      setVoiceToSoapGenerating(false);
+    }
+  }, [
+    applyGeneratedSoapToForm,
+    formattedNoRawat,
+    medicalData,
+    no_rkm_medis,
+    statusRawat,
+    toast,
+    voiceToSoapInterimTranscript,
+    voiceToSoapTranscript,
+  ]);
 
   const addLaboratoryResultToCanvas = useCallback((labGroup: any) => {
     setCanvasItems((previous) => [
@@ -6514,6 +6705,33 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   }, [formattedNoRawat]);
 
+  const fetchVentilatorEntries = useCallback(async () => {
+    if (!formattedNoRawat) {
+      setVentilatorEntries([]);
+      return;
+    }
+
+    try {
+      setVentilatorLoading(true);
+      const response = await fetch(`${API_URLS.VENTILATOR}/${encodeURIComponent(formattedNoRawat)}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      const entries = Array.isArray(responseJson.data) ? responseJson.data : [];
+      setVentilatorEntries(entries);
+    } catch (error) {
+      console.error('Error fetching ventilator:', error);
+      setVentilatorEntries([]);
+    } finally {
+      setVentilatorLoading(false);
+    }
+  }, [formattedNoRawat]);
+
   const handleSaveBalanceCairan = useCallback(async () => {
     if (!formattedNoRawat) {
       toast({
@@ -6828,6 +7046,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setBalanceCairanEntries([]);
     setSelectedBalanceCairanId(null);
   }, [fetchBalanceCairan, formattedNoRawat]);
+
+  useEffect(() => {
+    if (!formattedNoRawat) {
+      setVentilatorEntries([]);
+      return;
+    }
+
+    if (inpatientExaminationSectionTab === 'ventilator') {
+      void fetchVentilatorEntries();
+    }
+  }, [fetchVentilatorEntries, formattedNoRawat, inpatientExaminationSectionTab]);
 
   useEffect(() => {
     if (formattedNoRawat && echoCardiographyAccess) {
@@ -9105,7 +9334,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   <p className="text-sm text-muted-foreground">Nama</p>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{currentPatient.nama}</p>
-                    {medicalData?.readmisi ? (
+                    {defaultExaminationStatusRawat === 'Ranap' && medicalData?.readmisi ? (
                       <span
                         className="inline-flex items-center rounded-sm border border-red-200 bg-red-50/80 px-2 py-0.5 text-xs font-medium text-red-700"
                         title={
@@ -10534,10 +10763,102 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                   {/* SOAPIE */}
                   <div className="space-y-4">
-                    <h4 className="font-medium flex items-center">
-                      <ClipboardList className="h-4 w-4 mr-2" />
-                      SOAPIE
-                    </h4>
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-medium flex items-center">
+                        <ClipboardList className="h-4 w-4 mr-2" />
+                        SOAPIE
+                      </h4>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setVoiceToSoapModalOpen(true)}
+                      >
+                        <Mic className="mr-2 h-4 w-4" />
+                        Voice-to-SOAP
+                      </Button>
+                    </div>
+
+                    <Dialog
+                      open={voiceToSoapModalOpen}
+                      onOpenChange={(open) => {
+                        if (!open) {
+                          stopVoiceToSoap();
+                        }
+                        setVoiceToSoapModalOpen(open);
+                      }}
+                    >
+                      <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                          <DialogTitle>Voice-to-SOAPIE</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          {!voiceToSoapSupported ? (
+                            <div className="text-sm text-muted-foreground">
+                              Browser tidak mendukung rekaman suara. Kamu tetap bisa tempel narasi lalu Generate SOAPIE.
+                            </div>
+                          ) : null}
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {voiceToSoapSupported ? (
+                              voiceToSoapRecording ? (
+                                <Button type="button" variant="destructive" size="sm" onClick={stopVoiceToSoap}>
+                                  <Square className="mr-2 h-4 w-4" />
+                                  Stop Rekam
+                                </Button>
+                              ) : (
+                                <Button type="button" variant="outline" size="sm" onClick={startVoiceToSoap}>
+                                  <Mic className="mr-2 h-4 w-4" />
+                                  Mulai Rekam
+                                </Button>
+                              )
+                            ) : null}
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                stopVoiceToSoap();
+                                setVoiceToSoapTranscript('');
+                                setVoiceToSoapInterimTranscript('');
+                              }}
+                              disabled={!voiceToSoapTranscript && !voiceToSoapInterimTranscript}
+                            >
+                              Reset
+                            </Button>
+
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={handleGenerateSoapFromVoice}
+                              disabled={voiceToSoapGenerating || (!voiceToSoapTranscript && !voiceToSoapInterimTranscript)}
+                            >
+                              <Brain className="mr-2 h-4 w-4" />
+                              {voiceToSoapGenerating ? 'Memproses...' : 'Generate SOAPIE'}
+                            </Button>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="text-sm font-medium">Transkrip</div>
+                            <Textarea
+                              placeholder="Klik Mulai Rekam lalu bicara, atau tempel narasi di sini..."
+                              value={voiceToSoapTranscript}
+                              onChange={(e) => {
+                                setVoiceToSoapTranscript(e.target.value);
+                                setVoiceToSoapInterimTranscript('');
+                              }}
+                            />
+                            {voiceToSoapInterimTranscript ? (
+                              <div className="text-xs text-muted-foreground">
+                                {voiceToSoapInterimTranscript}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+
                      <div className="space-y-3">
                        <div>
                          <Label htmlFor="keluhan">S (Subjektif/Keluhan)</Label>
@@ -10689,6 +11010,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <TabsList>
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
                           <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
+                          <TabsTrigger value="ventilator">Ventilator</TabsTrigger>
                           <TabsTrigger value="ekstrapiramidal">Ekstrapiramidal</TabsTrigger>
                           {echoCardiographyAccess && (
                             <TabsTrigger value="echo-echocardiography">Echocardiography</TabsTrigger>
@@ -10953,6 +11275,63 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 )}
                               </div>
                             </>
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="ventilator" className="space-y-4">
+                          {!formattedNoRawat ? (
+                            <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+                              Pilih kunjungan rawat inap terlebih dahulu untuk melihat penggunaan ventilator.
+                            </div>
+                          ) : (
+                            <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <h4 className="font-medium">Penggunaan Ventilator</h4>
+                                  <p className="text-sm text-muted-foreground">
+                                    Riwayat intubasi dan ekstubasi pasien.
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void fetchVentilatorEntries()}
+                                  disabled={ventilatorLoading}
+                                >
+                                  {ventilatorLoading ? 'Memuat...' : 'Refresh'}
+                                </Button>
+                              </div>
+
+                              {ventilatorLoading ? (
+                                <div className="p-4 text-sm text-muted-foreground">Memuat data ventilator...</div>
+                              ) : ventilatorEntries.length === 0 ? (
+                                <div className="p-4 text-sm text-muted-foreground">Belum ada data ventilator untuk nomor rawat ini.</div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-muted/40">
+                                      <tr className="text-left">
+                                        <th className="px-3 py-2 font-medium">Jenis Tindakan</th>
+                                        <th className="px-3 py-2 font-medium">Intubasi</th>
+                                        <th className="px-3 py-2 font-medium">Ekstubasi</th>
+                                        <th className="px-3 py-2 font-medium">Petugas</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {ventilatorEntries.map((entry) => (
+                                        <tr key={entry.id} className="border-t">
+                                          <td className="px-3 py-2">{entry.jns_tindakan || '-'}</td>
+                                          <td className="px-3 py-2">{entry.intubasi || '-'}</td>
+                                          <td className="px-3 py-2">{entry.ekstubasi || '-'}</td>
+                                          <td className="px-3 py-2">{entry.user || '-'}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </TabsContent>
 

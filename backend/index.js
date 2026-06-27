@@ -29,11 +29,13 @@ import InacbgSimulationService from './services/inacbgSimulationService.js';
 import InternalReferralService from './services/internalReferralService.js';
 import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
+import VoiceToSoapService from './services/voiceToSoapService.js';
 import { MedicalService } from './services/medicalService.js';
 import OperationReportService from './services/operationReportService.js';
 import PatientNotesService from './services/patientNotesService.js';
 import PatientContactService from './services/patientContactService.js';
 import BalanceCairanService from './services/balanceCairanService.js';
+import VentilatorService from './services/ventilatorService.js';
 import ProcedureService from './services/procedureService.js';
 import PrescriptionDataService from './services/prescriptionDataService.js';
 import RadiologyDataService from './services/radiologyDataService.js';
@@ -1210,6 +1212,22 @@ app.post('/api/balance-cairan', async (req, res) => {
   }
 });
 
+app.get('/api/ventilator/:no_rawat', async (req, res) => {
+  try {
+    const result = await VentilatorService.listByNoRawat(req.params.no_rawat);
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error in ventilator GET endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/api/ekstrapiramidal', async (req, res) => {
   try {
     const result = await EkstrapiramidalService.save(req.body);
@@ -1533,6 +1551,7 @@ app.get('/api/igd-data', async (req, res) => {
       itemsPerPage = 10, 
       search = '', 
       status = '', 
+      kd_dokter = '',
       triase_level = '', 
       date_from = '', 
       date_to = '', 
@@ -1544,6 +1563,7 @@ app.get('/api/igd-data', async (req, res) => {
       itemsPerPage, 
       search, 
       status, 
+      kd_dokter,
       triase_level, 
       date_from, 
       date_to, 
@@ -1796,6 +1816,23 @@ app.post('/api/medical-scribe', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Medical scribe error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/voice-to-soap', async (req, res) => {
+  try {
+    const { transcript, context } = req.body || {};
+    const data = await VoiceToSoapService.generateSoap({ transcript, context });
+    res.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    console.error('Voice-to-SOAP error:', error);
     res.status(500).json({
       success: false,
       error: error.message
