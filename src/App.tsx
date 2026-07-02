@@ -21,6 +21,7 @@ import StatisticsCare from "./pages/StatisticsCare";
 import AIAssistant from "./pages/AIAssistant";
 import Settings from "./pages/Settings";
 import AuditHistory from "./pages/AuditHistory";
+import DepoFarmasi from "./pages/DepoFarmasi";
 import Panduan from "./pages/Panduan";
 import Laboratorium from "./pages/Laboratorium";
 import Radiologi from "./pages/Radiologi";
@@ -203,6 +204,7 @@ const AppContent = () => {
             <Route path="/radiologi" element={canAccessRadiologi === false ? <Navigate to="/" replace /> : <Radiologi />} />
             <Route path="/panduan" element={<Panduan />} />
             <Route path="/riwayat-audit" element={<AuditHistory />} />
+            <Route path="/depo-farmasi" element={<DepoFarmasi />} />
             <Route path="/pengaturan" element={<Settings />} />
             <Route path="/rekam-medik" element={<MedicalRecord />} />
             <Route path="/rekam-medik/:no_rkm_medis" element={<MedicalRecordReadonly />} />

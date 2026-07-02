@@ -20,6 +20,7 @@ import DigitalFilesService from './services/digitalFilesService.js';
 import EchoCardiographyService from './services/echoCardiographyService.js';
 import EkstrapiramidalService from './services/ekstrapiramidalService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
+import DepoFarmasiService from './services/depoFarmasiService.js';
 import DiagnosticAccessService from './services/diagnosticAccessService.js';
 import DoctorAiAssistantService from './services/doctorAiAssistantService.js';
 import DoctorNotificationService from './services/doctorNotificationService.js';
@@ -773,6 +774,21 @@ app.post('/api/hemodialisa-data', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: error.message 
+    });
+  }
+});
+
+app.get('/api/depo-farmasi', async (req, res) => {
+  try {
+    const result = await DepoFarmasiService.getData({
+      search: req.query.search
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error in depo-farmasi endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch depo farmasi data'
     });
   }
 });
