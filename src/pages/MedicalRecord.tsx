@@ -9787,6 +9787,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                     <p className="text-sm text-muted-foreground">Hasil</p>
                                     <p className="font-medium whitespace-pre-wrap break-words">{rad.hasil || '-'}</p>
                                   </div>
+                                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Saran</p>
+                                      <p className="font-medium whitespace-pre-wrap break-words">{rad.saran || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Kesan</p>
+                                      <p className="font-medium whitespace-pre-wrap break-words">{rad.kesan || '-'}</p>
+                                    </div>
+                                  </div>
                                 </div>
                                 {renderRadiologyPacsImages(rad)}
                               </div>
