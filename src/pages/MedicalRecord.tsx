@@ -1533,6 +1533,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [medicationCurrentCareTab, setMedicationCurrentCareTab] = useState<CareSectionTabValue>(preferredCareSectionTab);
   const [showAllOutpatientMedicationRequests, setShowAllOutpatientMedicationRequests] = useState(false);
   const [loadingAllOutpatientMedicationRequests, setLoadingAllOutpatientMedicationRequests] = useState(false);
+  const [kronisWarningShown, setKronisWarningShown] = useState(false);
+  const [kronisWarningLoading, setKronisWarningLoading] = useState(false);
   const [showAllInpatientMedicationRequests, setShowAllInpatientMedicationRequests] = useState(false);
   const [loadingAllInpatientMedicationRequests, setLoadingAllInpatientMedicationRequests] = useState(false);
   const [showAllOutpatientLaboratoryHistory, setShowAllOutpatientLaboratoryHistory] = useState(false);
@@ -4802,6 +4804,37 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     showAllInpatientMedicationRequests
   ]);
 
+  const handleCheckKronisWarning = useCallback(async () => {
+    const normalizedNoRm = String(no_rkm_medis || '').trim();
+    if (!normalizedNoRm || kronisWarningLoading || kronisWarningShown) {
+      return;
+    }
+
+    setKronisWarningLoading(true);
+    try {
+      const response = await fetch(
+        `${API_URLS.PRESCRIPTION_DATA}?action=cek_obat_kronis&no_rkm_medis=${encodeURIComponent(normalizedNoRm)}`
+      );
+      const payload = await response.json();
+      const data = payload?.data ?? payload ?? {};
+
+      if (String(data.status || '').trim() === 'ada' && Number(data.hari_sebelumnya ?? 0) <= 30) {
+        window.alert(
+          "⚠️ PERINGATAN ADA RESEP PASIEN OBAT KRONIS\n\n" +
+          "Pasien tidak bisa diberikan obat 1 bulan karena masih ada resep kronis sebelumnya\n" +
+          `Tanggal resep terakhir: ${data.tanggal_kronis || '-'} (${data.hari_sebelumnya || 0} hari yang lalu)\n\n` +
+          `Baru bisa diberikan obat kronis pada tanggal: ${data.tanggal_berikutnya || '-'}\n\n` +
+          String(data.data || '')
+        );
+        setKronisWarningShown(true);
+      }
+    } catch (error) {
+      console.error('Error checking kronis warning:', error);
+    } finally {
+      setKronisWarningLoading(false);
+    }
+  }, [kronisWarningLoading, kronisWarningShown, no_rkm_medis]);
+
   useEffect(() => {
     if (activeTab !== 'medications' || medicationDataTab !== 'current' || medicationCurrentCareTab !== 'outpatient') {
       return;
@@ -4828,6 +4861,26 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     medicationCurrentCareTab,
     medicationDataTab,
     showAllOutpatientMedicationRequests
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'medications') {
+      if (kronisWarningShown) {
+        setKronisWarningShown(false);
+      }
+      return;
+    }
+
+    if (medicationCurrentCareTab !== 'outpatient') {
+      return;
+    }
+
+    void handleCheckKronisWarning();
+  }, [
+    activeTab,
+    handleCheckKronisWarning,
+    kronisWarningShown,
+    medicationCurrentCareTab
   ]);
 
   useEffect(() => {
@@ -9786,6 +9839,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                   <div>
                                     <p className="text-sm text-muted-foreground">Hasil</p>
                                     <p className="font-medium whitespace-pre-wrap break-words">{rad.hasil || '-'}</p>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Saran</p>
+                                      <p className="font-medium whitespace-pre-wrap break-words">{rad.saran || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Kesan</p>
+                                      <p className="font-medium whitespace-pre-wrap break-words">{rad.kesan || '-'}</p>
+                                    </div>
                                   </div>
                                 </div>
                                 {renderRadiologyPacsImages(rad)}

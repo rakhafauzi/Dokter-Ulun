@@ -20,6 +20,7 @@ import DigitalFilesService from './services/digitalFilesService.js';
 import EchoCardiographyService from './services/echoCardiographyService.js';
 import EkstrapiramidalService from './services/ekstrapiramidalService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
+import DepoFarmasiService from './services/depoFarmasiService.js';
 import DiagnosticAccessService from './services/diagnosticAccessService.js';
 import DoctorAiAssistantService from './services/doctorAiAssistantService.js';
 import DoctorNotificationService from './services/doctorNotificationService.js';
@@ -773,6 +774,21 @@ app.post('/api/hemodialisa-data', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: error.message 
+    });
+  }
+});
+
+app.get('/api/depo-farmasi', async (req, res) => {
+  try {
+    const result = await DepoFarmasiService.getData({
+      search: req.query.search
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error in depo-farmasi endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch depo farmasi data'
     });
   }
 });
@@ -1843,7 +1859,7 @@ app.post('/api/voice-to-soap', async (req, res) => {
 // Prescription Data endpoints
 app.get('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, no_resep, search, limit, package_id, prescription_status } = req.query;
+    const { action, no_rawat, no_resep, search, limit, package_id, prescription_status, no_rkm_medis } = req.query;
     
     let result;
     
@@ -1899,11 +1915,15 @@ app.get('/api/prescription-data', async (req, res) => {
       case 'get_compound_methods':
         result = await PrescriptionDataService.getCompoundMethods();
         break;
+
+      case 'cek_obat_kronis':
+        result = await PrescriptionDataService.checkChronicPrescriptionWarning(no_rkm_medis);
+        break;
         
       default:
         return res.status(400).json({
           success: false,
-          error: 'Invalid action. Supported actions: get_prescriptions, get_prescription_details, get_medicines, search_medicines, get_compound_methods'
+          error: 'Invalid action. Supported actions: get_prescriptions, get_prescription_details, get_medicines, search_medicines, search_packages, get_package_items, get_compound_methods, cek_obat_kronis'
         });
     }
     
