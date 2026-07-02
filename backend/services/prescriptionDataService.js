@@ -1530,6 +1530,113 @@ class PrescriptionDataService {
       connection.release();
     }
   }
+
+  async checkChronicPrescriptionWarning(no_rkm_medis = '') {
+    const normalizedNoRm = String(no_rkm_medis || '').trim();
+    if (!normalizedNoRm) {
+      return {
+        success: true,
+        data: { status: 'tidak' }
+      };
+    }
+
+    const kronisRows = await executeQuery(
+      `
+        SELECT
+          DATE(tgl_registrasi) AS tanggal_kronis,
+          DATEDIFF(CURDATE(), DATE(tgl_registrasi)) AS hari_sebelumnya,
+          DATE_ADD(DATE(tgl_registrasi), INTERVAL 30 DAY) AS tanggal_berikutnya,
+          no_rawat
+        FROM mlite_veronisa
+        WHERE no_rkm_medis = ?
+          AND DATE(tgl_registrasi) < CURDATE()
+        ORDER BY tgl_registrasi DESC
+        LIMIT 1
+      `,
+      [normalizedNoRm]
+    );
+
+    const kronis = kronisRows?.[0];
+    if (!kronis) {
+      return {
+        success: true,
+        data: { status: 'tidak' }
+      };
+    }
+
+    const hariSebelumnya = Number(kronis.hari_sebelumnya ?? 0);
+    if (!Number.isFinite(hariSebelumnya) || hariSebelumnya > 30) {
+      return {
+        success: true,
+        data: { status: 'tidak' }
+      };
+    }
+
+    const noRawat = String(kronis.no_rawat || '').trim();
+    if (!noRawat) {
+      return {
+        success: true,
+        data: { status: 'tidak' }
+      };
+    }
+
+    const detailRows = await executeQuery(
+      `
+        SELECT
+          ro.no_resep,
+          db.nama_brng,
+          dpo.jml,
+          COALESCE(ap.aturan, '-') AS aturan_pakai
+        FROM resep_obat ro
+        INNER JOIN detail_pemberian_obat dpo
+          ON dpo.no_rawat = ro.no_rawat
+         AND dpo.tgl_perawatan = ro.tgl_perawatan
+         AND dpo.jam = ro.jam
+        INNER JOIN databarang db ON db.kode_brng = dpo.kode_brng
+        LEFT JOIN aturan_pakai ap
+          ON ap.no_rawat = dpo.no_rawat
+         AND ap.tgl_perawatan = dpo.tgl_perawatan
+         AND ap.jam = dpo.jam
+         AND ap.kode_brng = dpo.kode_brng
+        WHERE ro.no_rawat = ?
+        ORDER BY ro.no_resep DESC
+      `,
+      [noRawat]
+    );
+
+    const resepGroup = new Map();
+    for (const row of detailRows || []) {
+      const noResep = String(row.no_resep || '').trim();
+      if (!noResep) {
+        continue;
+      }
+
+      if (!resepGroup.has(noResep)) {
+        resepGroup.set(noResep, []);
+      }
+
+      resepGroup.get(noResep).push(
+        `- ${String(row.nama_brng || '').trim()} | Jumlah: ${row.jml ?? ''} | Aturan: ${String(row.aturan_pakai || '-').trim() || '-'}`
+      );
+    }
+
+    const dataObat = [];
+    for (const [noResep, items] of resepGroup.entries()) {
+      dataObat.push(`=== No Resep: ${noResep} ===`);
+      dataObat.push(items.join('\n'));
+    }
+
+    return {
+      success: true,
+      data: {
+        status: 'ada',
+        data: dataObat.join('\n\n'),
+        tanggal_kronis: kronis.tanggal_kronis,
+        hari_sebelumnya: hariSebelumnya,
+        tanggal_berikutnya: kronis.tanggal_berikutnya
+      }
+    };
+  }
 }
 
 export default new PrescriptionDataService();

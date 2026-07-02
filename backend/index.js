@@ -1859,7 +1859,7 @@ app.post('/api/voice-to-soap', async (req, res) => {
 // Prescription Data endpoints
 app.get('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, no_resep, search, limit, package_id, prescription_status } = req.query;
+    const { action, no_rawat, no_resep, search, limit, package_id, prescription_status, no_rkm_medis } = req.query;
     
     let result;
     
@@ -1915,11 +1915,15 @@ app.get('/api/prescription-data', async (req, res) => {
       case 'get_compound_methods':
         result = await PrescriptionDataService.getCompoundMethods();
         break;
+
+      case 'cek_obat_kronis':
+        result = await PrescriptionDataService.checkChronicPrescriptionWarning(no_rkm_medis);
+        break;
         
       default:
         return res.status(400).json({
           success: false,
-          error: 'Invalid action. Supported actions: get_prescriptions, get_prescription_details, get_medicines, search_medicines, get_compound_methods'
+          error: 'Invalid action. Supported actions: get_prescriptions, get_prescription_details, get_medicines, search_medicines, search_packages, get_package_items, get_compound_methods, cek_obat_kronis'
         });
     }
     
