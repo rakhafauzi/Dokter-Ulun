@@ -1943,7 +1943,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           onClear={() => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', '', '')}
                         />
                         <SearchableMedicalCodeField
-                          label="Diagnosa Sekunder 4"
+                          label="Diagnosa Sekunder 4 (Lainnya)"
                           placeholder="Pilih diagnosa sekunder 4"
                           emptyMessage="Tidak ada diagnosa ditemukan."
                           selectedName={formData.diagnosa_sekunder4}
@@ -1997,7 +1997,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           onClear={() => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', '', '')}
                         />
                         <SearchableMedicalCodeField
-                          label="Prosedur Sekunder 3"
+                          label="Prosedur Sekunder 3 (Lainnya)"
                           placeholder="Pilih prosedur sekunder 3"
                           emptyMessage="Tidak ada prosedur ditemukan."
                           selectedName={formData.prosedur_sekunder3}
