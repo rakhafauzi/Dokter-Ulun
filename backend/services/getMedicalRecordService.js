@@ -1820,7 +1820,7 @@ class GetMedicalRecordService {
       FROM detail_periksa_lab dpl
       LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
       WHERE dpl.no_rawat = ?
-      ORDER BY dpl.tgl_periksa DESC, dpl.jam ASC, dpl.kd_jenis_prw ASC
+      ORDER BY dpl.tgl_periksa DESC, dpl.jam ASC, dpl.kd_jenis_prw ASC, dpl.id_template ASC
     `;
     const [detailRows] = await db.execute(detailQuery, [noRawat]);
 

@@ -4325,7 +4325,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   className={cn(
                     "grid grid-cols-5 gap-4 border-l-2 border-primary rounded-r bg-background px-4 py-3",
                     test.keterangan === 'H' && "text-red-700 dark:text-red-300",
-                    test.keterangan === 'L' && "text-amber-700 dark:text-amber-300"
+                    test.keterangan === 'L' && "text-blue-700 dark:text-blue-300"
                   )}
                 >
                   <div className="font-medium">{test.pemeriksaan || '-'}</div>
@@ -4364,7 +4364,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 className={cn(
                   "grid grid-cols-5 gap-4 border-l-2 border-primary rounded-r bg-background px-4 py-3",
                   test.keterangan === 'H' && "text-red-700 dark:text-red-300",
-                  test.keterangan === 'L' && "text-amber-700 dark:text-amber-300"
+                  test.keterangan === 'L' && "text-blue-700 dark:text-blue-300"
                 )}
               >
                 <div className="font-medium">{test.pemeriksaan || '-'}</div>
@@ -12928,7 +12928,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                             className={cn(
                                               "text-sm ml-4 rounded px-2 py-1",
                                               test.keterangan === 'H' && "text-red-700",
-                                              test.keterangan === 'L' && "text-amber-700"
+                                              test.keterangan === 'L' && "text-blue-700"
                                             )}
                                           >
                                             <span className="font-medium">{test.pemeriksaan}:</span> {test.nilai} ({test.nilai_rujukan})
@@ -12960,7 +12960,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                               className={cn(
                                                 "text-sm rounded px-2 py-1",
                                                 test.keterangan === 'H' && "text-red-700",
-                                                test.keterangan === 'L' && "text-amber-700"
+                                                test.keterangan === 'L' && "text-blue-700"
                                               )}
                                             >
                                               <span className="font-medium">{test.pemeriksaan || '-'}</span>: {test.hasil || '-'} ({test.rujukan || '-'})
@@ -13637,7 +13637,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                     key={`${panel.groupName}-${testIndex}`}
                                     className={cn(
                                       test.keterangan === 'H' && "text-red-700",
-                                      test.keterangan === 'L' && "text-amber-700"
+                                      test.keterangan === 'L' && "text-blue-700"
                                     )}
                                   >
                                     <td className="border border-slate-300 px-2 py-1 align-top">{test.pemeriksaan || '-'}</td>
