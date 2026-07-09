@@ -215,6 +215,18 @@ interface LabData {
   lab_type?: 'pk' | 'pa' | 'mikro';
   lab_responsible_doctor_code?: string;
   lab_responsible_doctor_name?: string;
+  no_rawat?: string;
+  nm_perawatan?: string;
+  dokter?: string;
+  petugas?: string;
+  source?: string;
+  perawatans?: Array<{
+    tanggal: string;
+    nm_perawatan?: string;
+    dokter?: string;
+    petugas?: string;
+    hasil: LabTest[];
+  }>;
 }
 
 interface BalanceCairanEntry {
@@ -1213,6 +1225,69 @@ const buildFocusedLabItems = (
 
       return (a.__index || 0) - (b.__index || 0);
     });
+};
+
+const aggregateLaboratoryHistoryByNoRawat = (records: LabData[] = []) => {
+  const grouped = new Map<string, any>();
+
+  (Array.isArray(records) ? records : []).forEach((record, index) => {
+    const normalizedNoRawat = String(record?.no_rawat || '').trim() || `unknown-${index}`;
+    const normalizedLabType = String(record?.lab_type || 'pk').trim().toLowerCase();
+    const normalizedSource = String((record as any)?.source || '').trim();
+    const key = `${normalizedNoRawat}|${normalizedLabType}|${normalizedSource}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        ...record,
+        no_rawat: normalizedNoRawat,
+        tanggal: String(record?.tanggal || '').trim(),
+        nm_perawatan: String(record?.nm_perawatan || '').trim(),
+        dokter: String(record?.dokter || '').trim(),
+        petugas: String(record?.petugas || '').trim(),
+        perawatans: [],
+        __index: (record as any)?.__index || index,
+        __timestamp: (record as any)?.__timestamp || 0
+      });
+    }
+
+    const currentGroup = grouped.get(key);
+    const panelTests = Array.isArray(record?.pemeriksaan) ? record.pemeriksaan : [];
+    currentGroup.perawatans.push({
+      tanggal: String(record?.tanggal || '').trim(),
+      nm_perawatan: String(record?.nm_perawatan || '').trim(),
+      dokter: String(record?.dokter || '').trim(),
+      petugas: String(record?.petugas || '').trim(),
+      hasil: panelTests
+    });
+
+    if (!currentGroup.nm_perawatan && record?.nm_perawatan) {
+      currentGroup.nm_perawatan = record.nm_perawatan;
+    }
+    if (!currentGroup.dokter && record?.dokter) {
+      currentGroup.dokter = record.dokter;
+    }
+    if (!currentGroup.petugas && record?.petugas) {
+      currentGroup.petugas = record.petugas;
+    }
+
+    currentGroup.pemeriksaan = currentGroup.perawatans.flatMap((panel: any) => (
+      Array.isArray(panel?.hasil) ? panel.hasil : []
+    ));
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    const dateCompare = String(b?.__datePart || '').localeCompare(String(a?.__datePart || ''));
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    const timeCompare = String(a?.__timePart || '').localeCompare(String(b?.__timePart || ''));
+    if (timeCompare !== 0) {
+      return timeCompare;
+    }
+
+    return Number(a?.__index || 0) - Number(b?.__index || 0);
+  });
 };
 
 const groupLaboratoryTestsByPanel = (labGroup: any) => {
@@ -2386,32 +2461,40 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [formattedNoRawat, medicalData?.focused_laboratory_request?.ranap, scopedInpatientVisits]);
   const outpatientLaboratoryHistory = React.useMemo(() => {
     if (formattedNoRawat) {
-      return buildFocusedLabItems(
-        (medicalData?.focused_laboratory?.ralan || []) as LabData[],
-        formattedNoRawat,
-        'Rawat Jalan'
+      return aggregateLaboratoryHistoryByNoRawat(
+        buildFocusedLabItems(
+          (medicalData?.focused_laboratory?.ralan || []) as LabData[],
+          formattedNoRawat,
+          'Rawat Jalan'
+        )
       );
     }
 
-    return buildFocusedLabItems(
-      scopedOutpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
-      '',
-      'Rawat Jalan'
+    return aggregateLaboratoryHistoryByNoRawat(
+      buildFocusedLabItems(
+        scopedOutpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
+        '',
+        'Rawat Jalan'
+      )
     );
   }, [formattedNoRawat, medicalData?.focused_laboratory?.ralan, scopedOutpatientVisits]);
   const inpatientLaboratoryHistory = React.useMemo(() => {
     if (formattedNoRawat) {
-      return buildFocusedLabItems(
-        (medicalData?.focused_laboratory?.ranap || []) as LabData[],
-        formattedNoRawat,
-        'Rawat Inap'
+      return aggregateLaboratoryHistoryByNoRawat(
+        buildFocusedLabItems(
+          (medicalData?.focused_laboratory?.ranap || []) as LabData[],
+          formattedNoRawat,
+          'Rawat Inap'
+        )
       );
     }
 
-    return buildFocusedLabItems(
-      scopedInpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
-      '',
-      'Rawat Inap'
+    return aggregateLaboratoryHistoryByNoRawat(
+      buildFocusedLabItems(
+        scopedInpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
+        '',
+        'Rawat Inap'
+      )
     );
   }, [formattedNoRawat, medicalData?.focused_laboratory?.ranap, scopedInpatientVisits]);
   const inpatientLaboratoryHistoryAll = useMemo(() => {
@@ -4211,7 +4294,55 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     )});
   };
   const renderLaboratoryHistoryDetails = (labGroup: any) => {
+    const groupedCarePanels = Array.isArray(labGroup?.perawatans) ? labGroup.perawatans : [];
+    if (groupedCarePanels.length > 0) {
+      return groupedCarePanels.map((panel: any, panelIndex: number) => (
+        <div key={`${panel.nm_perawatan || panel.tanggal || panelIndex}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Waktu</p>
+              <p className="font-medium">{formatDateSafe(panel.tanggal)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Nama Pemeriksaan</p>
+              <p className="font-medium">{panel.nm_perawatan || '-'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Dokter</p>
+              <p className="font-medium">{panel.dokter || '-'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Petugas</p>
+              <p className="font-medium">{panel.petugas || '-'}</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="min-w-[720px] space-y-2">
+              {renderLaboratoryResultHeaderRow()}
+              {(Array.isArray(panel?.hasil) ? panel.hasil : []).map((test: LabTest, testIndex: number) => (
+                <div
+                  key={`${panelIndex}-${testIndex}`}
+                  className={cn(
+                    "grid grid-cols-5 gap-4 border-l-2 border-primary rounded-r bg-background px-4 py-3",
+                    test.keterangan === 'H' && "text-red-700 dark:text-red-300",
+                    test.keterangan === 'L' && "text-blue-700 dark:text-blue-300"
+                  )}
+                >
+                  <div className="font-medium">{test.pemeriksaan || '-'}</div>
+                  <div className="font-medium">{test.hasil || '-'}</div>
+                  <div className="font-medium">{test.rujukan || '-'}</div>
+                  <div className="font-medium">{test.satuan || '-'}</div>
+                  <div className="font-medium">{test.keterangan || '-'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ));
+    }
+
     const groupedPanels = groupLaboratoryTestsByPanel(labGroup);
+    const shouldShowPanelTitle = groupedPanels.length > 1;
 
     if (groupedPanels.length === 0) {
       return <p className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan</p>;
@@ -4219,18 +4350,21 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return groupedPanels.map(({ groupName, tests }, groupIdx) => (
       <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
-        <div>
-          <p className="font-semibold">{groupName}</p>
-        </div>
+        {shouldShowPanelTitle ? (
+          <div>
+            <p className="font-semibold">{groupName}</p>
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <div className="min-w-[720px] space-y-2">
+            {renderLaboratoryResultHeaderRow()}
             {(tests as LabTest[]).map((test, testIndex) => (
               <div
                 key={`${groupName}-${testIndex}`}
                 className={cn(
                   "grid grid-cols-5 gap-4 border-l-2 border-primary rounded-r bg-background px-4 py-3",
-                  test.keterangan === 'H' && "bg-red-100 text-red-900",
-                  test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                  test.keterangan === 'H' && "text-red-700 dark:text-red-300",
+                  test.keterangan === 'L' && "text-blue-700 dark:text-blue-300"
                 )}
               >
                 <div className="font-medium">{test.pemeriksaan || '-'}</div>
@@ -4246,17 +4380,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     ));
   };
 
-  const renderLaboratoryHistoryHeader = () => (
-    <div className="overflow-x-auto">
-      <div className="min-w-[720px]">
-        <div className="grid grid-cols-5 gap-4 rounded-md border bg-background/70 px-4 py-2 text-sm font-semibold text-foreground">
-          <div>Pemeriksaan</div>
-          <div>Hasil</div>
-          <div>Rujukan</div>
-          <div>Satuan</div>
-          <div>Keterangan</div>
-        </div>
-      </div>
+  const renderLaboratoryResultHeaderRow = () => (
+    <div className="grid grid-cols-5 gap-4 rounded-md border bg-background/70 px-4 py-2 text-sm font-semibold text-foreground">
+      <div>Pemeriksaan</div>
+      <div>Hasil</div>
+      <div>Rujukan</div>
+      <div>Satuan</div>
+      <div>Keterangan</div>
     </div>
   );
 
@@ -4271,26 +4401,19 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
         draggable
         onDragStart={(e) => {
-          setDraggingLab({
-            tanggal: labGroup.tanggal,
-            pemeriksaan: labGroup.pemeriksaan
-          });
+          setDraggingLab(labGroup);
           e.dataTransfer.effectAllowed = 'move';
         }}
       >
         <div className="mb-4 flex flex-col-reverse gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <p className="text-sm text-muted-foreground">Tanggal</p>
-              <p className="font-medium">{formatDateSafe(labGroup.tanggal)}</p>
-            </div>
+          <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <p className="text-sm text-muted-foreground">No. Rawat</p>
-              <p className="font-medium">{labGroup.no_rawat}</p>
+              <p className="font-medium">{labGroup.no_rawat || '-'}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Sumber</p>
-              <p className="font-medium">{labGroup.source}</p>
+              <p className="font-medium">{labGroup.source || '-'}</p>
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2 md:w-auto md:items-end">
@@ -4332,8 +4455,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           </div>
         </div>
         <div className="space-y-2">
-          <h4 className="font-medium">Pemeriksaan:</h4>
-          {renderLaboratoryHistoryHeader()}
           {renderLaboratoryHistoryDetails(labGroup)}
         </div>
       </div>
@@ -9258,10 +9379,24 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return allVisits.find((visit: any) => String(visit?.no_rawat || '').trim() === fullscreenNoRawat) || focusedVisit;
   }, [allVisits, focusedVisit, fullscreenLabHistory]);
-  const fullscreenLabPanels = useMemo(
-    () => groupLaboratoryTestsByPanel(fullscreenLabHistory),
-    [fullscreenLabHistory]
-  );
+  const fullscreenLabPanels = useMemo(() => {
+    const groupedCarePanels = Array.isArray(fullscreenLabHistory?.perawatans)
+      ? fullscreenLabHistory.perawatans
+      : [];
+
+    if (groupedCarePanels.length > 0) {
+      return groupedCarePanels.map((panel: any, index: number) => ({
+        groupName: panel?.nm_perawatan || `Pemeriksaan ${index + 1}`,
+        groupMeta: panel,
+        tests: Array.isArray(panel?.hasil) ? panel.hasil : []
+      }));
+    }
+
+    return groupLaboratoryTestsByPanel(fullscreenLabHistory).map((panel) => ({
+      ...panel,
+      groupMeta: null
+    }));
+  }, [fullscreenLabHistory]);
   const fullscreenLabDoctorName = useMemo(
     () => (
       String(fullscreenLabHistory?.lab_responsible_doctor_name || '').trim()
@@ -12776,20 +12911,24 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <div key={index} className="border rounded-lg p-3 bg-blue-50">
                           <div className="flex justify-between items-start">
                             <div>
-                              <p className="font-medium">{formatDateSafe(item.content.tanggal)}</p>
+                              <p className="font-medium">No. Rawat: {item.content.no_rawat || '-'}</p>
+                              <p className="text-sm text-muted-foreground">{formatDateSafe(item.content.tanggal)}</p>
                               <div className="space-y-1 mt-2">
                                 {Array.isArray((item.content as any).perawatans) && (item.content as any).perawatans.length > 0 ? 
                                   (item.content as any).perawatans.map((lab: any, labIndex: number) => (
                                     <div key={labIndex} className="mb-2">
                                       <p className="font-semibold text-primary">{lab.nm_perawatan}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {formatDateSafe(lab.tanggal)}{lab.dokter ? ` • ${lab.dokter}` : ''}{lab.petugas ? ` • ${lab.petugas}` : ''}
+                                      </p>
                                       {Array.isArray(lab.hasil) && lab.hasil.length > 0 ? (
                                         lab.hasil.map((test: any, testIndex: number) => (
                                           <div
                                             key={testIndex}
                                             className={cn(
                                               "text-sm ml-4 rounded px-2 py-1",
-                                              test.keterangan === 'H' && "bg-red-100 text-red-900",
-                                              test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                                              test.keterangan === 'H' && "text-red-700",
+                                              test.keterangan === 'L' && "text-blue-700"
                                             )}
                                           >
                                             <span className="font-medium">{test.pemeriksaan}:</span> {test.nilai} ({test.nilai_rujukan})
@@ -12820,8 +12959,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                               key={`${groupName}-${testIndex}`}
                                               className={cn(
                                                 "text-sm rounded px-2 py-1",
-                                                test.keterangan === 'H' && "bg-red-100 text-red-900",
-                                                test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                                                test.keterangan === 'H' && "text-red-700",
+                                                test.keterangan === 'L' && "text-blue-700"
                                               )}
                                             >
                                               <span className="font-medium">{test.pemeriksaan || '-'}</span>: {test.hasil || '-'} ({test.rujukan || '-'})
@@ -12841,12 +12980,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               variant="ghost" 
                               size="sm"
                               onClick={() => {
-                                const actualIndex = canvasItems.findIndex(canvasItem => 
-                                  canvasItem.type === 'laboratory' && 
-                                  canvasItem.content.tanggal === item.content.tanggal &&
-                                  canvasItem.content.jam === item.content.jam &&
-                                  JSON.stringify(canvasItem.content.hasil) === JSON.stringify(item.content.hasil)
-                                );
+                                const actualIndex = canvasItems.findIndex((canvasItem) => canvasItem === item);
                                 
                                 if (actualIndex !== -1) {
                                   setCanvasItems(canvasItems.filter((_, i) => i !== actualIndex));
@@ -13482,19 +13616,28 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </thead>
                         <tbody>
                           {fullscreenLabPanels.length > 0 ? (
-                            fullscreenLabPanels.map(({ groupName, tests }, groupIndex) => (
-                              <React.Fragment key={`${groupName}-${groupIndex}`}>
+                            fullscreenLabPanels.map((panel: any, groupIndex: number) => (
+                              <React.Fragment key={`${panel.groupName}-${groupIndex}`}>
                                 <tr className="bg-emerald-50/70">
                                   <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
-                                    {groupName}
+                                    {panel.groupName}
                                   </td>
                                 </tr>
-                                {tests.map((test: any, testIndex: number) => (
+                                {panel.groupMeta ? (
+                                  <tr className="bg-slate-50">
+                                    <td colSpan={6} className="border border-slate-300 px-2 py-1 text-[10px] text-slate-700">
+                                      Waktu: {formatLabSheetDateTime(panel.groupMeta.tanggal)}
+                                      {panel.groupMeta.dokter ? ` | Dokter: ${panel.groupMeta.dokter}` : ''}
+                                      {panel.groupMeta.petugas ? ` | Petugas: ${panel.groupMeta.petugas}` : ''}
+                                    </td>
+                                  </tr>
+                                ) : null}
+                                {panel.tests.map((test: any, testIndex: number) => (
                                   <tr
-                                    key={`${groupName}-${testIndex}`}
+                                    key={`${panel.groupName}-${testIndex}`}
                                     className={cn(
-                                      test.keterangan === 'H' && "bg-red-50 text-red-900",
-                                      test.keterangan === 'L' && "bg-amber-50 text-amber-900"
+                                      test.keterangan === 'H' && "text-red-700",
+                                      test.keterangan === 'L' && "text-blue-700"
                                     )}
                                   >
                                     <td className="border border-slate-300 px-2 py-1 align-top">{test.pemeriksaan || '-'}</td>
