@@ -591,6 +591,9 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                     {laboratories.map((lab: any, index: number) => (
                       <div key={`${visit.no_rawat}-lab-${index}`} className="rounded-md border px-3 py-3 text-sm">
                         <p className="font-medium">{formatDateTime(lab.tanggal)}</p>
+                        {lab.nm_perawatan ? <p className="mt-1 text-xs text-muted-foreground">{lab.nm_perawatan}</p> : null}
+                        {lab.dokter ? <p className="mt-1"><span className="font-medium">Dokter:</span> {lab.dokter}</p> : null}
+                        {lab.petugas ? <p className="mt-1"><span className="font-medium">Petugas:</span> {lab.petugas}</p> : null}
                         <div className="mt-2 space-y-1">
                           {(lab.pemeriksaan || []).map((item: any, itemIndex: number) => (
                             <p key={`${visit.no_rawat}-lab-item-${index}-${itemIndex}`}>

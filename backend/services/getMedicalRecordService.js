@@ -1781,104 +1781,172 @@ class GetMedicalRecordService {
 
   // Helper function to fetch lab results
   static async fetchLaboratory(noRawat, status = null) {
-    const labQuery = `
+    const headerQuery = `
       SELECT
-        pl.*,
+        pl.no_rawat,
+        pl.kd_jenis_prw,
+        pl.tgl_periksa,
+        pl.jam,
         jp.nm_perawatan,
-        dpl.nilai,
-        dpl.nilai_rujukan,
-        dpl.keterangan,
-        tl.Pemeriksaan AS pemeriksaan,
-        tl.satuan
+        dokter.nm_dokter,
+        petugas.nama AS nama_petugas
       FROM periksa_lab pl 
       LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw 
-      LEFT JOIN detail_periksa_lab dpl
-        ON pl.no_rawat = dpl.no_rawat
-        AND pl.kd_jenis_prw = dpl.kd_jenis_prw
-        AND pl.tgl_periksa = dpl.tgl_periksa
-        AND pl.jam = dpl.jam
-      LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
+      LEFT JOIN dokter ON pl.dokter_perujuk = dokter.kd_dokter
+      LEFT JOIN petugas ON pl.nip = petugas.nip
       WHERE pl.no_rawat = ?
         AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
         AND (jp.nm_perawatan IS NULL OR LOWER(jp.nm_perawatan) NOT LIKE '%mikrobiologi%')
-      ORDER BY pl.tgl_periksa DESC, pl.jam ASC, tl.Pemeriksaan ASC
+      ORDER BY pl.tgl_periksa DESC, pl.jam ASC
     `;
-    const [rows] = await db.execute(labQuery, [noRawat, status, status]);
-    
-    const labsByDate = {};
-    rows.forEach(row => {
-      const dateKey = this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam;
-      if (!labsByDate[dateKey]) {
-        labsByDate[dateKey] = [];
-      }
-      if (row.nm_perawatan) {
-        labsByDate[dateKey].push({
-          nama: row.nm_perawatan,
-          pemeriksaan: row.pemeriksaan || '',
-          hasil: row.nilai || '',
-          rujukan: row.nilai_rujukan || '',
-          satuan: row.satuan || '',
-          keterangan: row.keterangan || ''
-        });
-      }
-    });
+    const [headerRows] = await db.execute(headerQuery, [noRawat, status, status]);
 
-    return Object.entries(labsByDate).map(([tanggal, pemeriksaan]) => ({
-      tanggal,
-      pemeriksaan,
-      lab_type: 'pk'
-    }));
-  }
+    const normalizedHeaders = Array.isArray(headerRows) ? headerRows : [];
+    if (normalizedHeaders.length === 0) {
+      return [];
+    }
 
-  static async fetchLaboratoryMicro(noRawat, status = null) {
-    const labQuery = `
+    const detailQuery = `
       SELECT
-        pl.*,
-        jp.nm_perawatan,
+        dpl.kd_jenis_prw,
+        dpl.tgl_periksa,
+        dpl.jam,
         dpl.nilai,
         dpl.nilai_rujukan,
         dpl.keterangan,
         tl.Pemeriksaan AS pemeriksaan,
-        tl.satuan
+        tl.satuan,
+        dpl.id_template
+      FROM detail_periksa_lab dpl
+      LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
+      WHERE dpl.no_rawat = ?
+      ORDER BY dpl.tgl_periksa DESC, dpl.jam ASC, dpl.kd_jenis_prw ASC
+    `;
+    const [detailRows] = await db.execute(detailQuery, [noRawat]);
+
+    const detailsByKey = new Map();
+    (Array.isArray(detailRows) ? detailRows : []).forEach((row) => {
+      const key = [
+        this.formatDateOnly(row.tgl_periksa),
+        String(row.jam || '').trim(),
+        String(row.kd_jenis_prw || '').trim()
+      ].join('|');
+
+      if (!detailsByKey.has(key)) {
+        detailsByKey.set(key, []);
+      }
+
+      detailsByKey.get(key).push({
+        pemeriksaan: row.pemeriksaan || '',
+        hasil: row.nilai || '',
+        rujukan: row.nilai_rujukan || '',
+        satuan: row.satuan || '',
+        keterangan: row.keterangan || ''
+      });
+    });
+
+    return normalizedHeaders.map((row) => {
+      const formattedDate = this.formatDateOnly(row.tgl_periksa);
+      const time = String(row.jam || '').trim();
+      const kdJenis = String(row.kd_jenis_prw || '').trim();
+      const key = [formattedDate, time, kdJenis].join('|');
+
+      return {
+        tanggal: `${formattedDate} ${time}`.trim(),
+        no_rawat: row.no_rawat || noRawat,
+        kd_jenis_prw: kdJenis,
+        nm_perawatan: row.nm_perawatan || '',
+        dokter: row.nm_dokter || '',
+        petugas: row.nama_petugas || '',
+        pemeriksaan: detailsByKey.get(key) || [],
+        lab_type: 'pk'
+      };
+    });
+  }
+
+  static async fetchLaboratoryMicro(noRawat, status = null) {
+    const headerQuery = `
+      SELECT
+        pl.no_rawat,
+        pl.kd_jenis_prw,
+        pl.tgl_periksa,
+        pl.jam,
+        jp.nm_perawatan,
+        dokter.nm_dokter,
+        petugas.nama AS nama_petugas
       FROM periksa_lab pl
       LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw
-      LEFT JOIN detail_periksa_lab dpl
-        ON pl.no_rawat = dpl.no_rawat
-        AND pl.kd_jenis_prw = dpl.kd_jenis_prw
-        AND pl.tgl_periksa = dpl.tgl_periksa
-        AND pl.jam = dpl.jam
-      LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
+      LEFT JOIN dokter ON pl.dokter_perujuk = dokter.kd_dokter
+      LEFT JOIN petugas ON pl.nip = petugas.nip
       WHERE pl.no_rawat = ?
         AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
         AND LOWER(COALESCE(jp.kategori, '')) = 'pk'
         AND LOWER(COALESCE(jp.nm_perawatan, '')) LIKE '%mikrobiologi%'
-      ORDER BY pl.tgl_periksa DESC, pl.jam ASC, tl.Pemeriksaan ASC
+      ORDER BY pl.tgl_periksa DESC, pl.jam ASC
     `;
-    const [rows] = await db.execute(labQuery, [noRawat, status, status]);
+    const [headerRows] = await db.execute(headerQuery, [noRawat, status, status]);
 
-    const labsByDate = {};
-    rows.forEach(row => {
-      const dateKey = this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam;
-      if (!labsByDate[dateKey]) {
-        labsByDate[dateKey] = [];
+    const normalizedHeaders = Array.isArray(headerRows) ? headerRows : [];
+    if (normalizedHeaders.length === 0) {
+      return [];
+    }
+
+    const detailQuery = `
+      SELECT
+        dpl.kd_jenis_prw,
+        dpl.tgl_periksa,
+        dpl.jam,
+        dpl.nilai,
+        dpl.nilai_rujukan,
+        dpl.keterangan,
+        tl.Pemeriksaan AS pemeriksaan,
+        tl.satuan,
+        dpl.id_template
+      FROM detail_periksa_lab dpl
+      LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
+      WHERE dpl.no_rawat = ?
+      ORDER BY dpl.tgl_periksa DESC, dpl.jam ASC, dpl.kd_jenis_prw ASC
+    `;
+    const [detailRows] = await db.execute(detailQuery, [noRawat]);
+
+    const detailsByKey = new Map();
+    (Array.isArray(detailRows) ? detailRows : []).forEach((row) => {
+      const key = [
+        this.formatDateOnly(row.tgl_periksa),
+        String(row.jam || '').trim(),
+        String(row.kd_jenis_prw || '').trim()
+      ].join('|');
+
+      if (!detailsByKey.has(key)) {
+        detailsByKey.set(key, []);
       }
-      if (row.nm_perawatan) {
-        labsByDate[dateKey].push({
-          nama: row.nm_perawatan,
-          pemeriksaan: row.pemeriksaan || '',
-          hasil: row.nilai || '',
-          rujukan: row.nilai_rujukan || '',
-          satuan: row.satuan || '',
-          keterangan: row.keterangan || ''
-        });
-      }
+
+      detailsByKey.get(key).push({
+        pemeriksaan: row.pemeriksaan || '',
+        hasil: row.nilai || '',
+        rujukan: row.nilai_rujukan || '',
+        satuan: row.satuan || '',
+        keterangan: row.keterangan || ''
+      });
     });
 
-    return Object.entries(labsByDate).map(([tanggal, pemeriksaan]) => ({
-      tanggal,
-      pemeriksaan,
-      lab_type: 'mikro'
-    }));
+    return normalizedHeaders.map((row) => {
+      const formattedDate = this.formatDateOnly(row.tgl_periksa);
+      const time = String(row.jam || '').trim();
+      const kdJenis = String(row.kd_jenis_prw || '').trim();
+      const key = [formattedDate, time, kdJenis].join('|');
+
+      return {
+        tanggal: `${formattedDate} ${time}`.trim(),
+        no_rawat: row.no_rawat || noRawat,
+        kd_jenis_prw: kdJenis,
+        nm_perawatan: row.nm_perawatan || '',
+        dokter: row.nm_dokter || '',
+        petugas: row.nama_petugas || '',
+        pemeriksaan: detailsByKey.get(key) || [],
+        lab_type: 'mikro'
+      };
+    });
   }
 
   static async fetchLaboratoryPa(noRawat) {
