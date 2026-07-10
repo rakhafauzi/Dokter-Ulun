@@ -1329,23 +1329,12 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       case 'pemeriksaan_penunjang':
         return {
           target,
-          title: 'Pilih Pemeriksaan Penunjang',
-          description: `Tampilkan semua data pemeriksaan laboratorium dan radiologi ${isRalan ? 'rawat jalan' : 'sesuai nomor rawat'}, lalu pilih yang ingin dimasukkan.`,
-          emptyMessage: 'Belum ada data pemeriksaan lab atau radiologi untuk nomor rawat ini.',
+          title: 'Pilih Pemeriksaan Radiologi',
+          description: `Tampilkan semua data pemeriksaan radiologi ${isRalan ? 'rawat jalan' : 'sesuai nomor rawat'}, lalu pilih yang ingin dimasukkan.`,
+          emptyMessage: 'Belum ada data pemeriksaan radiologi untuk nomor rawat ini.',
           multiple: true,
-          items: [
-            ...currentSourceData.laboratoryResults.map((item, index) => ({
-              sortTimestamp: getDateSortTimestamp(item.tanggal),
-              pickerItem: {
-                id: `penunjang-lab-${index}-${item.tanggal}`,
-                title: item.tanggal ? formatUIDate(item.tanggal) : `Laboratorium ${index + 1}`,
-                subtitle: 'Pemeriksaan Laboratorium',
-                description: buildLaboratoryResultText(item),
-                value: buildLaboratoryResultText(item),
-                laboratoryPanels: buildLaboratoryPickerPanels(item)
-              }
-            })),
-            ...currentSourceData.radiologyResults.map((item, index) => ({
+          items: currentSourceData.radiologyResults
+            .map((item, index) => ({
               sortTimestamp: getDateSortTimestamp(item.tanggal),
               pickerItem: {
                 id: `penunjang-rad-${index}-${item.tanggal}`,
@@ -1355,7 +1344,6 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                 value: buildRadiologyResultText(item)
               }
             }))
-          ]
             .filter((item) => item.pickerItem.value.trim())
             .sort((a, b) => a.sortTimestamp - b.sortTimestamp)
             .map((item) => item.pickerItem)
@@ -1860,16 +1848,12 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                   {!isRalan ? (
                     <>
                       <div className="md:col-span-2">
-                        {renderFieldLabel('jalannya_penyakit', 'Jalannya Penyakit', 'jalannya_penyakit')}
-                        <Textarea id="jalannya_penyakit" rows={6} value={formData.jalannya_penyakit} onChange={(e) => updateField('jalannya_penyakit', e.target.value)} />
-                      </div>
-                      <div className="md:col-span-2">
-                        {renderFieldLabel('pemeriksaan_penunjang', 'Pemeriksaan Penunjang yang Penting', 'pemeriksaan_penunjang')}
-                        <Textarea id="pemeriksaan_penunjang" rows={6} value={formData.pemeriksaan_penunjang} onChange={(e) => updateField('pemeriksaan_penunjang', e.target.value)} />
-                      </div>
-                      <div className="md:col-span-2">
                         {renderFieldLabel('hasil_laborat', 'Pemeriksaan Laboratorium', 'hasil_laborat')}
                         <Textarea id="hasil_laborat" rows={6} value={formData.hasil_laborat} onChange={(e) => updateField('hasil_laborat', e.target.value)} />
+                      </div>
+                      <div className="md:col-span-2">
+                        {renderFieldLabel('pemeriksaan_penunjang', 'Pemeriksaan Radiologi', 'pemeriksaan_penunjang')}
+                        <Textarea id="pemeriksaan_penunjang" rows={6} value={formData.pemeriksaan_penunjang} onChange={(e) => updateField('pemeriksaan_penunjang', e.target.value)} />
                       </div>
                     </>
                   ) : null}
