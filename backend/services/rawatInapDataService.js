@@ -15,6 +15,42 @@ class RawatInapDataService {
     return values.map(() => '?').join(', ');
   }
 
+  static buildResumeDoctorTraceMatchCondition(tableAlias = 'rpr', accessibleDoctorCodes = []) {
+    if (!accessibleDoctorCodes.length) {
+      return {
+        condition: '1 = 0',
+        params: []
+      };
+    }
+
+    const normalizedDoctorCodes = accessibleDoctorCodes
+      .map((code) => String(code || '').trim())
+      .filter(Boolean);
+
+    if (!normalizedDoctorCodes.length) {
+      return {
+        condition: '1 = 0',
+        params: []
+      };
+    }
+
+    const doctorPlaceholders = this.buildInClausePlaceholders(normalizedDoctorCodes);
+    const ketKeadaanTraceConditions = normalizedDoctorCodes.map(() => (
+      `FIND_IN_SET(LOWER(?), REPLACE(LOWER(COALESCE(${tableAlias}.ket_keadaan, '')), ' ', '')) > 0`
+    ));
+
+    return {
+      condition: `(
+        ${tableAlias}.kd_dokter IN (${doctorPlaceholders})
+        OR ${ketKeadaanTraceConditions.join('\n        OR ')}
+      )`,
+      params: [
+        ...normalizedDoctorCodes,
+        ...normalizedDoctorCodes
+      ]
+    };
+  }
+
   static shouldKeepMovementRows(statusPulang) {
     return String(statusPulang || '').trim() === 'pindah-kamar';
   }
@@ -82,7 +118,7 @@ class RawatInapDataService {
         return { condition: '1 = 0', params: [] };
       }
 
-      const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
+      const resumeDoctorMatch = this.buildResumeDoctorTraceMatchCondition('rpr_dokter', accessibleDoctorCodes);
       return {
         condition: `EXISTS (
           SELECT 1
@@ -92,9 +128,9 @@ class RawatInapDataService {
           SELECT 1
           FROM resume_pasien_ranap rpr_dokter
           WHERE rpr_dokter.no_rawat = ki.no_rawat
-            AND rpr_dokter.kd_dokter IN (${doctorPlaceholders})
+            AND ${resumeDoctorMatch.condition}
         )`,
-        params: accessibleDoctorCodes
+        params: resumeDoctorMatch.params
       };
     }
 
@@ -613,7 +649,7 @@ class RawatInapDataService {
       };
     }
 
-    const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
+    const resumeDoctorMatch = this.buildResumeDoctorTraceMatchCondition('rpr_self', accessibleDoctorCodes);
 
     return {
       selectClause: `
@@ -627,12 +663,12 @@ class RawatInapDataService {
             SELECT 1
             FROM resume_pasien_ranap rpr_self
             WHERE rpr_self.no_rawat = ki.no_rawat
-              AND rpr_self.kd_dokter IN (${doctorPlaceholders})
+              AND ${resumeDoctorMatch.condition}
           ) THEN 'sudah_resume_saya'
           ELSE 'sudah_resume_dokter_lain'
         END AS rawat_bersama_resume_status
       `,
-      params: accessibleDoctorCodes
+      params: resumeDoctorMatch.params
     };
   }
 
