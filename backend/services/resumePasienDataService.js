@@ -476,7 +476,7 @@ class ResumePasienDataService {
           INNER JOIN penyakit py ON py.kd_penyakit = dp.kd_penyakit
           WHERE dp.no_rawat = ? AND dp.status = 'Ralan'
           ORDER BY CAST(COALESCE(NULLIF(dp.prioritas, ''), '0') AS UNSIGNED) ASC, dp.kd_penyakit ASC
-          LIMIT 5
+          LIMIT 50
         `,
         [no_rawat]
       ),
@@ -487,7 +487,7 @@ class ResumePasienDataService {
           INNER JOIN icd9 ON icd9.kode = pp.kode
           WHERE pp.no_rawat = ? AND pp.status = 'Ralan'
           ORDER BY CAST(COALESCE(NULLIF(pp.prioritas, ''), '0') AS UNSIGNED) ASC, pp.kode ASC
-          LIMIT 4
+          LIMIT 50
         `,
         [no_rawat]
       ),
@@ -524,6 +524,20 @@ class ResumePasienDataService {
 
     const diagnosaList = Array.isArray(diagnosaRows) ? diagnosaRows : [];
     const prosedurList = Array.isArray(prosedurRows) ? prosedurRows : [];
+    const diagnosaLainnya = diagnosaList.slice(4);
+    const diagnosaLainnyaNama = Array.from(new Set(
+      diagnosaLainnya.map((row) => String(row?.nm_penyakit || '').trim()).filter(Boolean)
+    ));
+    const diagnosaLainnyaKode = Array.from(new Set(
+      diagnosaLainnya.map((row) => String(row?.kd_penyakit || '').trim()).filter(Boolean)
+    ));
+    const prosedurLainnya = prosedurList.slice(3);
+    const prosedurLainnyaNama = Array.from(new Set(
+      prosedurLainnya.map((row) => String(row?.deskripsi_panjang || '').trim()).filter(Boolean)
+    ));
+    const prosedurLainnyaKode = Array.from(new Set(
+      prosedurLainnya.map((row) => String(row?.kode || '').trim()).filter(Boolean)
+    ));
     const terapi = [
       terapiResepRows?.[0]?.terapi,
       terapiRacikanRows?.[0]?.terapi,
@@ -540,16 +554,16 @@ class ResumePasienDataService {
       kd_diagnosa_sekunder2: diagnosaList[2]?.kd_penyakit || '',
       diagnosa_sekunder3: diagnosaList[3]?.nm_penyakit || '',
       kd_diagnosa_sekunder3: diagnosaList[3]?.kd_penyakit || '',
-      diagnosa_sekunder4: diagnosaList[4]?.nm_penyakit || '',
-      kd_diagnosa_sekunder4: diagnosaList[4]?.kd_penyakit || '',
+      diagnosa_sekunder4: diagnosaLainnyaNama.join(', '),
+      kd_diagnosa_sekunder4: diagnosaLainnyaKode.join(','),
       prosedur_utama: prosedurList[0]?.deskripsi_panjang || '',
       kd_prosedur_utama: prosedurList[0]?.kode || '',
       prosedur_sekunder: prosedurList[1]?.deskripsi_panjang || '',
       kd_prosedur_sekunder: prosedurList[1]?.kode || '',
       prosedur_sekunder2: prosedurList[2]?.deskripsi_panjang || '',
       kd_prosedur_sekunder2: prosedurList[2]?.kode || '',
-      prosedur_sekunder3: prosedurList[3]?.deskripsi_panjang || '',
-      kd_prosedur_sekunder3: prosedurList[3]?.kode || '',
+      prosedur_sekunder3: prosedurLainnyaNama.join(', '),
+      kd_prosedur_sekunder3: prosedurLainnyaKode.join(','),
       obat_pulang: String(terapi || '').trim()
     };
   }
@@ -594,7 +608,7 @@ class ResumePasienDataService {
           INNER JOIN penyakit py ON py.kd_penyakit = dp.kd_penyakit
           WHERE dp.no_rawat = ? AND dp.status = 'Ranap'
           ORDER BY CAST(COALESCE(NULLIF(dp.prioritas, ''), '999') AS UNSIGNED) ASC, dp.kd_penyakit ASC
-          LIMIT 5
+          LIMIT 50
         `,
         [no_rawat]
       ),
@@ -605,7 +619,7 @@ class ResumePasienDataService {
           INNER JOIN icd9 ON icd9.kode = pp.kode
           WHERE pp.no_rawat = ? AND pp.status = 'Ranap'
           ORDER BY CAST(COALESCE(NULLIF(pp.prioritas, ''), '999') AS UNSIGNED) ASC, pp.kode ASC
-          LIMIT 4
+          LIMIT 50
         `,
         [no_rawat]
       ),
@@ -656,6 +670,20 @@ class ResumePasienDataService {
     const firstSoap = Array.isArray(soapRows) ? soapRows[0] || {} : {};
     const diagnosaList = Array.isArray(diagnosaRows) ? diagnosaRows : [];
     const prosedurList = Array.isArray(prosedurRows) ? prosedurRows : [];
+    const diagnosaLainnya = diagnosaList.slice(4);
+    const diagnosaLainnyaNama = Array.from(new Set(
+      diagnosaLainnya.map((row) => String(row?.nm_penyakit || '').trim()).filter(Boolean)
+    ));
+    const diagnosaLainnyaKode = Array.from(new Set(
+      diagnosaLainnya.map((row) => String(row?.kd_penyakit || '').trim()).filter(Boolean)
+    ));
+    const prosedurLainnya = prosedurList.slice(3);
+    const prosedurLainnyaNama = Array.from(new Set(
+      prosedurLainnya.map((row) => String(row?.deskripsi_panjang || '').trim()).filter(Boolean)
+    ));
+    const prosedurLainnyaKode = Array.from(new Set(
+      prosedurLainnya.map((row) => String(row?.kode || '').trim()).filter(Boolean)
+    ));
     const tindakanVenti = (Array.isArray(ventiRows) ? ventiRows : [])
       .map((row) => String(row?.jns_tindakan || '').trim())
       .filter(Boolean)
@@ -716,16 +744,16 @@ class ResumePasienDataService {
       kd_diagnosa_sekunder2: diagnosaList[2]?.kd_penyakit || '',
       diagnosa_sekunder3: diagnosaList[3]?.nm_penyakit || '',
       kd_diagnosa_sekunder3: diagnosaList[3]?.kd_penyakit || '',
-      diagnosa_sekunder4: diagnosaList[4]?.nm_penyakit || '',
-      kd_diagnosa_sekunder4: diagnosaList[4]?.kd_penyakit || '',
+      diagnosa_sekunder4: diagnosaLainnyaNama.join(', '),
+      kd_diagnosa_sekunder4: diagnosaLainnyaKode.join(','),
       prosedur_utama: prosedurList[0]?.deskripsi_panjang || '',
       kd_prosedur_utama: prosedurList[0]?.kode || '',
       prosedur_sekunder: prosedurList[1]?.deskripsi_panjang || '',
       kd_prosedur_sekunder: prosedurList[1]?.kode || '',
       prosedur_sekunder2: prosedurList[2]?.deskripsi_panjang || '',
       kd_prosedur_sekunder2: prosedurList[2]?.kode || '',
-      prosedur_sekunder3: prosedurList[3]?.deskripsi_panjang || '',
-      kd_prosedur_sekunder3: prosedurList[3]?.kode || '',
+      prosedur_sekunder3: prosedurLainnyaNama.join(', '),
+      kd_prosedur_sekunder3: prosedurLainnyaKode.join(','),
       tindakan_venti: tindakanVenti,
       obat_pulang: terapiPulang
     };
