@@ -344,6 +344,7 @@ type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type OutpatientExaminationSectionTabValue = 'examinations' | 'rehab-medik';
 type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
+type VisitDetailSectionFilterValue = 'all' | 'triase' | 'pemeriksaan' | 'diagnosa' | 'tindakan' | 'resep' | 'laboratorium' | 'radiologi';
 
 interface MedicalRecordData {
   patient: {
@@ -1742,6 +1743,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const radiologyHistoryCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [expandedVisitKeys, setExpandedVisitKeys] = useState<Record<string, boolean>>({});
   const [loadingVisitDetailsKeys, setLoadingVisitDetailsKeys] = useState<Record<string, boolean>>({});
+  const [visitDetailSectionFilters, setVisitDetailSectionFilters] = useState<Record<string, VisitDetailSectionFilterValue>>({});
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -2120,6 +2122,43 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const latestDoctorInpatientExamination = useMemo(
     () => inpatientExaminationHistory.find((item) => isExaminationOwnedByCurrentDoctor(item)) || null,
     [inpatientExaminationHistory, isExaminationOwnedByCurrentDoctor]
+  );
+  const getVisitDetailSectionFilter = useCallback(
+    (noRawat: string) => visitDetailSectionFilters[String(noRawat || '').trim()] || 'all',
+    [visitDetailSectionFilters]
+  );
+  const getVisitDetailFilterOptions = useCallback((visit: any) => {
+    const icdDetails = visit?.icd_details || {};
+    const hasDiagnosa = (Array.isArray(icdDetails?.icd10) && icdDetails.icd10.length > 0)
+      || (Array.isArray(icdDetails?.icd9) && icdDetails.icd9.length > 0);
+
+    return [
+      { value: 'all' as VisitDetailSectionFilterValue, label: 'Semua' },
+      ...(visit?.triase_igd ? [{ value: 'triase' as VisitDetailSectionFilterValue, label: 'Triase' }] : []),
+      ...(Array.isArray(visit?.examinations) && visit.examinations.length > 0
+        ? [{ value: 'pemeriksaan' as VisitDetailSectionFilterValue, label: 'Pemeriksaan' }]
+        : []),
+      ...(hasDiagnosa ? [{ value: 'diagnosa' as VisitDetailSectionFilterValue, label: 'Diagnosa' }] : []),
+      ...(Array.isArray(visit?.procedures) && visit.procedures.length > 0
+        ? [{ value: 'tindakan' as VisitDetailSectionFilterValue, label: 'Tindakan' }]
+        : []),
+      ...(Array.isArray(visit?.medications) && visit.medications.length > 0
+        ? [{ value: 'resep' as VisitDetailSectionFilterValue, label: 'Resep' }]
+        : []),
+      ...(Array.isArray(visit?.laboratory) && visit.laboratory.length > 0
+        ? [{ value: 'laboratorium' as VisitDetailSectionFilterValue, label: 'Laboratorium' }]
+        : []),
+      ...(Array.isArray(visit?.radiology) && visit.radiology.length > 0
+        ? [{ value: 'radiologi' as VisitDetailSectionFilterValue, label: 'Radiologi' }]
+        : [])
+    ];
+  }, []);
+  const isVisitDetailSectionVisible = useCallback(
+    (noRawat: string, section: Exclude<VisitDetailSectionFilterValue, 'all'>) => {
+      const activeFilter = getVisitDetailSectionFilter(noRawat);
+      return activeFilter === 'all' || activeFilter === section;
+    },
+    [getVisitDetailSectionFilter]
   );
   const defaultDoctorExaminationItem = useMemo(() => {
     if (defaultExaminationStatusRawat === 'Ranap') {
@@ -5155,6 +5194,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (no_rkm_medis) {
       setExpandedVisitKeys({});
       setLoadingVisitDetailsKeys({});
+      setVisitDetailSectionFilters({});
       setRadiologyPacsByKey({});
       setLoadingRadiologyPacsKeys({});
       setRadiologyPacsErrorKeys({});
@@ -9712,7 +9752,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       Tidak ada data kunjungan rawat jalan
                     </div>
                   ) : (
-                    sortedOutpatientVisits.map((visit: any, index) => (
+                    sortedOutpatientVisits.map((visit: any, index) => {
+                    const selectedVisitDetailFilter = getVisitDetailSectionFilter(visit.no_rawat);
+                    const visitDetailFilterOptions = getVisitDetailFilterOptions(visit);
+
+                    return (
                     <div key={index} className="mb-8 rounded-lg p-0 shadow-sm">
                       <div
                         className="bg-muted p-2 rounded-t-lg mb-4 cursor-pointer"
@@ -9771,9 +9815,27 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </div>
                       ) : visit.details_loaded ? (
                       <div className="space-y-6">
-                        {renderVisitIgdTriageDetails(visit)}
+                        <div className="flex flex-wrap gap-2">
+                          {visitDetailFilterOptions.map((filterOption) => (
+                            <Button
+                              key={`${visit.no_rawat}-${filterOption.value}`}
+                              type="button"
+                              variant={selectedVisitDetailFilter === filterOption.value ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => setVisitDetailSectionFilters((previous) => ({
+                                ...previous,
+                                [visit.no_rawat]: filterOption.value
+                              }))}
+                            >
+                              {filterOption.label}
+                            </Button>
+                          ))}
+                        </div>
+
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'triase') ? renderVisitIgdTriageDetails(visit) : null}
 
                         {/* Pemeriksaan */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'pemeriksaan') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <Stethoscope className="h-5 w-5 mr-2" />
@@ -9864,10 +9926,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+                        ) : null}
 
-                        {renderVisitIcdDetails(visit)}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'diagnosa') ? renderVisitIcdDetails(visit) : null}
 
                         {/* Tindakan */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'tindakan') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <Syringe className="h-5 w-5 mr-2" />
@@ -9875,8 +9939,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           </h3>
                           {renderCompactVisitProcedures(visit.procedures || [], visit.no_rawat)}
                         </div>
+                        ) : null}
 
                         {/* Resep Obat */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'resep') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <Pill className="h-5 w-5 mr-2" />
@@ -9911,8 +9977,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+                        ) : null}
 
                         {/* Laboratorium */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'laboratorium') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <FlaskConical className="h-5 w-5 mr-2" />
@@ -9922,8 +9990,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             {renderVisitLaboratoryHistory((visit.laboratory || []) as LabData[], visit.no_rawat, 'Rawat Jalan')}
                           </div>
                         </div>
+                        ) : null}
 
                         {/* Radiologi */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'radiologi') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <Radio className="h-5 w-5 mr-2" />
@@ -9966,6 +10036,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+                        ) : null}
                       </div>
                       ) : (
                         <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
@@ -9974,12 +10045,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       )
                       ) : null}
                     </div>
-                    ))
+                    );
+                    })
                   )}
                 </TabsContent>
 
                 <TabsContent value="inpatient">
-                  {sortedInpatientVisits.map((visit: any, index) => (
+                  {sortedInpatientVisits.map((visit: any, index) => {
+                    const selectedVisitDetailFilter = getVisitDetailSectionFilter(visit.no_rawat);
+                    const visitDetailFilterOptions = getVisitDetailFilterOptions(visit);
+
+                    return (
                     <div key={index} className="mb-8 rounded-lg p-0 shadow-sm">
                       <div
                         className="bg-muted p-2 rounded-t-lg mb-4 cursor-pointer"
@@ -10038,9 +10114,27 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </div>
                       ) : visit.details_loaded ? (
                       <div className="space-y-6">
-                        {renderVisitIgdTriageDetails(visit)}
+                        <div className="flex flex-wrap gap-2">
+                          {visitDetailFilterOptions.map((filterOption) => (
+                            <Button
+                              key={`${visit.no_rawat}-${filterOption.value}`}
+                              type="button"
+                              variant={selectedVisitDetailFilter === filterOption.value ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => setVisitDetailSectionFilters((previous) => ({
+                                ...previous,
+                                [visit.no_rawat]: filterOption.value
+                              }))}
+                            >
+                              {filterOption.label}
+                            </Button>
+                          ))}
+                        </div>
+
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'triase') ? renderVisitIgdTriageDetails(visit) : null}
 
                         {/* Pemeriksaan */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'pemeriksaan') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <Stethoscope className="h-5 w-5 mr-2" />
@@ -10131,10 +10225,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+                        ) : null}
 
-                        {renderVisitIcdDetails(visit)}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'diagnosa') ? renderVisitIcdDetails(visit) : null}
 
                         {/* Tindakan */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'tindakan') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <Syringe className="h-5 w-5 mr-2" />
@@ -10142,8 +10238,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           </h3>
                           {renderCompactVisitProcedures(visit.procedures || [], visit.no_rawat)}
                         </div>
+                        ) : null}
 
                         {/* Resep Obat */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'resep') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <Pill className="h-5 w-5 mr-2" />
@@ -10178,8 +10276,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+                        ) : null}
 
                         {/* Laboratorium */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'laboratorium') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <FlaskConical className="h-5 w-5 mr-2" />
@@ -10189,8 +10289,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             {renderVisitLaboratoryHistory((visit.laboratory || []) as LabData[], visit.no_rawat, 'Rawat Inap')}
                           </div>
                         </div>
+                        ) : null}
 
                         {/* Radiologi */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'radiologi') ? (
                         <div className="border rounded-lg p-2">
                           <h3 className="text-lg font-semibold mb-3 flex items-center">
                             <Radio className="h-5 w-5 mr-2" />
@@ -10223,6 +10325,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             ))}
                           </div>
                         </div>
+                        ) : null}
                       </div>
                       ) : (
                         <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
@@ -10231,7 +10334,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       )
                       ) : null}
                     </div>
-                  ))}
+                    );
+                  })}
                 </TabsContent>
               </Tabs>
             </CardContent>
