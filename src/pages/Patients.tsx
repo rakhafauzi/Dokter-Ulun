@@ -2923,7 +2923,7 @@ const Patients = () => {
                     >
                       <button
                         type="button"
-                        onClick={() => activateMedicalRecordTab(tab.id, true)}
+                        onClick={() => activateMedicalRecordTab(tab.id)}
                         className="flex min-w-0 items-center gap-2 text-left"
                       >
                         <span className="max-w-[240px] truncate text-sm font-medium">
@@ -2998,16 +2998,19 @@ const Patients = () => {
           <div className={cn(activeMedicalRecordTabId === LIST_PASIEN_TAB_ID ? "block" : "hidden")}>
             {tabs}
           </div>
-          {activeMedicalRecordTab ? (
-            <div className={cn("bg-background", activeMedicalRecordTabId === LIST_PASIEN_TAB_ID ? "hidden" : "block")}>
+          {openMedicalRecordTabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={cn("bg-background", activeMedicalRecordTabId === tab.id ? "block" : "hidden")}
+            >
               <MedicalRecord
-                key={`${activeMedicalRecordTab.id}-${medicalRecordReloadCounters[activeMedicalRecordTab.id] ?? 0}`}
-                noRkmMedis={activeMedicalRecordTab.noRkmMedis}
-                noRawat={activeMedicalRecordTab.noRawat}
+                key={`${tab.id}-${medicalRecordReloadCounters[tab.id] ?? 0}`}
+                noRkmMedis={tab.noRkmMedis}
+                noRawat={tab.noRawat}
                 embedded
               />
             </div>
-          ) : null}
+          ))}
         </div>
     </div>
   );
