@@ -38,6 +38,7 @@ export const unformatNoRawat = (noRawat: string) => {
 };
 import Header from "./components/Header";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import MedicalRecordSearchModal from "./components/modals/MedicalRecordSearchModal";
 import PwaInstallPrompt from "./components/PwaInstallPrompt";
@@ -237,6 +238,16 @@ const AppContent = () => {
             <Route
               path="/rekam-medik/:no_rkm_medis"
               element={<MedicalRecordReadonly asModal onClose={() => navigate(-1)} />}
+            />
+            <Route
+              path="/clinical-pathway/:no_rkm_medis/:no_rawat"
+              element={
+                <Dialog open onOpenChange={(open) => { if (!open) navigate(-1); }}>
+                  <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto p-0">
+                    <ClinicalPathway />
+                  </DialogContent>
+                </Dialog>
+              }
             />
           </Routes>
         )}

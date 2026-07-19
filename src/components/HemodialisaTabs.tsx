@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { formatNoRawat } from '@/App';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,9 @@ import {
   Search, 
   Filter,
   X,
+  ExternalLink,
+  FileText,
+  PanelRightOpen,
 } from 'lucide-react';
 import { 
   Select,
@@ -30,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import { dispatchOpenMedicalRecordTab } from '@/lib/medical-record-tabs';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   return parseLocalDateValue(value, fallback);
@@ -58,6 +63,8 @@ const hemodialisaColumns = [
 
 const HemodialisaTabs = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialToday = new Date();
   const initialFromDate = parseDateParam(searchParams.get('from'), initialToday);
@@ -237,6 +244,65 @@ const HemodialisaTabs = () => {
     setSearchQuery("");
     setCurrentPage(1);
   };
+
+  const openMedicalRecordInlineTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    dispatchOpenMedicalRecordTab({
+      noRkmMedis: String(row.no_rkm_medis),
+      noRawat: String(row.no_rawat || ''),
+      patientName: String(row.name || '').trim(),
+      sourcePath: `${location.pathname}${location.search}`
+    });
+  };
+
+  const openMedicalRecordBrowserTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat || typeof window === 'undefined') {
+      return;
+    }
+
+    window.open(
+      `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(String(row.no_rawat || ''))}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  const openClinicalPathwayModal = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    const compactNoRawat = String(formatNoRawat(String(row.no_rawat))).replace(/\//g, '');
+    navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=hemodialisa`, {
+      state: {
+        backgroundLocation: location
+      }
+    });
+  };
+
+  const getHemodialisaRowMenuItems = (row: any) => [
+    {
+      key: 'inline-tab',
+      label: 'Buka Inline Tab',
+      icon: <PanelRightOpen size={14} />,
+      onSelect: () => openMedicalRecordInlineTab(row)
+    },
+    {
+      key: 'new-tab',
+      label: 'Buka New Tab',
+      icon: <ExternalLink size={14} />,
+      onSelect: () => openMedicalRecordBrowserTab(row)
+    },
+    {
+      key: 'clinical-pathway',
+      label: 'Clinical Pathway',
+      icon: <FileText size={14} />,
+      onSelect: () => openClinicalPathwayModal(row)
+    }
+  ];
   
   console.log('Filtering data:', {
     totalPatients: hemodialisaPatients.length,
@@ -429,6 +495,7 @@ const HemodialisaTabs = () => {
             <PatientTable 
               patients={filteredHemodialisaData} 
               columns={hemodialisaColumns}
+              getRowMenuItems={getHemodialisaRowMenuItems}
               pagination={{
                 currentPage,
                 totalPages: Math.ceil(total / itemsPerPage),

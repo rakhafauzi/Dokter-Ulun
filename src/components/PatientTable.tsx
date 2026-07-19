@@ -1,8 +1,13 @@
-
 import React, { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { formatNoRawat } from '@/App';
 import { ArrowDown, ArrowUp, ArrowUpDown, CircleCheck, Clock, User } from 'lucide-react';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { PaginationControls } from '@/components/PaginationControls';
 import { StatusPill } from '@/components/StatusPill';
@@ -26,6 +31,13 @@ interface Column {
   render?: (row: any) => React.ReactNode;
 }
 
+interface RowMenuItem {
+  key: string;
+  label: string;
+  icon?: React.ReactNode;
+  onSelect: (row: Patient) => void;
+}
+
 interface PatientTableProps {
   title?: string;
   patients: Patient[];
@@ -33,6 +45,7 @@ interface PatientTableProps {
   columns?: Array<Column>;
   loading?: boolean;
   getRowClassName?: (row: Patient) => string;
+  getRowMenuItems?: (row: Patient) => RowMenuItem[];
   pagination?: {
     currentPage: number;
     totalPages: number;
@@ -52,6 +65,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
   columns,
   loading = false,
   getRowClassName,
+  getRowMenuItems,
   pagination
 }) => {
   const isMobile = useIsMobile();
@@ -59,6 +73,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
   const location = useLocation();
   const [sortKey, setSortKey] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [activeRowMenuKey, setActiveRowMenuKey] = useState<string | null>(null);
   
   // Helper function to decode no_rawat from encoded format
   const decodeNoRawat = (encodedNoRawat: string) => {
@@ -237,6 +252,98 @@ const PatientTable: React.FC<PatientTableProps> = ({
     }
   };
 
+  const getRowMenuKey = (patient: Patient, fallbackIndex?: number) => (
+    String(patient.id || patient.no_rawat || patient.no_rkm_medis || fallbackIndex || '')
+  );
+
+  const getMenuItemsForRow = (patient: Patient) => (
+    Array.isArray(getRowMenuItems?.(patient)) ? getRowMenuItems?.(patient) || [] : []
+  );
+
+  const renderRowMenuHint = (patient: Patient) => {
+    if (!getMenuItemsForRow(patient).length) {
+      return null;
+    }
+
+    return (
+      <span className="text-[11px] font-normal text-primary/80 dark:text-primary/70">
+        Klik untuk menu
+      </span>
+    );
+  };
+
+  const renderTableRow = (
+    patient: Patient,
+    rowContent: React.ReactElement,
+    fallbackIndex?: number
+  ) => {
+    const menuItems = getMenuItemsForRow(patient);
+    if (!menuItems.length) {
+      return rowContent;
+    }
+
+    const rowMenuKey = getRowMenuKey(patient, fallbackIndex);
+    const triggerRow = React.cloneElement(rowContent, {
+      className: cn(
+        rowContent.props.className,
+        activeRowMenuKey === rowMenuKey
+          ? "bg-primary/10 ring-1 ring-inset ring-primary/20 hover:bg-primary/10 dark:bg-primary/15 dark:hover:bg-primary/15"
+          : ""
+      ),
+      onClick: (event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (typeof window === 'undefined') {
+          return;
+        }
+
+        (event.currentTarget as HTMLElement).dispatchEvent(
+          new MouseEvent('contextmenu', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            button: 2,
+            buttons: 2
+          })
+        );
+      }
+    });
+
+    return (
+      <ContextMenu
+        key={`context-menu-${rowMenuKey}`}
+        onOpenChange={(open) => {
+          setActiveRowMenuKey((current) => {
+            if (open) {
+              return rowMenuKey;
+            }
+
+            return current === rowMenuKey ? null : current;
+          });
+        }}
+      >
+        <ContextMenuTrigger asChild>
+          {triggerRow}
+        </ContextMenuTrigger>
+        <ContextMenuContent className="z-20 min-w-[220px]">
+          {menuItems.map((item) => (
+            <ContextMenuItem
+              key={`${rowMenuKey}-${item.key}`}
+              className="flex items-center gap-2"
+              onSelect={() => item.onSelect(patient)}
+            >
+              {item.icon ? <span className="shrink-0">{item.icon}</span> : null}
+              <span>{item.label}</span>
+            </ContextMenuItem>
+          ))}
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  };
+
   const getPaymentStatusPillTone = (status: string) => {
     switch (String(status || '').trim()) {
       case 'Sudah Bayar':
@@ -339,11 +446,16 @@ const PatientTable: React.FC<PatientTableProps> = ({
           </TableHeader>
           <TableBody>
             {displayData.length > 0 ? (
-              displayData.map((patient) => (
-                <TableRow 
-                  key={patient.id} 
+              displayData.map((patient, rowIndex) => renderTableRow(
+                patient,
+                <TableRow
+                  key={patient.id}
                   className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/70"
-                  onClick={() => handleRowClick(patient)}
+                  onClick={() => {
+                    if (!getMenuItemsForRow(patient).length) {
+                      handleRowClick(patient);
+                    }
+                  }}
                 >
                   <TableCell className="py-2 px-2 sm:py-3 sm:px-4">{patient.id}</TableCell>
                   <TableCell className="py-2 px-2 sm:py-3 sm:px-4">
@@ -355,7 +467,10 @@ const PatientTable: React.FC<PatientTableProps> = ({
                         "ml-2 font-medium text-slate-900 dark:text-slate-100 sm:ml-4",
                         isMobile ? "text-xs sm:text-sm max-w-[120px] truncate" : ""
                       )}>
-                        {patient.name}
+                        <div className="flex flex-col gap-0.5">
+                          <span>{patient.name}</span>
+                          {renderRowMenuHint(patient)}
+                        </div>
                       </div>
                     </div>
                   </TableCell>
@@ -378,7 +493,8 @@ const PatientTable: React.FC<PatientTableProps> = ({
                       />
                     </TableCell>
                   )}
-                </TableRow>
+                </TableRow>,
+                rowIndex
               ))
             ) : (
               <TableRow>
@@ -428,17 +544,22 @@ const PatientTable: React.FC<PatientTableProps> = ({
                 </TableCell>
               </TableRow>
             ) : displayData.length > 0 ? (
-              displayData.map((patient, rowIndex) => (
-                <TableRow 
-                  key={patient.id || rowIndex} 
+              displayData.map((patient, rowIndex) => renderTableRow(
+                patient,
+                <TableRow
+                  key={patient.id || rowIndex}
                   className={cn(
                     "cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/70",
                     getRowClassName ? getRowClassName(patient) : ""
                   )}
-                  onClick={() => handleRowClick(patient)}
+                  onClick={() => {
+                    if (!getMenuItemsForRow(patient).length) {
+                      handleRowClick(patient);
+                    }
+                  }}
                 >
                   {columns.map((column, colIndex) => (
-                  <TableCell key={colIndex} className="py-2 px-2 sm:py-3 sm:px-4 whitespace-nowrap">
+                    <TableCell key={colIndex} className="py-2 px-2 sm:py-3 sm:px-4 whitespace-nowrap">
                       {column.render ? (
                         column.render(patient)
                       ) : column.accessor === 'nama' || column.accessor === 'name' ? (
@@ -461,6 +582,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
                                 </p>
                               ) : null}
                             </div>
+                            {renderRowMenuHint(patient)}
                           </div>
                         </div>
                       ) : column.accessor === 'status' ? (
@@ -480,7 +602,8 @@ const PatientTable: React.FC<PatientTableProps> = ({
                       )}
                     </TableCell>
                   ))}
-                </TableRow>
+                </TableRow>,
+                rowIndex
               ))
             ) : (
               <TableRow>

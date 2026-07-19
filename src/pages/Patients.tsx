@@ -28,7 +28,9 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  MoreHorizontal
+  MoreHorizontal,
+  ExternalLink,
+  PanelRightOpen
 } from 'lucide-react';
 import { 
   Select,
@@ -73,6 +75,7 @@ import {
 import MedicalRecord from './MedicalRecord';
 import {
   CLOSE_ALL_MEDICAL_RECORD_TABS_EVENT,
+  dispatchOpenMedicalRecordTab,
   OPEN_MEDICAL_RECORD_TAB_EVENT,
   type OpenMedicalRecordTabDetail
 } from '@/lib/medical-record-tabs';
@@ -985,6 +988,7 @@ interface RawatInapTabsProps {
 const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const baseListTab: RawatInapListTab = viewMode === 'raber'
     ? 'rawat-bersama'
@@ -1124,6 +1128,65 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
       return <StatusPill label={badge.label} tone={badge.tone} />;
     }
   };
+  const openMedicalRecordInlineTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    dispatchOpenMedicalRecordTab({
+      noRkmMedis: String(row.no_rkm_medis),
+      noRawat: formatWorkspaceNoRawat(String(row.no_rawat)),
+      patientName: String(row.nm_pasien || '').trim(),
+      sourcePath: `${location.pathname}${location.search}`
+    });
+  };
+
+  const openMedicalRecordBrowserTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat || typeof window === 'undefined') {
+      return;
+    }
+
+    const noRawat = formatWorkspaceNoRawat(String(row.no_rawat));
+    window.open(
+      `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(noRawat)}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  const openClinicalPathwayModal = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    const compactNoRawat = String(formatNoRawat(String(row.no_rawat))).replace(/\//g, '');
+    navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=monitoring&source=rawat-inap`, {
+      state: {
+        backgroundLocation: location
+      }
+    });
+  };
+
+  const getRawatInapRowMenuItems = (row: any) => [
+    {
+      key: 'inline-tab',
+      label: 'Buka Inline Tab',
+      icon: <PanelRightOpen size={14} />,
+      onSelect: () => openMedicalRecordInlineTab(row)
+    },
+    {
+      key: 'new-tab',
+      label: 'Buka New Tab',
+      icon: <ExternalLink size={14} />,
+      onSelect: () => openMedicalRecordBrowserTab(row)
+    },
+    {
+      key: 'clinical-pathway',
+      label: 'Clinical Pathway',
+      icon: <FileText size={14} />,
+      onSelect: () => openClinicalPathwayModal(row)
+    }
+  ];
   const rawatInapColumns = [
     { accessor: 'no_rkm_medis', header: 'No. RM' },
     { accessor: 'nm_pasien', header: 'Nama Pasien' },
@@ -1142,32 +1205,10 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
       accessor: 'lama',
       header: 'Lama Rawat',
       render: (row: any) => <span className="text-sm">{row.lama ? `${row.lama} hari` : '-'}</span>
-    },
-    {
-      accessor: 'clinical_pathway',
-      header: 'Clinical Pathway',
-      render: (row: any) => (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (row.no_rkm_medis && row.no_rawat) {
-              const formattedNoRawat = formatNoRawat(row.no_rawat);
-              const compactNoRawat = String(formattedNoRawat).replace(/\//g, '');
-              navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=monitoring&source=rawat-inap`);
-            }
-          }}
-          className="flex items-center gap-1"
-        >
-          <FileText size={14} />
-          CP
-        </Button>
-      )
     }
   ];
   const rawatBersamaColumns = [
-    ...rawatInapColumns.slice(0, rawatInapColumns.length - 1),
+    ...rawatInapColumns,
     {
       accessor: 'rawat_bersama_resume_status',
       header: 'Status Resume',
@@ -1175,8 +1216,7 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
         const badge = getRawatBersamaResumeBadge(row.rawat_bersama_resume_status);
         return <StatusPill label={badge.label} tone={badge.tone} />;
       }
-    },
-    rawatInapColumns[rawatInapColumns.length - 1]
+    }
   ];
   const getInapColumns = (tab: RawatInapStatusTab) => {
     let baseColumns = baseListTab === 'rawat-bersama' ? rawatBersamaColumns : rawatInapColumns;
@@ -1549,6 +1589,7 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
             patients={rawatInapData}
             columns={columns}
             loading={loading}
+            getRowMenuItems={getRawatInapRowMenuItems}
             pagination={{
               currentPage,
               totalPages: Math.ceil(total / itemsPerPage),
@@ -1750,6 +1791,7 @@ type RawatJagaCountKey = typeof rawatJagaTabOptions[number]['countKey'];
 const RawatJagaTabs = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const defaultRawatJagaFrom = addDays(new Date(), -30);
   const defaultRawatJagaTo = new Date();
@@ -1939,6 +1981,66 @@ const RawatJagaTabs = () => {
     setCurrentPage(1);
   };
 
+  const openMedicalRecordInlineTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    dispatchOpenMedicalRecordTab({
+      noRkmMedis: String(row.no_rkm_medis),
+      noRawat: formatWorkspaceNoRawat(String(row.no_rawat)),
+      patientName: String(row.nm_pasien || '').trim(),
+      sourcePath: `${location.pathname}${location.search}`
+    });
+  };
+
+  const openMedicalRecordBrowserTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat || typeof window === 'undefined') {
+      return;
+    }
+
+    const noRawat = formatWorkspaceNoRawat(String(row.no_rawat));
+    window.open(
+      `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(noRawat)}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  const openClinicalPathwayModal = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    const compactNoRawat = String(formatNoRawat(String(row.no_rawat))).replace(/\//g, '');
+    navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=monitoring&source=rawat-inap`, {
+      state: {
+        backgroundLocation: location
+      }
+    });
+  };
+
+  const getRawatJagaRowMenuItems = (row: any) => [
+    {
+      key: 'inline-tab',
+      label: 'Buka Inline Tab',
+      icon: <PanelRightOpen size={14} />,
+      onSelect: () => openMedicalRecordInlineTab(row)
+    },
+    {
+      key: 'new-tab',
+      label: 'Buka New Tab',
+      icon: <ExternalLink size={14} />,
+      onSelect: () => openMedicalRecordBrowserTab(row)
+    },
+    {
+      key: 'clinical-pathway',
+      label: 'Clinical Pathway',
+      icon: <FileText size={14} />,
+      onSelect: () => openClinicalPathwayModal(row)
+    }
+  ];
+
   const rawatJagaColumns = [
     { accessor: 'no_rkm_medis', header: 'No. RM' },
     { accessor: 'nm_pasien', header: 'Nama Pasien' },
@@ -1957,28 +2059,6 @@ const RawatJagaTabs = () => {
       accessor: 'lama',
       header: 'Lama Rawat',
       render: (row: any) => <span className="text-sm">{row.lama ? `${row.lama} hari` : '-'}</span>
-    },
-    {
-      accessor: 'clinical_pathway',
-      header: 'Clinical Pathway',
-      render: (row: any) => (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (row.no_rkm_medis && row.no_rawat) {
-              const formattedNoRawat = formatNoRawat(row.no_rawat);
-              const compactNoRawat = String(formattedNoRawat).replace(/\//g, '');
-              navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=monitoring&source=rawat-inap`);
-            }
-          }}
-          className="flex items-center gap-1"
-        >
-          <FileText size={14} />
-          CP
-        </Button>
-      )
     }
   ];
 
@@ -2063,6 +2143,7 @@ const RawatJagaTabs = () => {
                 patients={rawatJagaData}
                 columns={rawatJagaColumns}
                 loading={loading}
+                getRowMenuItems={getRawatJagaRowMenuItems}
                 pagination={{
                   currentPage,
                   totalPages: Math.ceil(total / itemsPerPage),
@@ -2087,6 +2168,7 @@ const RawatJagaTabs = () => {
 
 const IGDTabs = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const igdTabOptions = ['triase', 'observasi', 'tindakan'] as const;
   const emptyIgdTabCounts = { triase: 0, observasi: 0, tindakan: 0 };
@@ -2354,6 +2436,66 @@ const IGDTabs = () => {
     setCurrentPage(1);
   };
 
+  const openMedicalRecordInlineTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    dispatchOpenMedicalRecordTab({
+      noRkmMedis: String(row.no_rkm_medis),
+      noRawat: formatWorkspaceNoRawat(String(row.no_rawat)),
+      patientName: String(row.nm_pasien || '').trim(),
+      sourcePath: `${location.pathname}${location.search}`
+    });
+  };
+
+  const openMedicalRecordBrowserTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat || typeof window === 'undefined') {
+      return;
+    }
+
+    const noRawat = formatWorkspaceNoRawat(String(row.no_rawat));
+    window.open(
+      `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(noRawat)}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  const openClinicalPathwayModal = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    const compactNoRawat = String(formatNoRawat(String(row.no_rawat))).replace(/\//g, '');
+    navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=igd`, {
+      state: {
+        backgroundLocation: location
+      }
+    });
+  };
+
+  const getIgdRowMenuItems = (row: any) => [
+    {
+      key: 'inline-tab',
+      label: 'Buka Inline Tab',
+      icon: <PanelRightOpen size={14} />,
+      onSelect: () => openMedicalRecordInlineTab(row)
+    },
+    {
+      key: 'new-tab',
+      label: 'Buka New Tab',
+      icon: <ExternalLink size={14} />,
+      onSelect: () => openMedicalRecordBrowserTab(row)
+    },
+    {
+      key: 'clinical-pathway',
+      label: 'Clinical Pathway',
+      icon: <FileText size={14} />,
+      onSelect: () => openClinicalPathwayModal(row)
+    }
+  ];
+
   const getIgdTriaseBadgeTone = (value: string) => {
     switch ((value || '').toLowerCase()) {
       case 'merah':
@@ -2412,29 +2554,7 @@ const IGDTabs = () => {
         );
       }
     },
-    { accessor: 'status', header: 'Status' },
-    { 
-      accessor: 'clinical_pathway', 
-      header: 'Clinical Pathway',
-      render: (row: any) => (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (row.no_rkm_medis && row.no_rawat) {
-              const formattedNoRawat = formatNoRawat(row.no_rawat);
-              const compactNoRawat = String(formattedNoRawat).replace(/\//g, '');
-              navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=igd`);
-            }
-          }}
-          className="flex items-center gap-1"
-        >
-          <FileText size={14} />
-          CP
-        </Button>
-      )
-    }
+    { accessor: 'status', header: 'Status' }
   ];
 
   const renderFilterSection = (tab: string) => (
@@ -2639,6 +2759,7 @@ const IGDTabs = () => {
                   patients={igdData} 
                   columns={igdColumns}
                   loading={loading}
+                  getRowMenuItems={getIgdRowMenuItems}
                   pagination={{
                     currentPage,
                     totalPages: Math.ceil(total / itemsPerPage),

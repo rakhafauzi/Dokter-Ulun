@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { formatNoRawat } from '@/App';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,9 @@ import {
   List, 
   Filter,
   X,
-  FileText
+  FileText,
+  ExternalLink,
+  PanelRightOpen
 } from 'lucide-react';
 import { 
   Select,
@@ -37,6 +39,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import { dispatchOpenMedicalRecordTab } from '@/lib/medical-record-tabs';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   return parseLocalDateValue(value, fallback);
@@ -78,6 +81,7 @@ const soreTabGroup: RawatJalanTab[] = ['sore', 'rujukan_internal_sore', 'pasien_
 const RawatJalanTabs = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialToday = new Date();
   const initialFromDate = parseDateParam(searchParams.get('from'), initialToday);
@@ -116,6 +120,64 @@ const RawatJalanTabs = () => {
   const requestDoctorFilter = doctorFilter || "all";
   const isPagiGroupActive = pagiTabGroup.includes(activeTab);
   const isSoreGroupActive = soreTabGroup.includes(activeTab);
+
+  const openMedicalRecordInlineTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    dispatchOpenMedicalRecordTab({
+      noRkmMedis: String(row.no_rkm_medis),
+      noRawat: formatNoRawat(String(row.no_rawat)),
+      patientName: String(row.name || row.nm_pasien || '').trim(),
+      sourcePath: `${location.pathname}${location.search}`
+    });
+  };
+
+  const openMedicalRecordBrowserTab = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat || typeof window === 'undefined') {
+      return;
+    }
+
+    const compactNoRawat = formatNoRawat(String(row.no_rawat));
+    const targetUrl = `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(compactNoRawat)}`;
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const openClinicalPathwayModal = (row: any) => {
+    if (!row?.no_rkm_medis || !row?.no_rawat) {
+      return;
+    }
+
+    const compactNoRawat = formatNoRawat(String(row.no_rawat));
+    navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=rawat-jalan`, {
+      state: {
+        backgroundLocation: location
+      }
+    });
+  };
+
+  const rawatJalanRowMenuItems = (row: any) => [
+    {
+      key: 'inline-tab',
+      label: 'Buka Inline Tab',
+      icon: <PanelRightOpen size={14} />,
+      onSelect: () => openMedicalRecordInlineTab(row)
+    },
+    {
+      key: 'new-tab',
+      label: 'Buka New Tab',
+      icon: <ExternalLink size={14} />,
+      onSelect: () => openMedicalRecordBrowserTab(row)
+    },
+    {
+      key: 'clinical-pathway',
+      label: 'Clinical Pathway',
+      icon: <FileText size={14} />,
+      onSelect: () => openClinicalPathwayModal(row)
+    }
+  ];
+
   const rawatJalanColumns = [
     { accessor: 'no_reg', header: 'No. Reg' },
     { accessor: 'no_rkm_medis', header: 'No. RM' },
@@ -128,29 +190,7 @@ const RawatJalanTabs = () => {
     { accessor: 'status', header: 'Status' },
     { accessor: 'insurance', header: 'Asuransi' },
     { accessor: 'tgl_registrasi', header: 'Tanggal Registrasi' },
-    { accessor: 'paymentStatus', header: 'Status Bayar' },
-    {
-      accessor: 'clinical_pathway',
-      header: 'Clinical Pathway',
-      render: (row: any) => (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (row.no_rkm_medis && row.no_rawat) {
-              const formattedNoRawat = formatNoRawat(row.no_rawat);
-              const compactNoRawat = String(formattedNoRawat).replace(/\//g, '');
-              navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=rawat-jalan`);
-            }
-          }}
-          className="flex items-center gap-1"
-        >
-          <FileText size={14} />
-          CP
-        </Button>
-      )
-    }
+    { accessor: 'paymentStatus', header: 'Status Bayar' }
   ];
 
   const buildRequestBody = (tabFilter: RawatJalanTab, overrides: Record<string, string> = {}) => ({
@@ -662,6 +702,7 @@ const RawatJalanTabs = () => {
                 <PatientTable 
                   patients={filteredRawatJalanData} 
                   columns={rawatJalanColumns}
+                  getRowMenuItems={rawatJalanRowMenuItems}
                   pagination={{
                     currentPage,
                     totalPages: Math.ceil(total / itemsPerPage),
