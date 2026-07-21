@@ -324,11 +324,29 @@ const buildAuditSummary = (records) => {
   const moduleMap = new Map();
   const statusMap = new Map();
 
+  const getActorSummaryLabel = (entry) => {
+    const payload = entry?.request_payload && typeof entry.request_payload === 'object' && !Array.isArray(entry.request_payload)
+      ? entry.request_payload
+      : {};
+
+    return String(
+      entry?.actor_name
+      || payload?.doctorName
+      || payload?.nm_dokter
+      || payload?.dokter
+      || payload?.nama
+      || payload?.actor_name
+      || entry?.actor_id
+      || payload?.username
+      || '-'
+    ).trim() || '-';
+  };
+
   records.forEach((entry) => {
     const actionKey = String(entry?.action || '').trim() || '-';
     actionMap.set(actionKey, (actionMap.get(actionKey) || 0) + 1);
 
-    const actorKey = String(entry?.actor_id || entry?.actor_name || '-').trim() || '-';
+    const actorKey = getActorSummaryLabel(entry);
     actorMap.set(actorKey, (actorMap.get(actorKey) || 0) + 1);
 
     const moduleKey = String(entry?.entity || '').trim() || '-';
