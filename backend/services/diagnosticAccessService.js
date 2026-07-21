@@ -47,6 +47,13 @@ class DiagnosticAccessService {
       };
     }
 
+    if (feature === 'clinical-pathway') {
+      return {
+        envKey: 'CLINICAL_PATHWAY_ACCESS',
+        label: 'clinical pathway'
+      };
+    }
+
     throw new Error(`Fitur akses diagnostik tidak dikenali: ${feature}`);
   }
 

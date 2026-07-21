@@ -201,6 +201,19 @@ app.get('/api/audit-history/access/:username', async (req, res) => {
   }
 });
 
+app.get('/api/clinical-pathway/access/:username', async (req, res) => {
+  try {
+    const result = await DiagnosticAccessService.getAccessInfo('clinical-pathway', req.params.username);
+    res.json(result);
+  } catch (error) {
+    console.error('Clinical pathway access error:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      error: error.message || 'Gagal memeriksa akses clinical pathway'
+    });
+  }
+});
+
 app.get('/api/audit-history', async (req, res) => {
   try {
     const { username = '', page = '1', limit = '50', action = '', status = '', entity = '', search = '' } = req.query;

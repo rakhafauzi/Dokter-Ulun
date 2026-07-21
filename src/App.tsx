@@ -17,6 +17,7 @@ import Login from "./pages/Login";
 import MedicalRecord from "./pages/MedicalRecord";
 import MedicalRecordReadonly from "./pages/MedicalRecordReadonly";
 import ClinicalPathway from "./pages/ClinicalPathway";
+import ClinicalPathwayMaster from "./pages/ClinicalPathwayMaster";
 import StatisticsCare from "./pages/StatisticsCare";
 import AIAssistant from "./pages/AIAssistant";
 import Settings from "./pages/Settings";
@@ -79,6 +80,7 @@ const AppContent = () => {
   const [canViewAuditHistory, setCanViewAuditHistory] = React.useState(false);
   const [canAccessLaboratorium, setCanAccessLaboratorium] = React.useState<boolean | null>(null);
   const [canAccessRadiologi, setCanAccessRadiologi] = React.useState<boolean | null>(null);
+  const [canAccessClinicalPathway, setCanAccessClinicalPathway] = React.useState<boolean | null>(null);
   const { user, isAuthenticated, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -99,29 +101,34 @@ const AppContent = () => {
       setCanViewAuditHistory(false);
       setCanAccessLaboratorium(false);
       setCanAccessRadiologi(false);
+      setCanAccessClinicalPathway(false);
       return;
     }
 
     const checkFeatureAccess = async () => {
       try {
-        const [auditResponse, labResponse, radResponse] = await Promise.all([
+        const [auditResponse, labResponse, radResponse, clinicalPathwayResponse] = await Promise.all([
           fetch(`${API_URLS.AUDIT_HISTORY_ACCESS}/${encodeURIComponent(username)}`),
           fetch(`${API_URLS.LABORATORY_DATA_ACCESS}/${encodeURIComponent(username)}`),
-          fetch(`${API_URLS.RADIOLOGY_DATA_ACCESS}/${encodeURIComponent(username)}`)
+          fetch(`${API_URLS.RADIOLOGY_DATA_ACCESS}/${encodeURIComponent(username)}`),
+          fetch(`${API_URLS.CLINICAL_PATHWAY_ACCESS}/${encodeURIComponent(username)}`)
         ]);
-        const [auditResult, labResult, radResult] = await Promise.all([
+        const [auditResult, labResult, radResult, clinicalPathwayResult] = await Promise.all([
           auditResponse.json(),
           labResponse.json(),
-          radResponse.json()
+          radResponse.json(),
+          clinicalPathwayResponse.json()
         ]);
 
         setCanViewAuditHistory(auditResponse.ok && Boolean(auditResult?.can_access));
         setCanAccessLaboratorium(labResponse.ok && Boolean(labResult?.can_access));
         setCanAccessRadiologi(radResponse.ok && Boolean(radResult?.can_access));
+        setCanAccessClinicalPathway(clinicalPathwayResponse.ok && Boolean(clinicalPathwayResult?.can_access));
       } catch {
         setCanViewAuditHistory(false);
         setCanAccessLaboratorium(false);
         setCanAccessRadiologi(false);
+        setCanAccessClinicalPathway(false);
       }
     };
 
@@ -169,6 +176,7 @@ const AppContent = () => {
               canViewAuditHistory={canViewAuditHistory}
               canAccessLaboratorium={Boolean(canAccessLaboratorium)}
               canAccessRadiologi={Boolean(canAccessRadiologi)}
+              canAccessClinicalPathway={Boolean(canAccessClinicalPathway)}
               onLogout={logout}
             />
           </div>
@@ -211,6 +219,7 @@ const AppContent = () => {
             <Route path="/rekam-medik/:no_rkm_medis" element={<MedicalRecordReadonly />} />
             <Route path="/rekam-medik/:no_rkm_medis/:no_rawat" element={<MedicalRecord />} />
             <Route path="/clinical-pathway" element={<ClinicalPathway />} />
+            <Route path="/clinical-pathway/master" element={canAccessClinicalPathway === false ? <Navigate to="/" replace /> : <ClinicalPathwayMaster />} />
             <Route path="/clinical-pathway/:no_rkm_medis/:no_rawat" element={<ClinicalPathway />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
@@ -226,6 +235,7 @@ const AppContent = () => {
                 canViewAuditHistory={canViewAuditHistory}
                 canAccessLaboratorium={Boolean(canAccessLaboratorium)}
                 canAccessRadiologi={Boolean(canAccessRadiologi)}
+                canAccessClinicalPathway={Boolean(canAccessClinicalPathway)}
                 onClose={() => setSidebarOpen(false)}
                 onLogout={logout}
               />

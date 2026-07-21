@@ -99,6 +99,788 @@ const validateMonitoringPatientStatusPayload = [
     .withMessage('Status pasien harus diisi')
 ];
 
+const validateMasterClinicalPathwayPayload = [
+  body('kode_cp')
+    .notEmpty()
+    .withMessage('Kode Master CP harus diisi'),
+  body('nama_cp')
+    .notEmpty()
+    .withMessage('Nama Master CP harus diisi'),
+  body('jenis_layanan')
+    .notEmpty()
+    .withMessage('Jenis layanan harus diisi')
+    .isIn(['Ralan', 'Ranap'])
+    .withMessage('Jenis layanan harus Ralan atau Ranap'),
+  body('target_los')
+    .isInt({ min: 1 })
+    .withMessage('Target LOS minimal 1 hari'),
+  body('target_tarif')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Target tarif tidak valid'),
+  body('confidence_score')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Confidence score harus 0-100'),
+  body('guideline_note')
+    .optional()
+    .isString()
+    .withMessage('Catatan guideline tidak valid'),
+  body('evidence_note')
+    .optional()
+    .isString()
+    .withMessage('Catatan evidence tidak valid'),
+  body('aktif')
+    .optional()
+    .isIn(['Ya', 'Tidak'])
+    .withMessage('Status aktif harus Ya atau Tidak'),
+  body('diagnoses')
+    .optional()
+    .isArray()
+    .withMessage('Diagnosa harus berupa array'),
+  body('diagnoses.*.tipe')
+    .optional()
+    .isIn(['Utama', 'Sekunder'])
+    .withMessage('Tipe diagnosis harus Utama atau Sekunder'),
+  body('days')
+    .optional()
+    .isArray()
+    .withMessage('Template hari harus berupa array')
+];
+
+const validateMasterClinicalPathwayId = [
+  param('id')
+    .isInt({ min: 1 })
+    .withMessage('ID Master CP tidak valid')
+];
+
+const validateCpptTemplatePayload = [
+  body('kd_penyakit')
+    .notEmpty()
+    .withMessage('Kode ICD-10 harus diisi'),
+  body('ppra')
+    .notEmpty()
+    .withMessage('PPRA harus diisi'),
+  body('subjective')
+    .optional()
+    .isString()
+    .withMessage('Subjective tidak valid'),
+  body('objective')
+    .optional()
+    .isString()
+    .withMessage('Objective tidak valid'),
+  body('assessment')
+    .optional()
+    .isString()
+    .withMessage('Assessment tidak valid'),
+  body('plan')
+    .optional()
+    .isString()
+    .withMessage('Plan tidak valid'),
+  body('aktif')
+    .optional()
+    .isIn(['Ya', 'Tidak'])
+    .withMessage('Status aktif harus Ya atau Tidak')
+];
+
+const validateCpptTemplateId = [
+  param('cpptId')
+    .isInt({ min: 1 })
+    .withMessage('ID template CPPT tidak valid')
+];
+
+const validateTemplateDayPayload = [
+  body('clinical_pathway_id')
+    .isInt({ min: 1 })
+    .withMessage('Master CP harus dipilih'),
+  body('hari_ke')
+    .isInt({ min: 1 })
+    .withMessage('Hari harus minimal 1'),
+  body('kategori')
+    .notEmpty()
+    .withMessage('Kategori harus diisi'),
+  body('aktivitas')
+    .notEmpty()
+    .withMessage('Aktivitas harus diisi'),
+  body('wajib')
+    .optional()
+    .isIn(['Ya', 'Tidak'])
+    .withMessage('Wajib harus Ya atau Tidak')
+];
+
+const validateTemplateDayId = [
+  param('templateId')
+    .isInt({ min: 1 })
+    .withMessage('ID template harian tidak valid')
+];
+
+const validateMappingPayload = [
+  body('clinical_pathway_id')
+    .isInt({ min: 1 })
+    .withMessage('Master CP harus dipilih'),
+  body('kd_penyakit')
+    .notEmpty()
+    .withMessage('Kode ICD harus diisi'),
+  body('prioritas')
+    .isInt({ min: 1 })
+    .withMessage('Prioritas minimal 1'),
+  body('confidence_score')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Confidence score harus 0-100'),
+  body('tipe')
+    .optional()
+    .isIn(['Utama', 'Sekunder'])
+    .withMessage('Tipe diagnosis harus Utama atau Sekunder')
+];
+
+const validateMappingId = [
+  param('mappingId')
+    .isInt({ min: 1 })
+    .withMessage('ID mapping ICD tidak valid')
+];
+
+router.get('/master/summary', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getMasterManagementSummary();
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway master summary route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/dashboard', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getDashboardOverview(req.query.limit);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway dashboard route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route GET /api/clinical-pathway/master
+ * @desc Mendapatkan daftar Master CP
+ * @access Private
+ */
+router.get('/master', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getMasterPathwayList(req.query);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway master list route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route GET /api/clinical-pathway/master/:id
+ * @desc Mendapatkan detail Master CP
+ * @access Private
+ */
+router.get('/master/:id', validateMasterClinicalPathwayId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.getMasterPathwayDetail(Number(req.params.id));
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway master detail route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route POST /api/clinical-pathway/master
+ * @desc Membuat Master CP baru
+ * @access Private
+ */
+router.post('/master', validateMasterClinicalPathwayPayload, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.saveMasterPathway(req.body);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_master', 'create', result, {
+      reference_id: result.data?.id
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_master', 'create', error);
+    console.error('Error in clinical pathway master create route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route PUT /api/clinical-pathway/master/:id
+ * @desc Memperbarui Master CP
+ * @access Private
+ */
+router.put('/master/:id', [...validateMasterClinicalPathwayId, ...validateMasterClinicalPathwayPayload], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.saveMasterPathway(req.body, Number(req.params.id));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_master', 'update', result, {
+      reference_id: req.params.id
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_master', 'update', error, {
+      reference_id: req.params.id
+    });
+    console.error('Error in clinical pathway master update route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route DELETE /api/clinical-pathway/master/:id
+ * @desc Menghapus Master CP
+ * @access Private
+ */
+router.delete('/master/:id', validateMasterClinicalPathwayId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.deleteMasterPathway(Number(req.params.id));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_master', 'delete', result, {
+      reference_id: req.params.id
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_master', 'delete', error, {
+      reference_id: req.params.id
+    });
+    console.error('Error in clinical pathway master delete route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/template-day', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getTemplateDayList(req.query);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway template day list route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/template-day/:templateId', validateTemplateDayId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.getTemplateDayDetail(Number(req.params.templateId));
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway template day detail route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.post('/template-day', validateTemplateDayPayload, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.saveTemplateDayItem(req.body);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_template_day', 'create', result, {
+      reference_id: result.data?.id
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_template_day', 'create', error);
+    console.error('Error in clinical pathway template day create route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.put('/template-day/:templateId', [...validateTemplateDayId, ...validateTemplateDayPayload], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.saveTemplateDayItem(req.body, Number(req.params.templateId));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_template_day', 'update', result, {
+      reference_id: req.params.templateId
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_template_day', 'update', error, {
+      reference_id: req.params.templateId
+    });
+    console.error('Error in clinical pathway template day update route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.delete('/template-day/:templateId', validateTemplateDayId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.deleteTemplateDayItem(Number(req.params.templateId));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_template_day', 'delete', result, {
+      reference_id: req.params.templateId
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_template_day', 'delete', error, {
+      reference_id: req.params.templateId
+    });
+    console.error('Error in clinical pathway template day delete route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/mapping', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getDiagnosisMappingList(req.query);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway mapping list route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/mapping/:mappingId', validateMappingId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.getDiagnosisMappingDetail(Number(req.params.mappingId));
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway mapping detail route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.post('/mapping', validateMappingPayload, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.saveDiagnosisMapping(req.body);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_mapping', 'create', result, {
+      reference_id: result.data?.id
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_mapping', 'create', error);
+    console.error('Error in clinical pathway mapping create route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.put('/mapping/:mappingId', [...validateMappingId, ...validateMappingPayload], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.saveDiagnosisMapping(req.body, Number(req.params.mappingId));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_mapping', 'update', result, {
+      reference_id: req.params.mappingId
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_mapping', 'update', error, {
+      reference_id: req.params.mappingId
+    });
+    console.error('Error in clinical pathway mapping update route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.delete('/mapping/:mappingId', validateMappingId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.deleteDiagnosisMapping(Number(req.params.mappingId));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_mapping', 'delete', result, {
+      reference_id: req.params.mappingId
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_mapping', 'delete', error, {
+      reference_id: req.params.mappingId
+    });
+    console.error('Error in clinical pathway mapping delete route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/cppt', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getCpptTemplateList(req.query);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway cppt list route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/cppt/:cpptId', validateCpptTemplateId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.getCpptTemplateDetail(Number(req.params.cpptId));
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway cppt detail route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/generator/preview/by-no-rawat/:no_rawat', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getGeneratorPreviewByNoRawat(
+      req.params.no_rawat,
+      Number(req.query.clinical_pathway_id || 0) || null
+    );
+
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway generator preview by no_rawat route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/monitoring', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getMonitoringList(req.query);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway monitoring list route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.post('/cppt', validateCpptTemplatePayload, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.saveCpptTemplate(req.body);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_cppt_template', 'create', result, {
+      reference_id: result.data?.id
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_cppt_template', 'create', error);
+    console.error('Error in clinical pathway cppt create route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.put('/cppt/:cpptId', [...validateCpptTemplateId, ...validateCpptTemplatePayload], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.saveCpptTemplate(req.body, Number(req.params.cpptId));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_cppt_template', 'update', result, {
+      reference_id: req.params.cpptId
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_cppt_template', 'update', error, {
+      reference_id: req.params.cpptId
+    });
+    console.error('Error in clinical pathway cppt update route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.delete('/cppt/:cpptId', validateCpptTemplateId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.deleteCpptTemplate(Number(req.params.cpptId));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_cppt_template', 'delete', result, {
+      reference_id: req.params.cpptId
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_cppt_template', 'delete', error, {
+      reference_id: req.params.cpptId
+    });
+    console.error('Error in clinical pathway cppt delete route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 /**
  * @route GET /api/clinical-pathway/monitoring/by-no-rawat/:no_rawat
  * @desc Mendapatkan detail monitoring berdasarkan no_rawat

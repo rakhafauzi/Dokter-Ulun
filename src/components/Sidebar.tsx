@@ -17,6 +17,7 @@ import {
   AlarmClock,
   FlaskConical,
   ScanLine,
+  ClipboardList,
   LogOut,
   ChevronDown,
   ChevronUp
@@ -33,6 +34,7 @@ interface SidebarProps {
   canViewAuditHistory?: boolean;
   canAccessLaboratorium?: boolean;
   canAccessRadiologi?: boolean;
+  canAccessClinicalPathway?: boolean;
   onClose?: () => void;
   onLogout?: () => void;
 }
@@ -50,6 +52,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   canViewAuditHistory = false,
   canAccessLaboratorium = false,
   canAccessRadiologi = false,
+  canAccessClinicalPathway = false,
   onClose,
   onLogout
 }) => {
@@ -82,6 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     ...(canAccessLaboratorium ? [{ name: 'Laboratorium', path: '/laboratorium', icon: <FlaskConical className="h-5 w-5" /> }] : []),
     ...(canAccessRadiologi ? [{ name: 'Radiologi', path: '/radiologi', icon: <ScanLine className="h-5 w-5" /> }] : []),
     { name: 'AI Asisten', path: '/ai-assistant', icon: <Bot className="h-5 w-5" />, badge: 'Beta' },
+    ...(canAccessClinicalPathway ? [{ name: 'Clinical Pathway', path: '/clinical-pathway/master', icon: <ClipboardList className="h-5 w-5" /> }] : []),
     ...(canViewAuditHistory ? [{ name: 'Riwayat Audit', path: '/riwayat-audit', icon: <Book className="h-5 w-5" /> }] : []),
     { name: 'Data Farmasi', path: '/depo-farmasi', icon: <Package className="h-5 w-5" /> },
     { name: 'Presensi', path: '/presensi', icon: <FileCheck className="h-5 w-5" /> },

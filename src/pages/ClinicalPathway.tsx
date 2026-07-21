@@ -94,9 +94,20 @@ interface ClinicalPathwayPreview {
   diagnoses: DiagnosisItem[];
   existing: ExistingPathway | null;
   master_recommendations: MasterRecommendation[];
+  available_manual_options?: MasterRecommendation[];
   selected_clinical_pathway_id: number | null;
   master_template: TemplateData;
   historical_template: TemplateData;
+}
+
+interface MasterClinicalPathwayListItem {
+  id: number;
+  kode_cp: string;
+  nama_cp: string;
+  jenis_layanan: string;
+  target_los: number;
+  confidence_score: number;
+  aktif: string;
 }
 
 interface MonitoringPatientDetail {
@@ -211,9 +222,11 @@ const ClinicalPathway = () => {
   const [generateLoading, setGenerateLoading] = useState(false);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringActionKey, setMonitoringActionKey] = useState<string | null>(null);
+  const [manualOptionsLoading, setManualOptionsLoading] = useState(false);
   const [preview, setPreview] = useState<ClinicalPathwayPreview | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringDetail | null>(null);
   const [selectedClinicalPathwayId, setSelectedClinicalPathwayId] = useState<number | null>(null);
+  const [manualOptions, setManualOptions] = useState<MasterRecommendation[]>([]);
   const normalizedNoRawatParam = useMemo(() => String(no_rawat || '').replace(/\//g, ''), [no_rawat]);
 
   const selectedRecommendation = useMemo(
@@ -222,6 +235,7 @@ const ClinicalPathway = () => {
   );
   const hasMasterTemplate = Boolean(preview?.master_template.days.length);
   const hasHistoricalTemplate = Boolean(preview?.historical_template.days.length);
+  const hasSelectedRecommendation = Boolean(selectedRecommendation);
 
   const requestedMode = searchParams.get('mode');
   const workflowMode = useMemo<WorkflowMode>(() => {
@@ -246,6 +260,63 @@ const ClinicalPathway = () => {
     !!selectedClinicalPathwayId &&
     (hasMasterTemplate || hasHistoricalTemplate);
 
+  const manualChoiceOptions = useMemo(() => {
+    const merged = new Map<number, MasterRecommendation>();
+
+    [...(preview?.master_recommendations || []), ...manualOptions].forEach((item) => {
+      if (item?.id) {
+        merged.set(Number(item.id), item);
+      }
+    });
+
+    return Array.from(merged.values()).sort((left, right) => {
+      if (left.status_layanan !== right.status_layanan) {
+        return left.status_layanan.localeCompare(right.status_layanan);
+      }
+      return left.nama_cp.localeCompare(right.nama_cp);
+    });
+  }, [manualOptions, preview?.master_recommendations]);
+
+  const loadManualOptions = async (statusLanjut?: string) => {
+    if (!statusLanjut) {
+      setManualOptions([]);
+      return;
+    }
+
+    try {
+      setManualOptionsLoading(true);
+      const params = new URLSearchParams({
+        page: '1',
+        limit: '100',
+        aktif: 'Ya',
+        jenis_layanan: statusLanjut === 'Ralan' ? 'Ralan' : 'Ranap'
+      });
+      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/master?${params.toString()}`);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal memuat pilihan Master CP');
+      }
+
+      const list = Array.isArray(result.data) ? result.data : [];
+      setManualOptions(list.map((item: MasterClinicalPathwayListItem) => ({
+        id: Number(item.id),
+        kode_cp: String(item.kode_cp || ''),
+        nama_cp: String(item.nama_cp || ''),
+        status_layanan: String(item.jenis_layanan || ''),
+        target_los: Number(item.target_los || 0),
+        confidence_score: Number(item.confidence_score || 0),
+        matched_icd_count: 0,
+        matched_diagnoses: []
+      })));
+    } catch (error) {
+      console.error('Error loading manual master clinical pathway options:', error);
+      setManualOptions([]);
+    } finally {
+      setManualOptionsLoading(false);
+    }
+  };
+
   const loadPreview = async (preferredClinicalPathwayId?: number | null) => {
     if (!no_rkm_medis || !normalizedNoRawatParam) {
       return;
@@ -262,6 +333,7 @@ const ClinicalPathway = () => {
       }
 
       setPreview(result.data);
+      void loadManualOptions(result.data.registration?.status_lanjut);
       setSelectedClinicalPathwayId(
         result.data.selected_clinical_pathway_id ||
         result.data.existing?.clinical_pathway_id ||
@@ -679,6 +751,41 @@ const ClinicalPathway = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <div className="rounded-lg border border-dashed p-3">
+                    <div className="text-sm font-medium">Pilihan manual Master CP</div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      Sistem tetap merekomendasikan otomatis berdasarkan diagnosis ICD-10, tetapi Anda bisa memilih Master CP aktif lain yang paling sesuai.
+                    </div>
+                    <div className="mt-3 flex flex-col gap-2 lg:flex-row">
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                        value={selectedClinicalPathwayId || ''}
+                        onChange={(event) => {
+                          const value = Number(event.target.value || 0);
+                          if (value) {
+                            handleSelectClinicalPathway(value);
+                          }
+                        }}
+                        disabled={manualOptionsLoading || loading}
+                      >
+                        <option value="">Pilih Master CP aktif</option>
+                        {manualChoiceOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.kode_cp} - {option.nama_cp} ({option.status_layanan})
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void loadManualOptions(preview?.registration?.status_lanjut)}
+                        disabled={manualOptionsLoading}
+                      >
+                        {manualOptionsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                        Muat Ulang
+                      </Button>
+                    </div>
+                  </div>
                   {preview.master_recommendations.length ? (
                     preview.master_recommendations.map((recommendation) => {
                       const isSelected = selectedClinicalPathwayId === recommendation.id;
@@ -724,7 +831,7 @@ const ClinicalPathway = () => {
                       Belum ada master Clinical Pathway yang cocok dari diagnosis ICD-10 pasien ini.
                     </div>
                   )}
-                  {selectedRecommendation ? (
+                  {hasSelectedRecommendation ? (
                     <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
                       Master terpilih: <span className="font-medium text-foreground">{selectedRecommendation.kode_cp} - {selectedRecommendation.nama_cp}</span>.
                       Template master dan histori di bawah mengikuti CP yang sedang dipilih. Jika template master kosong, sistem akan memakai histori 1 tahun terakhir saat `Generate Pasien` dijalankan.
