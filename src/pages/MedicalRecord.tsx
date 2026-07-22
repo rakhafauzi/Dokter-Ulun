@@ -4997,7 +4997,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       return;
     }
 
-    if (medicationCurrentCareTab !== 'outpatient') {
+    if (medicationCurrentCareTab !== 'outpatient' && medicationCurrentCareTab !== 'inpatient') {
       return;
     }
 
@@ -9259,8 +9259,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 prescription_date: prescription.tanggal,
                 prescription_time: getCurrentPrescriptionTime(),
                 prescription_status: prescription.status,
-                set_kronis: prescription.status === 'Ralan' ? prescription.set_kronis : false,
-                set_prb: prescription.status === 'Ralan' ? prescription.set_prb : false,
+                set_kronis: Boolean(prescription.set_kronis),
+                set_prb: Boolean(prescription.set_prb),
                 medicines: prescription.medicines,
                 compounds: []
               })
@@ -11947,30 +11947,29 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           placeholder="Pilih tanggal resep"
                         />
                       </div>
-                      <div>
-                        <Label htmlFor={`med-status-${medIndex}`}>Status Rawat</Label>
-                        <Select
-                          value={medication.status}
-                          onValueChange={(value: PrescriptionStatus) => {
-                            handleMedicationPrescriptionStatusChange(medIndex, value);
-                          }}
-                        >
-                          <SelectTrigger id={`med-status-${medIndex}`} disabled={!!editingPrescriptionNo}>
-                            <SelectValue placeholder="Pilih status rawat" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Ralan">Rawat Jalan</SelectItem>
-                            <SelectItem value="Ranap">Rawat Inap</SelectItem>
-                            <SelectItem value="Pulang">Obat Pulang</SelectItem>
-                            <SelectItem value="IBS">IBS</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {preferredCareSectionTab === 'outpatient' && medication.status === 'Ralan' ? (
-                        <div>
-                          <Label>Set</Label>
-                          <div className="flex h-10 items-center gap-4 rounded-md border border-emerald-200 bg-emerald-50/70 px-3 dark:border-emerald-900 dark:bg-emerald-950/30">
-                            <label className="flex items-center gap-2 text-sm font-medium text-emerald-900 dark:text-emerald-200">
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <Label htmlFor={`med-status-${medIndex}`}>Status Rawat</Label>
+                          <Select
+                            value={medication.status}
+                            onValueChange={(value: PrescriptionStatus) => {
+                              handleMedicationPrescriptionStatusChange(medIndex, value);
+                            }}
+                          >
+                            <SelectTrigger id={`med-status-${medIndex}`} disabled={!!editingPrescriptionNo}>
+                              <SelectValue placeholder="Pilih status rawat" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Ralan">Rawat Jalan</SelectItem>
+                              <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                              <SelectItem value="Pulang">Obat Pulang</SelectItem>
+                              <SelectItem value="IBS">IBS</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {(medication.status === 'Ralan' || medication.status === 'Ranap') && (
+                          <div className="flex items-end gap-2 pb-1">
+                            <label className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400 h-10 cursor-pointer">
                               <Checkbox
                                 checked={Boolean(medication.set_kronis)}
                                 onCheckedChange={(checked) => {
@@ -11984,24 +11983,27 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               />
                               Kronis
                             </label>
-                            <label className="flex items-center gap-2 text-sm font-medium text-emerald-900 dark:text-emerald-200">
-                              <Checkbox
-                                checked={Boolean(medication.set_prb)}
-                                onCheckedChange={(checked) => {
-                                  setMedications((previous) => previous.map((item, index) => (
-                                    index === medIndex
-                                      ? { ...item, set_prb: checked === true }
-                                      : item
-                                  )));
-                                }}
-                                disabled={!!editingPrescriptionNo}
-                              />
-                              PRB
-                            </label>
+                            {medication.status === 'Ralan' && (
+                              <label className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400 h-10 cursor-pointer">
+                                <Checkbox
+                                  checked={Boolean(medication.set_prb)}
+                                  onCheckedChange={(checked) => {
+                                    setMedications((previous) => previous.map((item, index) => (
+                                      index === medIndex
+                                        ? { ...item, set_prb: checked === true }
+                                        : item
+                                    )));
+                                  }}
+                                  disabled={!!editingPrescriptionNo}
+                                />
+                                PRB
+                              </label>
+                            )}
                           </div>
-                        </div>
-                      ) : null}
+                        )}
+                      </div>
                     </div>
+
                     
                     <div className="space-y-4">
                       <h5 className="font-medium">Daftar Obat:</h5>
