@@ -10,14 +10,22 @@ class DiagnosticAccessService {
       return [];
     }
 
+    if (rawValue.toUpperCase() === 'ALL') {
+      return ['ALL'];
+    }
+
     try {
       const parsedValue = JSON.parse(rawValue);
+      if (typeof parsedValue === 'string' && parsedValue.toUpperCase() === 'ALL') {
+        return ['ALL'];
+      }
       if (!Array.isArray(parsedValue)) {
         return [];
       }
 
       return parsedValue
         .map((item) => this.normalizeUsername(item))
+        .map((item) => (item.toUpperCase() === 'ALL' ? 'ALL' : item))
         .filter(Boolean);
     } catch (error) {
       console.error(`Failed to parse ${envKey}:`, error);
@@ -68,7 +76,12 @@ class DiagnosticAccessService {
       return false;
     }
 
-    return this.getAllowedUsernames(feature).includes(normalizedUsername);
+    const allowedUsernames = this.getAllowedUsernames(feature);
+    if (allowedUsernames.includes('ALL')) {
+      return true;
+    }
+
+    return allowedUsernames.includes(normalizedUsername);
   }
 
   static ensureAccess(feature, username) {
@@ -84,6 +97,7 @@ class DiagnosticAccessService {
     return {
       success: true,
       can_access: this.canAccess(feature, username),
+      allow_all: this.getAllowedUsernames(feature).includes('ALL'),
       aliases: this.getAllowedUsernames(feature)
     };
   }
