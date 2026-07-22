@@ -1273,7 +1273,7 @@ class PrescriptionDataService {
         }
       }
 
-      if (resolvedPrescriptionStatus === 'ralan') {
+      if (resolvedPrescriptionStatus === 'ralan' || resolvedPrescriptionStatus === 'ranap') {
         await this.insertLegacyPrescriptionFlags(connection, {
           no_rawat,
           kd_dokter,
