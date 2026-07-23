@@ -1411,12 +1411,14 @@ interface MedicalRecordProps {
   noRkmMedis?: string;
   noRawat?: string;
   embedded?: boolean;
+  defaultStatusRawat?: 'Ralan' | 'Ranap';
 }
 
 const MedicalRecord: React.FC<MedicalRecordProps> = ({
   noRkmMedis,
   noRawat,
-  embedded = false
+  embedded = false,
+  defaultStatusRawat
 }) => {
   const routeParams = useParams();
   const [searchParams] = useSearchParams();
@@ -1431,7 +1433,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [loadingMoreExaminations, setLoadingMoreExaminations] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [statusRawat, setStatusRawat] = useState<string>('Ralan');
+  const [statusRawat, setStatusRawat] = useState<string>(defaultStatusRawat || 'Ralan');
   const [isDpjpExpanded, setIsDpjpExpanded] = useState(false);
   const [editingExamination, setEditingExamination] = useState<any>(null);
   const [aiScribeModal, setAiScribeModal] = useState(false);
@@ -1459,16 +1461,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const activeIgdTriageNoRawat = String(formattedNoRawat || '').trim();
 
   const defaultExaminationStatusRawat = useMemo(() => {
+    if (embedded && defaultStatusRawat === 'Ranap') {
+      return 'Ranap';
+    }
+
     return mapStatusLanjutToStatusRawat(
       focusedVisit?.status_lanjut || medicalData?.patient?.status_lanjut
     );
   }, [
+    defaultStatusRawat,
+    embedded,
     focusedVisit?.status_lanjut,
     medicalData?.patient?.status_lanjut
   ]);
-  const effectiveStatusRawat = useMemo(
-    () => (editingExamination ? statusRawat : defaultExaminationStatusRawat),
-    [defaultExaminationStatusRawat, editingExamination, statusRawat]
+  const effectiveStatusRawat = useMemo<ProcedureStatusRawat>(
+    () => (String(statusRawat || '').trim() === 'Ranap' ? 'Ranap' : 'Ralan'),
+    [statusRawat]
   );
   const preferredCareSectionTab = useMemo<CareSectionTabValue>(
     () => (defaultExaminationStatusRawat === 'Ranap' ? 'inpatient' : 'outpatient'),
@@ -4840,7 +4848,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             : (formattedNoRawat && responseData.outpatient_visits?.some((visit: any) => visit.no_rawat === formattedNoRawat))
                 ? 'Ralan'
               : undefined;
-        setStatusRawat(focusedVisitStatus || mapStatusLanjutToStatusRawat(responseData.patient?.status_lanjut));
+        setStatusRawat(
+          embedded && defaultStatusRawat === 'Ranap'
+            ? 'Ranap'
+            : (focusedVisitStatus || mapStatusLanjutToStatusRawat(responseData.patient?.status_lanjut))
+        );
       } else {
         console.log('No medical data found');
         if (reset) {
@@ -8828,7 +8840,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             : examinationForm.jam_rawat
           : '';
         const effectiveNoRawat = editingExamination?.no_rawat || formattedNoRawat;
-        const effectiveStatusRawat = editingExamination?.status_lanjut || statusRawat;
+        const effectiveStatusRawat = String(statusRawat || '').trim() === 'Ranap' ? 'Ranap' : 'Ralan';
         
         const requestBody = {
           no_rawat: effectiveNoRawat,
@@ -8852,6 +8864,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           evaluasi: examinationForm.evaluasi,
           nip: user?.username || '' // Get nip from auth user username
         };
+        // #region debug-point A:save-exam-request-body
+        fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"spo2-ranap-save",runId:"pre-fix",hypothesisId:"A",location:"src/pages/MedicalRecord.tsx:handleSaveForm",msg:"[DEBUG] frontend examination save payload prepared",data:{no_rawat:requestBody.no_rawat||null,status_rawat:requestBody.status_rawat||null,spo2:requestBody.spo2??null,isEditing:Boolean(editingExamination),tgl_perawatan:requestBody.tgl_perawatan||null,jam_rawat:requestBody.jam_rawat||null},ts:Date.now()})}).catch(()=>{});
+        // #endregion
 
         const isEditing = Boolean(editingExamination);
         const response = await fetch(
