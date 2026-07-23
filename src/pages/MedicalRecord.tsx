@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PatientTable from "@/components/PatientTable";
@@ -1014,6 +1014,12 @@ const formatRouteNoRawat = (rawatParam?: string) => {
   return `${year}/${month}/${day}/${sequence}`;
 };
 
+const MEDICAL_RECORD_STAGE_TABS = ['visits', 'examinations', 'procedures', 'medications', 'laboratory', 'radiology'] as const;
+type MedicalRecordStageTab = typeof MEDICAL_RECORD_STAGE_TABS[number];
+
+const isMedicalRecordStageTab = (value: string | null | undefined): value is MedicalRecordStageTab =>
+  MEDICAL_RECORD_STAGE_TABS.includes(String(value || '').trim() as MedicalRecordStageTab);
+
 const getRadiologyPacsKey = (rad: any) => {
   const noRawat = String(rad?.no_rawat || '').trim();
   const examDate = String(rad?.tgl_periksa || String(rad?.tanggal || '').split(' ')[0] || '').trim();
@@ -1411,19 +1417,27 @@ interface MedicalRecordProps {
   noRkmMedis?: string;
   noRawat?: string;
   embedded?: boolean;
+  workspaceActive?: boolean;
+  defaultStatusRawat?: 'Ralan' | 'Ranap';
 }
 
 const MedicalRecord: React.FC<MedicalRecordProps> = ({
   noRkmMedis,
   noRawat,
-  embedded = false
+  embedded = false,
+  workspaceActive = true,
+  defaultStatusRawat
 }) => {
   const routeParams = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const no_rkm_medis = noRkmMedis || routeParams.no_rkm_medis;
   const rawatParam = noRawat || routeParams.no_rawat;
   const formattedNoRawat = formatRouteNoRawat(rawatParam);
   const routeSearchQuery = embedded ? '' : (searchParams.get('search') || '');
+  const requestedStageTab = searchParams.get('tab');
+  const initialStageTab: MedicalRecordStageTab = !embedded && isMedicalRecordStageTab(requestedStageTab)
+    ? requestedStageTab
+    : 'visits';
   const [medicalData, setMedicalData] = useState<MedicalRecordData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMoreVisits, setLoadingMoreVisits] = useState(false);
@@ -1431,7 +1445,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [loadingMoreExaminations, setLoadingMoreExaminations] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [statusRawat, setStatusRawat] = useState<string>('Ralan');
+  const [statusRawat, setStatusRawat] = useState<string>(defaultStatusRawat || 'Ralan');
   const [isDpjpExpanded, setIsDpjpExpanded] = useState(false);
   const [editingExamination, setEditingExamination] = useState<any>(null);
   const [aiScribeModal, setAiScribeModal] = useState(false);
@@ -1459,16 +1473,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const activeIgdTriageNoRawat = String(formattedNoRawat || '').trim();
 
   const defaultExaminationStatusRawat = useMemo(() => {
+    if (embedded && defaultStatusRawat === 'Ranap') {
+      return 'Ranap';
+    }
+
     return mapStatusLanjutToStatusRawat(
       focusedVisit?.status_lanjut || medicalData?.patient?.status_lanjut
     );
   }, [
+    defaultStatusRawat,
+    embedded,
     focusedVisit?.status_lanjut,
     medicalData?.patient?.status_lanjut
   ]);
-  const effectiveStatusRawat = useMemo(
-    () => (editingExamination ? statusRawat : defaultExaminationStatusRawat),
-    [defaultExaminationStatusRawat, editingExamination, statusRawat]
+  const effectiveStatusRawat = useMemo<ProcedureStatusRawat>(
+    () => (String(statusRawat || '').trim() === 'Ranap' ? 'Ranap' : 'Ralan'),
+    [statusRawat]
   );
   const preferredCareSectionTab = useMemo<CareSectionTabValue>(
     () => (defaultExaminationStatusRawat === 'Ranap' ? 'inpatient' : 'outpatient'),
@@ -1711,7 +1731,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     total_out: true,
     balance: true,
   }));
-  const [activeTab, setActiveTab] = useState('visits');
+  const [activeTab, setActiveTab] = useState<MedicalRecordStageTab>(initialStageTab);
   const [visitHistoryTab, setVisitHistoryTab] = useState<VisitHistoryTabValue>('outpatient');
   const [examinationHistoryTab, setExaminationHistoryTab] = useState<ExaminationHistoryTabValue>('outpatient');
   const [pagination, setPagination] = useState<MedicalRecordPagination>({
@@ -1729,6 +1749,68 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     outpatient: [],
     inpatient: []
   });
+  const buildStageTabHref = useCallback((tab: MedicalRecordStageTab) => {
+    const normalizedNoRkmMedis = String(no_rkm_medis || '').trim();
+    const normalizedRawatParam = String(rawatParam || '').trim();
+
+    if (!normalizedNoRkmMedis) {
+      return '#';
+    }
+
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', tab);
+    const queryString = params.toString();
+    const basePath = normalizedRawatParam
+      ? `/rekam-medik/${encodeURIComponent(normalizedNoRkmMedis)}/${encodeURIComponent(normalizedRawatParam)}`
+      : `/rekam-medik/${encodeURIComponent(normalizedNoRkmMedis)}`;
+
+    return queryString ? `${basePath}?${queryString}` : basePath;
+  }, [no_rkm_medis, rawatParam, searchParams]);
+  const handleActiveTabChange = useCallback((value: string) => {
+    if (!isMedicalRecordStageTab(value)) {
+      return;
+    }
+
+    setActiveTab(value);
+
+    if (embedded) {
+      return;
+    }
+
+    setSearchParams((previousParams) => {
+      const nextParams = new URLSearchParams(previousParams);
+      nextParams.set('tab', value);
+      return nextParams;
+    }, { replace: true });
+  }, [embedded, setSearchParams]);
+  const handleStageTabLinkClick = useCallback((
+    event: React.MouseEvent<HTMLAnchorElement>,
+    tab: MedicalRecordStageTab
+  ) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    handleActiveTabChange(tab);
+  }, [handleActiveTabChange]);
+  useEffect(() => {
+    if (embedded) {
+      return;
+    }
+
+    const requestedTab = searchParams.get('tab');
+    if (isMedicalRecordStageTab(requestedTab) && requestedTab !== activeTab) {
+      setActiveTab(requestedTab);
+    }
+  }, [activeTab, embedded, searchParams]);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreExaminationRef = useRef<HTMLDivElement | null>(null);
   const examinationFormRef = useRef<HTMLDivElement | null>(null);
@@ -4840,7 +4922,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             : (formattedNoRawat && responseData.outpatient_visits?.some((visit: any) => visit.no_rawat === formattedNoRawat))
                 ? 'Ralan'
               : undefined;
-        setStatusRawat(focusedVisitStatus || mapStatusLanjutToStatusRawat(responseData.patient?.status_lanjut));
+        setStatusRawat(
+          embedded && defaultStatusRawat === 'Ranap'
+            ? 'Ranap'
+            : (focusedVisitStatus || mapStatusLanjutToStatusRawat(responseData.patient?.status_lanjut))
+        );
       } else {
         console.log('No medical data found');
         if (reset) {
@@ -4997,7 +5083,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       return;
     }
 
-    if (medicationCurrentCareTab !== 'outpatient') {
+    if (medicationCurrentCareTab !== 'outpatient' && medicationCurrentCareTab !== 'inpatient') {
       return;
     }
 
@@ -8828,7 +8914,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             : examinationForm.jam_rawat
           : '';
         const effectiveNoRawat = editingExamination?.no_rawat || formattedNoRawat;
-        const effectiveStatusRawat = editingExamination?.status_lanjut || statusRawat;
+        const effectiveStatusRawat = String(statusRawat || '').trim() === 'Ranap' ? 'Ranap' : 'Ralan';
         
         const requestBody = {
           no_rawat: effectiveNoRawat,
@@ -8852,6 +8938,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           evaluasi: examinationForm.evaluasi,
           nip: user?.username || '' // Get nip from auth user username
         };
+        // #region debug-point A:save-exam-request-body
+        fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"spo2-ranap-save",runId:"pre-fix",hypothesisId:"A",location:"src/pages/MedicalRecord.tsx:handleSaveForm",msg:"[DEBUG] frontend examination save payload prepared",data:{no_rawat:requestBody.no_rawat||null,status_rawat:requestBody.status_rawat||null,spo2:requestBody.spo2??null,isEditing:Boolean(editingExamination),tgl_perawatan:requestBody.tgl_perawatan||null,jam_rawat:requestBody.jam_rawat||null},ts:Date.now()})}).catch(()=>{});
+        // #endregion
 
         const isEditing = Boolean(editingExamination);
         const response = await fetch(
@@ -9259,8 +9348,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 prescription_date: prescription.tanggal,
                 prescription_time: getCurrentPrescriptionTime(),
                 prescription_status: prescription.status,
-                set_kronis: prescription.status === 'Ralan' ? prescription.set_kronis : false,
-                set_prb: prescription.status === 'Ralan' ? prescription.set_prb : false,
+                set_kronis: Boolean(prescription.set_kronis),
+                set_prb: Boolean(prescription.set_prb),
                 medicines: prescription.medicines,
                 compounds: []
               })
@@ -9738,31 +9827,55 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         </CardContent>
       </Card>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleActiveTabChange}>
         <TabsList className="mb-4">
-          <TabsTrigger value="visits">
-            <Calendar className="mr-2 h-4 w-4" />
-            Kunjungan
+          <TabsTrigger value="visits" asChild>
+            <Link to={buildStageTabHref('visits')} onClick={(event) => handleStageTabLinkClick(event, 'visits')}>
+              <>
+                <Calendar className="mr-2 h-4 w-4" />
+                Kunjungan
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="examinations">
-            <Stethoscope className="mr-2 h-4 w-4" />
-            Pemeriksaan
+          <TabsTrigger value="examinations" asChild>
+            <Link to={buildStageTabHref('examinations')} onClick={(event) => handleStageTabLinkClick(event, 'examinations')}>
+              <>
+                <Stethoscope className="mr-2 h-4 w-4" />
+                Pemeriksaan
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="procedures">
-            <Syringe className="mr-2 h-4 w-4" />
-            Tindakan
+          <TabsTrigger value="procedures" asChild>
+            <Link to={buildStageTabHref('procedures')} onClick={(event) => handleStageTabLinkClick(event, 'procedures')}>
+              <>
+                <Syringe className="mr-2 h-4 w-4" />
+                Tindakan
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="medications">
-            <Pill className="mr-2 h-4 w-4" />
-            Resep
+          <TabsTrigger value="medications" asChild>
+            <Link to={buildStageTabHref('medications')} onClick={(event) => handleStageTabLinkClick(event, 'medications')}>
+              <>
+                <Pill className="mr-2 h-4 w-4" />
+                Resep
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="laboratory">
-            <FlaskConical className="mr-2 h-4 w-4" />
-            Laboratorium
+          <TabsTrigger value="laboratory" asChild>
+            <Link to={buildStageTabHref('laboratory')} onClick={(event) => handleStageTabLinkClick(event, 'laboratory')}>
+              <>
+                <FlaskConical className="mr-2 h-4 w-4" />
+                Laboratorium
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="radiology">
-            <Radio className="mr-2 h-4 w-4" />
-            Radiologi
+          <TabsTrigger value="radiology" asChild>
+            <Link to={buildStageTabHref('radiology')} onClick={(event) => handleStageTabLinkClick(event, 'radiology')}>
+              <>
+                <Radio className="mr-2 h-4 w-4" />
+                Radiologi
+              </>
+            </Link>
           </TabsTrigger>
         </TabsList>
 
@@ -11947,30 +12060,29 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           placeholder="Pilih tanggal resep"
                         />
                       </div>
-                      <div>
-                        <Label htmlFor={`med-status-${medIndex}`}>Status Rawat</Label>
-                        <Select
-                          value={medication.status}
-                          onValueChange={(value: PrescriptionStatus) => {
-                            handleMedicationPrescriptionStatusChange(medIndex, value);
-                          }}
-                        >
-                          <SelectTrigger id={`med-status-${medIndex}`} disabled={!!editingPrescriptionNo}>
-                            <SelectValue placeholder="Pilih status rawat" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Ralan">Rawat Jalan</SelectItem>
-                            <SelectItem value="Ranap">Rawat Inap</SelectItem>
-                            <SelectItem value="Pulang">Obat Pulang</SelectItem>
-                            <SelectItem value="IBS">IBS</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {preferredCareSectionTab === 'outpatient' && medication.status === 'Ralan' ? (
-                        <div>
-                          <Label>Set</Label>
-                          <div className="flex h-10 items-center gap-4 rounded-md border border-emerald-200 bg-emerald-50/70 px-3 dark:border-emerald-900 dark:bg-emerald-950/30">
-                            <label className="flex items-center gap-2 text-sm font-medium text-emerald-900 dark:text-emerald-200">
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <Label htmlFor={`med-status-${medIndex}`}>Status Rawat</Label>
+                          <Select
+                            value={medication.status}
+                            onValueChange={(value: PrescriptionStatus) => {
+                              handleMedicationPrescriptionStatusChange(medIndex, value);
+                            }}
+                          >
+                            <SelectTrigger id={`med-status-${medIndex}`} disabled={!!editingPrescriptionNo}>
+                              <SelectValue placeholder="Pilih status rawat" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Ralan">Rawat Jalan</SelectItem>
+                              <SelectItem value="Ranap">Rawat Inap</SelectItem>
+                              <SelectItem value="Pulang">Obat Pulang</SelectItem>
+                              <SelectItem value="IBS">IBS</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {(medication.status === 'Ralan' || medication.status === 'Ranap') && (
+                          <div className="flex items-end gap-2 pb-1">
+                            <label className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400 h-10 cursor-pointer">
                               <Checkbox
                                 checked={Boolean(medication.set_kronis)}
                                 onCheckedChange={(checked) => {
@@ -11984,24 +12096,27 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               />
                               Kronis
                             </label>
-                            <label className="flex items-center gap-2 text-sm font-medium text-emerald-900 dark:text-emerald-200">
-                              <Checkbox
-                                checked={Boolean(medication.set_prb)}
-                                onCheckedChange={(checked) => {
-                                  setMedications((previous) => previous.map((item, index) => (
-                                    index === medIndex
-                                      ? { ...item, set_prb: checked === true }
-                                      : item
-                                  )));
-                                }}
-                                disabled={!!editingPrescriptionNo}
-                              />
-                              PRB
-                            </label>
+                            {medication.status === 'Ralan' && (
+                              <label className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400 h-10 cursor-pointer">
+                                <Checkbox
+                                  checked={Boolean(medication.set_prb)}
+                                  onCheckedChange={(checked) => {
+                                    setMedications((previous) => previous.map((item, index) => (
+                                      index === medIndex
+                                        ? { ...item, set_prb: checked === true }
+                                        : item
+                                    )));
+                                  }}
+                                  disabled={!!editingPrescriptionNo}
+                                />
+                                PRB
+                              </label>
+                            )}
                           </div>
-                        </div>
-                      ) : null}
+                        )}
+                      </div>
                     </div>
+
                     
                     <div className="space-y-4">
                       <h5 className="font-medium">Daftar Obat:</h5>
@@ -14196,7 +14311,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       </Dialog>
 
       {/* Floating Buttons for CRUD Operations */}
-      {formattedNoRawat && (
+      {formattedNoRawat && (!embedded || workspaceActive) && (
         <FloatingButtonsModal
           noRawat={formattedNoRawat}
           noRkmMedis={String(no_rkm_medis || '').trim()}

@@ -97,11 +97,15 @@ router.put('/', async (req, res) => {
     console.log('📝 Update examination request:', {
       no_rawat,
       status_rawat,
+      spo2,
       original_date,
       original_time,
       tgl_perawatan,
       jam_rawat
     });
+    // #region debug-point C:update-exam-route-entry
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"spo2-ranap-save",runId:"pre-fix",hypothesisId:"C",location:"backend/routes/updateExamination.js:router.put",msg:"[DEBUG] update examination route hit",data:{no_rawat:no_rawat||null,status_rawat:status_rawat||null,spo2:spo2??null,original_date:original_date||null,original_time:original_time||null,tgl_perawatan:tgl_perawatan||null,jam_rawat:jam_rawat||null},ts:Date.now()})}).catch(()=>{});
+    // #endregion
 
     const result = await updateExaminationData({
       no_rawat,

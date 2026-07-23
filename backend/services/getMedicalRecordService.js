@@ -957,6 +957,7 @@ class GetMedicalRecordService {
       suhu: row.suhu_tubuh || '',
       tinggi: row.tinggi || '',
       berat: row.berat || '',
+      spo2: row.spo2 || '',
       gcs: row.gcs || '',
       s: row.keluhan || '',
       o: row.pemeriksaan || '',
@@ -1233,6 +1234,7 @@ class GetMedicalRecordService {
               SELECT 1
               FROM mlite_veronisa mv
               WHERE mv.no_rawat = ro.no_rawat
+                AND DATE(mv.tgl_registrasi) = DATE(ro.tgl_peresepan)
             ) AS is_kronis
           FROM resep_obat ro
           LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
@@ -1498,6 +1500,7 @@ class GetMedicalRecordService {
                 SELECT 1
                 FROM mlite_veronisa mv
                 WHERE mv.no_rawat = ro.no_rawat
+                  AND DATE(mv.tgl_registrasi) = DATE(ro.tgl_peresepan)
               ) AS is_kronis
             FROM reg_periksa rp
             INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
@@ -1516,18 +1519,18 @@ class GetMedicalRecordService {
             ro.jam_peresepan,
             IF(ro.jam_peresepan = ro.jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan,
             ro.kd_dokter,
-            COALESCE(d.nm_dokter, '') AS nm_dokter,
-            EXISTS(
-              SELECT 1
-              FROM mlite_veronisa mv
-              WHERE mv.no_rawat = ro.no_rawat
-            ) AS is_kronis
-          FROM reg_periksa rp
-          INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
-          LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
-          WHERE rp.no_rkm_medis = ?
-            AND LOWER(COALESCE(ro.status, '')) = ?
-            AND rp.status_lanjut = 'Ranap'
+            COALESCE(d.nm_dokter, '') AS nm_dokter,              EXISTS(
+                SELECT 1
+                FROM mlite_veronisa mv
+                WHERE mv.no_rawat = ro.no_rawat
+                  AND DATE(mv.tgl_registrasi) = DATE(ro.tgl_peresepan)
+              ) AS is_kronis
+            FROM reg_periksa rp
+            INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
+            LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
+            WHERE rp.no_rkm_medis = ?
+              AND LOWER(COALESCE(ro.status, '')) = ?
+              AND rp.status_lanjut = 'Ranap'
           ORDER BY ro.tgl_peresepan DESC, ro.jam_peresepan DESC
           ${historyMode === 'latest' ? 'LIMIT 1' : ''}
         `;
