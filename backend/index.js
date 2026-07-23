@@ -61,9 +61,9 @@ initCrudAuditStorage();
 // #region debug-point A:save-exam-route-reporter
 const reportSaveExaminationDebug = (hypothesisId, location, msg, data = {}, runId = 'pre-fix') => {
   let debugServerUrl = 'http://127.0.0.1:7777/event';
-  let debugSessionId = 'save-pemeriksaan';
+  let debugSessionId = 'spo2-ranap-save';
   try {
-    const envContent = fs.readFileSync('.dbg/save-pemeriksaan.env', 'utf8');
+    const envContent = fs.readFileSync('.dbg/spo2-ranap-save.env', 'utf8');
     debugServerUrl = envContent.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || debugServerUrl;
     debugSessionId = envContent.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || debugSessionId;
   } catch {}
@@ -349,6 +349,7 @@ app.post('/api/save-examination', async (req, res) => {
       bodyKeys: Object.keys(req.body || {}),
       no_rawat: examinationData?.no_rawat || null,
       status_rawat: examinationData?.status_rawat || null,
+      spo2: examinationData?.spo2 ?? null,
       tgl_perawatan: examinationData?.tgl_perawatan || null,
       jam_rawat: examinationData?.jam_rawat || null,
       nip: examinationData?.nip || null

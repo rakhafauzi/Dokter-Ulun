@@ -28,6 +28,9 @@ export const updateExaminationData = async (examinationData) => {
   } = examinationData;
 
   try {
+    // #region debug-point D:update-exam-service-entry
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"spo2-ranap-save",runId:"pre-fix",hypothesisId:"D",location:"backend/services/updateExaminationService.js:updateExaminationData",msg:"[DEBUG] update examination service entry",data:{no_rawat:no_rawat||null,status_rawat:status_rawat||null,spo2:spo2??null,original_date:original_date||null,original_time:original_time||null,tgl_perawatan:tgl_perawatan||null,jam_rawat:jam_rawat||null},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     let query;
     let params;
     let tableName;
@@ -114,6 +117,9 @@ export const updateExaminationData = async (examinationData) => {
     }
     
     const result = await executeQuery(query, params);
+    // #region debug-point D:update-exam-service-result
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"spo2-ranap-save",runId:"pre-fix",hypothesisId:"D",location:"backend/services/updateExaminationService.js:updateExaminationData",msg:"[DEBUG] update examination query result",data:{tableName,spo2:spo2??null,affectedRows:result?.affectedRows??null},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     
     if (result.affectedRows === 0) {
       throw new Error(`No examination record found to update in ${tableName}`);

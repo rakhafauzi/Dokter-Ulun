@@ -957,6 +957,7 @@ class GetMedicalRecordService {
       suhu: row.suhu_tubuh || '',
       tinggi: row.tinggi || '',
       berat: row.berat || '',
+      spo2: row.spo2 || '',
       gcs: row.gcs || '',
       s: row.keluhan || '',
       o: row.pemeriksaan || '',
