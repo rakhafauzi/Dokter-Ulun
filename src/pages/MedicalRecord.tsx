@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PatientTable from "@/components/PatientTable";
@@ -1014,6 +1014,12 @@ const formatRouteNoRawat = (rawatParam?: string) => {
   return `${year}/${month}/${day}/${sequence}`;
 };
 
+const MEDICAL_RECORD_STAGE_TABS = ['visits', 'examinations', 'procedures', 'medications', 'laboratory', 'radiology'] as const;
+type MedicalRecordStageTab = typeof MEDICAL_RECORD_STAGE_TABS[number];
+
+const isMedicalRecordStageTab = (value: string | null | undefined): value is MedicalRecordStageTab =>
+  MEDICAL_RECORD_STAGE_TABS.includes(String(value || '').trim() as MedicalRecordStageTab);
+
 const getRadiologyPacsKey = (rad: any) => {
   const noRawat = String(rad?.no_rawat || '').trim();
   const examDate = String(rad?.tgl_periksa || String(rad?.tanggal || '').split(' ')[0] || '').trim();
@@ -1421,11 +1427,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   defaultStatusRawat
 }) => {
   const routeParams = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const no_rkm_medis = noRkmMedis || routeParams.no_rkm_medis;
   const rawatParam = noRawat || routeParams.no_rawat;
   const formattedNoRawat = formatRouteNoRawat(rawatParam);
   const routeSearchQuery = embedded ? '' : (searchParams.get('search') || '');
+  const requestedStageTab = searchParams.get('tab');
+  const initialStageTab: MedicalRecordStageTab = !embedded && isMedicalRecordStageTab(requestedStageTab)
+    ? requestedStageTab
+    : 'visits';
   const [medicalData, setMedicalData] = useState<MedicalRecordData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMoreVisits, setLoadingMoreVisits] = useState(false);
@@ -1719,7 +1729,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     total_out: true,
     balance: true,
   }));
-  const [activeTab, setActiveTab] = useState('visits');
+  const [activeTab, setActiveTab] = useState<MedicalRecordStageTab>(initialStageTab);
   const [visitHistoryTab, setVisitHistoryTab] = useState<VisitHistoryTabValue>('outpatient');
   const [examinationHistoryTab, setExaminationHistoryTab] = useState<ExaminationHistoryTabValue>('outpatient');
   const [pagination, setPagination] = useState<MedicalRecordPagination>({
@@ -1737,6 +1747,68 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     outpatient: [],
     inpatient: []
   });
+  const buildStageTabHref = useCallback((tab: MedicalRecordStageTab) => {
+    const normalizedNoRkmMedis = String(no_rkm_medis || '').trim();
+    const normalizedRawatParam = String(rawatParam || '').trim();
+
+    if (!normalizedNoRkmMedis) {
+      return '#';
+    }
+
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', tab);
+    const queryString = params.toString();
+    const basePath = normalizedRawatParam
+      ? `/rekam-medik/${encodeURIComponent(normalizedNoRkmMedis)}/${encodeURIComponent(normalizedRawatParam)}`
+      : `/rekam-medik/${encodeURIComponent(normalizedNoRkmMedis)}`;
+
+    return queryString ? `${basePath}?${queryString}` : basePath;
+  }, [no_rkm_medis, rawatParam, searchParams]);
+  const handleActiveTabChange = useCallback((value: string) => {
+    if (!isMedicalRecordStageTab(value)) {
+      return;
+    }
+
+    setActiveTab(value);
+
+    if (embedded) {
+      return;
+    }
+
+    setSearchParams((previousParams) => {
+      const nextParams = new URLSearchParams(previousParams);
+      nextParams.set('tab', value);
+      return nextParams;
+    }, { replace: true });
+  }, [embedded, setSearchParams]);
+  const handleStageTabLinkClick = useCallback((
+    event: React.MouseEvent<HTMLAnchorElement>,
+    tab: MedicalRecordStageTab
+  ) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    handleActiveTabChange(tab);
+  }, [handleActiveTabChange]);
+  useEffect(() => {
+    if (embedded) {
+      return;
+    }
+
+    const requestedTab = searchParams.get('tab');
+    if (isMedicalRecordStageTab(requestedTab) && requestedTab !== activeTab) {
+      setActiveTab(requestedTab);
+    }
+  }, [activeTab, embedded, searchParams]);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreExaminationRef = useRef<HTMLDivElement | null>(null);
   const examinationFormRef = useRef<HTMLDivElement | null>(null);
@@ -9753,31 +9825,55 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         </CardContent>
       </Card>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleActiveTabChange}>
         <TabsList className="mb-4">
-          <TabsTrigger value="visits">
-            <Calendar className="mr-2 h-4 w-4" />
-            Kunjungan
+          <TabsTrigger value="visits" asChild>
+            <Link to={buildStageTabHref('visits')} onClick={(event) => handleStageTabLinkClick(event, 'visits')}>
+              <>
+                <Calendar className="mr-2 h-4 w-4" />
+                Kunjungan
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="examinations">
-            <Stethoscope className="mr-2 h-4 w-4" />
-            Pemeriksaan
+          <TabsTrigger value="examinations" asChild>
+            <Link to={buildStageTabHref('examinations')} onClick={(event) => handleStageTabLinkClick(event, 'examinations')}>
+              <>
+                <Stethoscope className="mr-2 h-4 w-4" />
+                Pemeriksaan
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="procedures">
-            <Syringe className="mr-2 h-4 w-4" />
-            Tindakan
+          <TabsTrigger value="procedures" asChild>
+            <Link to={buildStageTabHref('procedures')} onClick={(event) => handleStageTabLinkClick(event, 'procedures')}>
+              <>
+                <Syringe className="mr-2 h-4 w-4" />
+                Tindakan
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="medications">
-            <Pill className="mr-2 h-4 w-4" />
-            Resep
+          <TabsTrigger value="medications" asChild>
+            <Link to={buildStageTabHref('medications')} onClick={(event) => handleStageTabLinkClick(event, 'medications')}>
+              <>
+                <Pill className="mr-2 h-4 w-4" />
+                Resep
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="laboratory">
-            <FlaskConical className="mr-2 h-4 w-4" />
-            Laboratorium
+          <TabsTrigger value="laboratory" asChild>
+            <Link to={buildStageTabHref('laboratory')} onClick={(event) => handleStageTabLinkClick(event, 'laboratory')}>
+              <>
+                <FlaskConical className="mr-2 h-4 w-4" />
+                Laboratorium
+              </>
+            </Link>
           </TabsTrigger>
-          <TabsTrigger value="radiology">
-            <Radio className="mr-2 h-4 w-4" />
-            Radiologi
+          <TabsTrigger value="radiology" asChild>
+            <Link to={buildStageTabHref('radiology')} onClick={(event) => handleStageTabLinkClick(event, 'radiology')}>
+              <>
+                <Radio className="mr-2 h-4 w-4" />
+                Radiologi
+              </>
+            </Link>
           </TabsTrigger>
         </TabsList>
 
