@@ -1,6 +1,23 @@
 import db from '../config/database.js';
 
 const CATEGORY_ORDER = ['Assessment', 'Monitoring', 'Tindakan', 'Obat', 'Laboratorium', 'Radiologi', 'Nutrisi', 'Edukasi', 'Outcome'];
+const DEFAULT_MASTER_CP_PRESETS = [
+  { kode_cp: 'CP-HERNIA', nama_cp: 'Hernia' },
+  { kode_cp: 'CP-SC', nama_cp: 'SC' },
+  { kode_cp: 'CP-LUNGTB', nama_cp: 'Lung TB' },
+  { kode_cp: 'CP-HIPERTENSI', nama_cp: 'Hipertensi' },
+  { kode_cp: 'CP-PNEUMONIA', nama_cp: 'Pneumonia' },
+  { kode_cp: 'CP-HIPEREMESIS', nama_cp: 'Hiperemesis gravid' },
+  { kode_cp: 'CP-KLW', nama_cp: 'Kehamilan lewat waktu' },
+  { kode_cp: 'CP-APP', nama_cp: 'APP' },
+  { kode_cp: 'CP-TUMOR-MAMAE', nama_cp: 'Tumor Mamae' },
+  { kode_cp: 'CP-GEA', nama_cp: 'GEA' },
+  { kode_cp: 'CP-ABORTUS-INKOMPLIT', nama_cp: 'Abortus Inkomplit' },
+  { kode_cp: 'CP-PEB', nama_cp: 'PEB' },
+  { kode_cp: 'CP-PERSALINAN-NORMAL', nama_cp: 'Persalinan Normal' },
+  { kode_cp: 'CP-CHF', nama_cp: 'CHF' },
+  { kode_cp: 'CP-TONSILITIS', nama_cp: 'Tonsilitis' }
+];
 
 class ClinicalPathwayService {
   normalizeNoRawat(noRawat) {
@@ -77,6 +94,52 @@ class ClinicalPathwayService {
 
   sanitizeLabel(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  getDefaultMasterPathwayPresets() {
+    return DEFAULT_MASTER_CP_PRESETS.map((item, index) => ({
+      kode_cp: item.kode_cp,
+      nama_cp: item.nama_cp,
+      jenis_layanan: 'Ranap',
+      target_los: 3,
+      target_tarif: 0,
+      confidence_score: Math.max(1, 100 - index),
+      evidence_note: 'Preset default Clinical Pathway',
+      guideline_note: 'Seed default master clinical pathway',
+      aktif: 'Ya'
+    }));
+  }
+
+  async ensureMasterCodeUniqueConstraint(connection) {
+    const [duplicateRows] = await connection.execute(
+      `SELECT kode_cp, COUNT(*) AS total
+       FROM mlite_clinical_pathway
+       WHERE kode_cp IS NOT NULL AND TRIM(kode_cp) <> ''
+       GROUP BY kode_cp
+       HAVING COUNT(*) > 1
+       LIMIT 5`
+    );
+
+    if (duplicateRows.length) {
+      const duplicateCodes = duplicateRows.map((row) => String(row.kode_cp || '').trim()).filter(Boolean);
+      throw new Error(`Tidak bisa membuat unique index kode_cp karena masih ada duplikasi: ${duplicateCodes.join(', ')}`);
+    }
+
+    const [indexRows] = await connection.execute(
+      `SELECT INDEX_NAME
+       FROM INFORMATION_SCHEMA.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'mlite_clinical_pathway'
+         AND COLUMN_NAME = 'kode_cp'
+         AND NON_UNIQUE = 0`
+    );
+
+    const hasUniqueIndex = Array.isArray(indexRows) && indexRows.some((row) => String(row?.INDEX_NAME || '').trim());
+    if (!hasUniqueIndex) {
+      await connection.execute(
+        'ALTER TABLE mlite_clinical_pathway ADD CONSTRAINT uq_mlite_clinical_pathway_kode_cp UNIQUE (kode_cp)'
+      );
+    }
   }
 
   inferUraianKegiatan(kategori, aktivitas) {
@@ -1295,37 +1358,14 @@ class ClinicalPathwayService {
     }
   }
 
-  normalizeCpptTemplatePayload(payload = {}) {
-    return {
-      kd_penyakit: this.sanitizeLabel(payload.kd_penyakit).toUpperCase(),
-      ppra: String(payload.ppra || '').trim(),
-      subjective: String(payload.subjective || '').trim(),
-      objective: String(payload.objective || '').trim(),
-      assessment: String(payload.assessment || '').trim(),
-      plan: String(payload.plan || '').trim(),
-      aktif: String(payload.aktif || 'Ya').trim() === 'Tidak' ? 'Tidak' : 'Ya'
-    };
-  }
-
-  validateCpptTemplatePayload(payload) {
-    if (!payload.kd_penyakit) {
-      throw new Error('Kode diagnosis ICD-10 harus diisi.');
-    }
-
-    if (!payload.ppra) {
-      throw new Error('PPRA harus diisi.');
-    }
-  }
-
   async getMasterManagementSummary() {
-    const [masterRows, templateRows, mappingRows, patientRows, activeRows, avgRows, cpptRows] = await Promise.all([
+    const [masterRows, templateRows, mappingRows, patientRows, activeRows, avgRows] = await Promise.all([
       db.execute('SELECT COUNT(*) AS total FROM mlite_clinical_pathway'),
       db.execute('SELECT COUNT(*) AS total FROM mlite_clinical_pathway_activity'),
       db.execute('SELECT COUNT(*) AS total FROM mlite_clinical_pathway_diagnosis'),
       db.execute('SELECT COUNT(*) AS total FROM mlite_clinical_pathway_patient'),
       db.execute("SELECT COUNT(*) AS total FROM mlite_clinical_pathway_patient WHERE status = 'Aktif'"),
-      db.execute('SELECT COALESCE(AVG(compliance_percentage), 0) AS total FROM mlite_clinical_pathway_compliance'),
-      db.execute('SELECT COUNT(*) AS total FROM mlite_clinical_pathway_cppt_template')
+      db.execute('SELECT COALESCE(AVG(compliance_percentage), 0) AS total FROM mlite_clinical_pathway_compliance')
     ]);
 
     return {
@@ -1336,8 +1376,7 @@ class ClinicalPathwayService {
         mapping_count: Number(mappingRows[0]?.[0]?.total || 0),
         patient_count: Number(patientRows[0]?.[0]?.total || 0),
         active_patient_count: Number(activeRows[0]?.[0]?.total || 0),
-        average_compliance_percentage: Number(avgRows[0]?.[0]?.total || 0),
-        cppt_template_count: Number(cpptRows[0]?.[0]?.total || 0)
+        average_compliance_percentage: Number(avgRows[0]?.[0]?.total || 0)
       }
     };
   }
@@ -2072,6 +2111,14 @@ class ClinicalPathwayService {
           throw new Error('Master CP tidak ditemukan.');
         }
 
+        const [duplicateRows] = await connection.execute(
+          'SELECT id FROM mlite_clinical_pathway WHERE kode_cp = ? AND id <> ? LIMIT 1',
+          [normalized.kode_cp, currentId]
+        );
+        if (duplicateRows.length) {
+          throw new Error('Kode Master CP sudah digunakan.');
+        }
+
         await connection.execute(
           `UPDATE mlite_clinical_pathway
            SET kode_cp = ?, nama_cp = ?, jenis_layanan = ?, target_los = ?, target_tarif = ?, confidence_score = ?, evidence_note = ?, guideline_note = ?, aktif = ?
@@ -2212,6 +2259,99 @@ class ClinicalPathwayService {
     }
   }
 
+  async seedDefaultMasterPathways() {
+    let connection;
+    try {
+      const presets = this.getDefaultMasterPathwayPresets();
+      connection = await db.getConnection();
+      await connection.beginTransaction();
+
+      const presetCodes = presets.map((item) => item.kode_cp);
+      const codePlaceholders = presetCodes.map(() => '?').join(',');
+
+      const [existingRows] = await connection.execute(
+        `SELECT id, kode_cp, nama_cp
+         FROM mlite_clinical_pathway
+         WHERE kode_cp IN (${codePlaceholders})`,
+        presetCodes
+      );
+      const existingMap = new Map(
+        (Array.isArray(existingRows) ? existingRows : []).map((row) => [String(row.kode_cp || '').trim(), row])
+      );
+
+      let insertedCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+
+      for (const preset of presets) {
+        const existing = existingMap.get(preset.kode_cp);
+        if (existing) {
+          if (String(existing.nama_cp || '').trim() !== preset.nama_cp) {
+            await connection.execute(
+              `UPDATE mlite_clinical_pathway
+               SET nama_cp = ?, aktif = 'Ya'
+               WHERE id = ?`,
+              [preset.nama_cp, existing.id]
+            );
+            updatedCount += 1;
+          } else {
+            skippedCount += 1;
+          }
+          continue;
+        }
+
+        await connection.execute(
+          `INSERT INTO mlite_clinical_pathway
+            (kode_cp, nama_cp, jenis_layanan, target_los, target_tarif, confidence_score, evidence_note, guideline_note, aktif)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            preset.kode_cp,
+            preset.nama_cp,
+            preset.jenis_layanan,
+            preset.target_los,
+            preset.target_tarif,
+            preset.confidence_score,
+            preset.evidence_note,
+            preset.guideline_note,
+            preset.aktif
+          ]
+        );
+        insertedCount += 1;
+      }
+
+      await this.ensureMasterCodeUniqueConstraint(connection);
+
+      await connection.commit();
+      connection.release();
+      connection = null;
+
+      return {
+        success: true,
+        message: 'Seed Master CP default berhasil dijalankan',
+        data: {
+          inserted_count: insertedCount,
+          updated_count: updatedCount,
+          skipped_count: skippedCount,
+          presets: presets.map((item) => ({
+            kode_cp: item.kode_cp,
+            nama_cp: item.nama_cp
+          }))
+        }
+      };
+    } catch (error) {
+      if (connection) {
+        await connection.rollback();
+        connection.release();
+      }
+
+      return {
+        success: false,
+        message: error.message || 'Gagal menyiapkan Master CP default',
+        data: null
+      };
+    }
+  }
+
   async deleteMasterPathway(clinicalPathwayId) {
     let connection;
     try {
@@ -2268,211 +2408,6 @@ class ClinicalPathwayService {
       return {
         success: false,
         message: error.message || 'Gagal menghapus Master CP'
-      };
-    }
-  }
-
-  async getCpptTemplateList(filters = {}) {
-    const page = Math.max(1, Number(filters.page || 1));
-    const limit = Math.max(1, Math.min(100, Number(filters.limit || 20)));
-    const offset = (page - 1) * limit;
-    const search = this.sanitizeLabel(filters.search);
-    const aktifFilter = String(filters.aktif || '').trim();
-
-    const whereClauses = ['1 = 1'];
-    const params = [];
-
-    if (search) {
-      whereClauses.push('(t.kd_penyakit LIKE ? OR py.nm_penyakit LIKE ? OR t.ppra LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    }
-
-    if (aktifFilter === 'Ya' || aktifFilter === 'Tidak') {
-      whereClauses.push('t.aktif = ?');
-      params.push(aktifFilter);
-    }
-
-    const whereSql = whereClauses.join(' AND ');
-
-    const [rows] = await db.execute(
-      `SELECT
-        t.id,
-        t.kd_penyakit,
-        COALESCE(py.nm_penyakit, '') AS nm_penyakit,
-        COALESCE(t.ppra, '') AS ppra,
-        COALESCE(t.subjective, '') AS subjective,
-        COALESCE(t.objective, '') AS objective,
-        COALESCE(t.assessment, '') AS assessment,
-        COALESCE(t.plan, '') AS plan,
-        t.aktif
-      FROM mlite_clinical_pathway_cppt_template t
-      LEFT JOIN penyakit py ON py.kd_penyakit = t.kd_penyakit
-      WHERE ${whereSql}
-      ORDER BY t.aktif DESC, t.ppra ASC, t.kd_penyakit ASC, t.id ASC
-      LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
-
-    const [countRows] = await db.execute(
-      `SELECT COUNT(*) AS total
-       FROM mlite_clinical_pathway_cppt_template t
-       LEFT JOIN penyakit py ON py.kd_penyakit = t.kd_penyakit
-       WHERE ${whereSql}`,
-      params
-    );
-
-    return {
-      success: true,
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total: Number(countRows[0]?.total || 0),
-        totalPages: Math.max(1, Math.ceil(Number(countRows[0]?.total || 0) / limit))
-      }
-    };
-  }
-
-  async getCpptTemplateDetail(cpptTemplateId) {
-    const id = Number(cpptTemplateId || 0);
-    if (!id) {
-      return {
-        success: false,
-        message: 'Template CPPT tidak valid',
-        data: null
-      };
-    }
-
-    const [rows] = await db.execute(
-      `SELECT
-        t.id,
-        t.kd_penyakit,
-        COALESCE(py.nm_penyakit, '') AS nm_penyakit,
-        COALESCE(t.ppra, '') AS ppra,
-        COALESCE(t.subjective, '') AS subjective,
-        COALESCE(t.objective, '') AS objective,
-        COALESCE(t.assessment, '') AS assessment,
-        COALESCE(t.plan, '') AS plan,
-        t.aktif
-      FROM mlite_clinical_pathway_cppt_template t
-      LEFT JOIN penyakit py ON py.kd_penyakit = t.kd_penyakit
-      WHERE t.id = ?
-      LIMIT 1`,
-      [id]
-    );
-
-    if (!rows.length) {
-      return {
-        success: false,
-        message: 'Template CPPT tidak ditemukan',
-        data: null
-      };
-    }
-
-    return {
-      success: true,
-      data: rows[0]
-    };
-  }
-
-  async saveCpptTemplate(payload, cpptTemplateId = null) {
-    const normalized = this.normalizeCpptTemplatePayload(payload);
-
-    try {
-      this.validateCpptTemplatePayload(normalized);
-
-      const currentId = Number(cpptTemplateId || 0);
-      if (currentId) {
-        const [existingRows] = await db.execute(
-          'SELECT id FROM mlite_clinical_pathway_cppt_template WHERE id = ? LIMIT 1',
-          [currentId]
-        );
-
-        if (!existingRows.length) {
-          throw new Error('Template CPPT tidak ditemukan.');
-        }
-
-        await db.execute(
-          `UPDATE mlite_clinical_pathway_cppt_template
-           SET kd_penyakit = ?, ppra = ?, subjective = ?, objective = ?, assessment = ?, plan = ?, aktif = ?
-           WHERE id = ?`,
-          [
-            normalized.kd_penyakit,
-            normalized.ppra,
-            normalized.subjective,
-            normalized.objective,
-            normalized.assessment,
-            normalized.plan,
-            normalized.aktif,
-            currentId
-          ]
-        );
-
-        return {
-          success: true,
-          message: 'Template CPPT berhasil diperbarui',
-          data: (await this.getCpptTemplateDetail(currentId)).data
-        };
-      }
-
-      const [insertResult] = await db.execute(
-        `INSERT INTO mlite_clinical_pathway_cppt_template
-          (kd_penyakit, ppra, subjective, objective, assessment, plan, aktif)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          normalized.kd_penyakit,
-          normalized.ppra,
-          normalized.subjective,
-          normalized.objective,
-          normalized.assessment,
-          normalized.plan,
-          normalized.aktif
-        ]
-      );
-
-      return {
-        success: true,
-        message: 'Template CPPT berhasil dibuat',
-        data: (await this.getCpptTemplateDetail(Number(insertResult.insertId))).data
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message || 'Gagal menyimpan template CPPT',
-        data: null
-      };
-    }
-  }
-
-  async deleteCpptTemplate(cpptTemplateId) {
-    const id = Number(cpptTemplateId || 0);
-    if (!id) {
-      return {
-        success: false,
-        message: 'Template CPPT tidak valid'
-      };
-    }
-
-    try {
-      const [existingRows] = await db.execute(
-        'SELECT id FROM mlite_clinical_pathway_cppt_template WHERE id = ? LIMIT 1',
-        [id]
-      );
-
-      if (!existingRows.length) {
-        throw new Error('Template CPPT tidak ditemukan.');
-      }
-
-      await db.execute('DELETE FROM mlite_clinical_pathway_cppt_template WHERE id = ?', [id]);
-
-      return {
-        success: true,
-        message: 'Template CPPT berhasil dihapus'
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message || 'Gagal menghapus template CPPT'
       };
     }
   }

@@ -184,41 +184,6 @@ const validateMasterClinicalPathwayId = [
     .withMessage('ID Master CP tidak valid')
 ];
 
-const validateCpptTemplatePayload = [
-  body('kd_penyakit')
-    .notEmpty()
-    .withMessage('Kode ICD-10 harus diisi'),
-  body('ppra')
-    .notEmpty()
-    .withMessage('PPRA harus diisi'),
-  body('subjective')
-    .optional()
-    .isString()
-    .withMessage('Subjective tidak valid'),
-  body('objective')
-    .optional()
-    .isString()
-    .withMessage('Objective tidak valid'),
-  body('assessment')
-    .optional()
-    .isString()
-    .withMessage('Assessment tidak valid'),
-  body('plan')
-    .optional()
-    .isString()
-    .withMessage('Plan tidak valid'),
-  body('aktif')
-    .optional()
-    .isIn(['Ya', 'Tidak'])
-    .withMessage('Status aktif harus Ya atau Tidak')
-];
-
-const validateCpptTemplateId = [
-  param('cpptId')
-    .isInt({ min: 1 })
-    .withMessage('ID template CPPT tidak valid')
-];
-
 const validateTemplateDayPayload = [
   body('clinical_pathway_id')
     .isInt({ min: 1 })
@@ -415,6 +380,30 @@ router.put('/master/:id', requireClinicalPathwayAdminAccess, [...validateMasterC
       reference_id: req.params.id
     });
     console.error('Error in clinical pathway master update route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.post('/master/seed-defaults', requireClinicalPathwayAdminAccess, async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.seedDefaultMasterPathways();
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await auditCrudSuccess(req, 'clinical_pathway_master', 'seed_defaults', result, {
+      reference_id: 'default-master-cp'
+    });
+    return res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'clinical_pathway_master', 'seed_defaults', error, {
+      reference_id: 'default-master-cp'
+    });
+    console.error('Error in clinical pathway master seed route:', error);
     return res.status(500).json({
       success: false,
       message: 'Terjadi kesalahan server',
@@ -737,47 +726,6 @@ router.delete('/mapping/:mappingId', requireClinicalPathwayAdminAccess, validate
   }
 });
 
-router.get('/cppt', requireClinicalPathwayAdminAccess, async (req, res) => {
-  try {
-    const result = await clinicalPathwayService.getCpptTemplateList(req.query);
-    return res.json(result);
-  } catch (error) {
-    console.error('Error in clinical pathway cppt list route:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Terjadi kesalahan server',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-router.get('/cppt/:cpptId', requireClinicalPathwayAdminAccess, validateCpptTemplateId, async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data tidak valid',
-        errors: errors.array()
-      });
-    }
-
-    const result = await clinicalPathwayService.getCpptTemplateDetail(Number(req.params.cpptId));
-    if (!result.success) {
-      return res.status(404).json(result);
-    }
-
-    return res.json(result);
-  } catch (error) {
-    console.error('Error in clinical pathway cppt detail route:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Terjadi kesalahan server',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 router.get('/generator/preview/by-no-rawat/:no_rawat', async (req, res) => {
   try {
     const result = await clinicalPathwayService.getGeneratorPreviewByNoRawat(
@@ -806,103 +754,6 @@ router.get('/monitoring', requireClinicalPathwayAdminAccess, async (req, res) =>
     return res.json(result);
   } catch (error) {
     console.error('Error in clinical pathway monitoring list route:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Terjadi kesalahan server',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-router.post('/cppt', requireClinicalPathwayAdminAccess, validateCpptTemplatePayload, async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data tidak valid',
-        errors: errors.array()
-      });
-    }
-
-    const result = await clinicalPathwayService.saveCpptTemplate(req.body);
-    if (!result.success) {
-      return res.status(400).json(result);
-    }
-
-    await auditCrudSuccess(req, 'clinical_pathway_cppt_template', 'create', result, {
-      reference_id: result.data?.id
-    });
-    return res.status(201).json(result);
-  } catch (error) {
-    await auditCrudFailure(req, 'clinical_pathway_cppt_template', 'create', error);
-    console.error('Error in clinical pathway cppt create route:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Terjadi kesalahan server',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-router.put('/cppt/:cpptId', requireClinicalPathwayAdminAccess, [...validateCpptTemplateId, ...validateCpptTemplatePayload], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data tidak valid',
-        errors: errors.array()
-      });
-    }
-
-    const result = await clinicalPathwayService.saveCpptTemplate(req.body, Number(req.params.cpptId));
-    if (!result.success) {
-      return res.status(400).json(result);
-    }
-
-    await auditCrudSuccess(req, 'clinical_pathway_cppt_template', 'update', result, {
-      reference_id: req.params.cpptId
-    });
-    return res.json(result);
-  } catch (error) {
-    await auditCrudFailure(req, 'clinical_pathway_cppt_template', 'update', error, {
-      reference_id: req.params.cpptId
-    });
-    console.error('Error in clinical pathway cppt update route:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Terjadi kesalahan server',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-router.delete('/cppt/:cpptId', requireClinicalPathwayAdminAccess, validateCpptTemplateId, async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data tidak valid',
-        errors: errors.array()
-      });
-    }
-
-    const result = await clinicalPathwayService.deleteCpptTemplate(Number(req.params.cpptId));
-    if (!result.success) {
-      return res.status(400).json(result);
-    }
-
-    await auditCrudSuccess(req, 'clinical_pathway_cppt_template', 'delete', result, {
-      reference_id: req.params.cpptId
-    });
-    return res.json(result);
-  } catch (error) {
-    await auditCrudFailure(req, 'clinical_pathway_cppt_template', 'delete', error, {
-      reference_id: req.params.cpptId
-    });
-    console.error('Error in clinical pathway cppt delete route:', error);
     return res.status(500).json({
       success: false,
       message: 'Terjadi kesalahan server',

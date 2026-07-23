@@ -25,3 +25,5 @@ dist-ssr
 .env*
 backend/.env*
 php-native/*
+backend/scripts/importCp*.js
+backend/scripts/auditCpTemplates.js

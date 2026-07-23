@@ -1,21 +1,24 @@
 import React from 'react';
 import logoImg from '@/assets/logo.png';
 import { Button } from '@/components/ui/button';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useToast } from '@/hooks/use-toast';
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { cn } from '@/lib/utils';
 import {
+  Check,
+  ChevronsUpDown,
   ClipboardList,
   Loader2,
   Printer,
   RefreshCw,
-  Save,
-  Search,
-  Trash2
+  Search
 } from 'lucide-react';
 
 type TabKey =
@@ -23,7 +26,6 @@ type TabKey =
   | 'master'
   | 'template'
   | 'mapping'
-  | 'cppt'
   | 'generator'
   | 'monitoring';
 
@@ -34,7 +36,6 @@ type MasterSummary = {
   patient_count: number;
   active_patient_count: number;
   average_compliance_percentage: number;
-  cppt_template_count: number;
 };
 
 type DashboardPatient = {
@@ -133,30 +134,6 @@ type MappingForm = {
   tipe: 'Utama' | 'Sekunder';
 };
 
-type CpptItem = {
-  id: number;
-  kd_penyakit: string;
-  nm_penyakit: string;
-  ppra: string;
-  subjective: string;
-  objective: string;
-  assessment: string;
-  plan: string;
-  aktif: 'Ya' | 'Tidak';
-};
-
-type CpptForm = {
-  id: number | null;
-  kd_penyakit: string;
-  nm_penyakit: string;
-  ppra: string;
-  subjective: string;
-  objective: string;
-  assessment: string;
-  plan: string;
-  aktif: 'Ya' | 'Tidak';
-};
-
 type IcdSearchItem = {
   kd_penyakit: string;
   nm_penyakit: string;
@@ -238,6 +215,7 @@ type MonitoringExecutionItem = {
   uraian_kegiatan: string;
   aktivitas: string;
   keterangan: string;
+  catatan?: string;
 };
 
 type MonitoringVarianceItem = {
@@ -262,6 +240,8 @@ type MonitoringDetail = {
     jam_reg?: string;
     tgl_masuk?: string;
     tgl_keluar?: string;
+    tanggal_selesai?: string;
+    status_layanan?: string;
     kd_penyakit: string;
     nm_penyakit: string;
     kode_cp: string;
@@ -293,6 +273,30 @@ type ApiDetailResponse<T> = {
   message?: string;
 };
 
+type SearchableMasterSelectProps = {
+  options: MasterOption[];
+  value: number;
+  onChange: (value: number) => void;
+  placeholder: string;
+  searchPlaceholder?: string;
+  emptyText?: string;
+  allowEmpty?: boolean;
+  emptyOptionLabel?: string;
+  className?: string;
+  disabled?: boolean;
+};
+
+type SearchableCategorySelectProps = {
+  groups: Array<{ label: string; options: string[] }>;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  searchPlaceholder?: string;
+  emptyText?: string;
+  className?: string;
+  disabled?: boolean;
+};
+
 type DashboardResponse = {
   success: boolean;
   data?: {
@@ -302,25 +306,44 @@ type DashboardResponse = {
   message?: string;
 };
 
-type MasterSummaryResponse = {
-  success: boolean;
-  data?: MasterSummary;
-  message?: string;
-};
-
-const CATEGORY_OPTIONS = [
-  'Assessment',
-  'Monitoring',
-  'Tindakan',
-  'Obat',
-  'Laboratorium',
-  'Radiologi',
-  'Nutrisi',
-  'Edukasi',
-  'Outcome'
+const CATEGORY_GROUP_OPTIONS = [
+  {
+    label: 'Pemeriksaan dan Asesmen',
+    options: ['Pemeriksaan klinis', 'Laboratorium', 'Radiologi/ imaging', 'Elektromedik', 'Konsultasi', 'Asesmen klinis']
+  },
+  {
+    label: 'Edukasi dan Form',
+    options: ['Edukasi', 'Pengisian form', 'Prosedur administrasi', 'Rencana pulang/edukasi']
+  },
+  {
+    label: 'Terapi/ medikamentosa',
+    options: [
+      'Terapi/ medikamentosa',
+      'Terapi/ medikamentosa - Injeksi',
+      'Terapi/ medikamentosa - Obat anestesi',
+      'Terapi/ medikamentosa - Cairan infus',
+      'Terapi/ medikamentosa - Obat oral',
+      'Terapi/ medikamentosa - Benang'
+    ]
+  },
+  {
+    label: 'Diet dan Tindakan',
+    options: ['Diet/nutrisi', 'Tindakan', 'Mobilisasi']
+  },
+  {
+    label: 'Monitoring (Post Op)',
+    options: [
+      'Monitoring (Post Op)',
+      'Monitoring (Post Op) - Perawat',
+      'Monitoring (Post Op) - Dokter ruangan',
+      'Monitoring (Post Op) - Dokter DPJP'
+    ]
+  },
+  {
+    label: 'Outcome dan Variasi',
+    options: ['Outcome', 'Variasi']
+  }
 ];
-
-const PPRA_OPTIONS = ['Medis', 'Keperawatan', 'Farmasi', 'Gizi', 'Rehabilitasi'];
 
 const topButtonClass = 'rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-muted hover:text-primary';
 const activeTopButtonClass = 'rounded-md border border-primary/20 bg-primary text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 px-3 py-2';
@@ -330,6 +353,133 @@ const inputClass = 'h-9 w-full rounded-md border border-input bg-background px-3
 const textareaClass = 'min-h-[88px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-offset-background transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 const tableHeadClass = 'border-b bg-muted/50 px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 dark:border-slate-800';
 const tableCellClass = 'border-b px-3 py-2 text-xs text-slate-700 align-top dark:text-slate-300 dark:border-slate-800';
+
+const SearchableMasterSelect = ({
+  options,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder = 'Cari Clinical Pathway...',
+  emptyText = 'Data Clinical Pathway tidak ditemukan.',
+  allowEmpty = false,
+  emptyOptionLabel = 'Semua Clinical Pathway',
+  className,
+  disabled = false
+}: SearchableMasterSelectProps) => {
+  const [open, setOpen] = React.useState(false);
+  const selectedOption = options.find((item) => Number(item.id) === Number(value || 0)) || null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className={cn('h-9 w-full justify-between border-input bg-background px-3 text-sm font-normal', className)}
+        >
+          <span className="truncate">
+            {selectedOption ? `${selectedOption.kode_cp} - ${selectedOption.nama_cp}` : placeholder}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder={searchPlaceholder} />
+          <CommandList>
+            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandGroup>
+              {allowEmpty ? (
+                <CommandItem
+                  value={emptyOptionLabel}
+                  onSelect={() => {
+                    onChange(0);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn('mr-2 h-4 w-4', Number(value || 0) === 0 ? 'opacity-100' : 'opacity-0')} />
+                  {emptyOptionLabel}
+                </CommandItem>
+              ) : null}
+              {options.map((item) => (
+                <CommandItem
+                  key={item.id}
+                  value={`${item.kode_cp} ${item.nama_cp}`}
+                  onSelect={() => {
+                    onChange(Number(item.id));
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn('mr-2 h-4 w-4', Number(value || 0) === Number(item.id) ? 'opacity-100' : 'opacity-0')} />
+                  <span className="truncate">{item.kode_cp} - {item.nama_cp}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+const SearchableCategorySelect = ({
+  groups,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder = 'Cari kategori...',
+  emptyText = 'Kategori tidak ditemukan.',
+  className,
+  disabled = false
+}: SearchableCategorySelectProps) => {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className={cn('h-9 w-full justify-between border-input bg-background px-3 text-sm font-normal', className)}
+        >
+          <span className="truncate">{value || placeholder}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder={searchPlaceholder} />
+          <CommandList>
+            <CommandEmpty>{emptyText}</CommandEmpty>
+            {groups.map((group) => (
+              <CommandGroup key={group.label} heading={group.label}>
+                {group.options.map((item) => (
+                  <CommandItem
+                    key={item}
+                    value={`${group.label} ${item}`}
+                    onSelect={() => {
+                      onChange(item);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check className={cn('mr-2 h-4 w-4', value === item ? 'opacity-100' : 'opacity-0')} />
+                    <span className="truncate">{item}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 const createEmptyMasterForm = (): MasterForm => ({
   id: null,
@@ -367,18 +517,6 @@ const createEmptyMappingForm = (): MappingForm => ({
   confidence_score: 0,
   prioritas: 1,
   tipe: 'Utama'
-});
-
-const createEmptyCpptForm = (): CpptForm => ({
-  id: null,
-  kd_penyakit: '',
-  nm_penyakit: '',
-  ppra: '',
-  subjective: '',
-  objective: '',
-  assessment: '',
-  plan: '',
-  aktif: 'Ya'
 });
 
 const formatPercent = (value: number) => `${Number(value || 0).toFixed(2)}%`;
@@ -419,7 +557,6 @@ const ClinicalPathwayMaster: React.FC = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState<TabKey>('dashboard');
   const [masterOptions, setMasterOptions] = React.useState<MasterOption[]>([]);
-  const [loadingMasterOptions, setLoadingMasterOptions] = React.useState(false);
 
   const [dashboardLoading, setDashboardLoading] = React.useState(false);
   const [dashboardSummary, setDashboardSummary] = React.useState<MasterSummary>({
@@ -428,8 +565,7 @@ const ClinicalPathwayMaster: React.FC = () => {
     mapping_count: 0,
     patient_count: 0,
     active_patient_count: 0,
-    average_compliance_percentage: 0,
-    cppt_template_count: 0
+    average_compliance_percentage: 0
   });
   const [dashboardPatients, setDashboardPatients] = React.useState<DashboardPatient[]>([]);
 
@@ -457,16 +593,6 @@ const ClinicalPathwayMaster: React.FC = () => {
   const [mappingIcdSearch, setMappingIcdSearch] = React.useState('');
   const [mappingIcdResults, setMappingIcdResults] = React.useState<IcdSearchItem[]>([]);
   const [mappingIcdLoading, setMappingIcdLoading] = React.useState(false);
-
-  const [cpptSearch, setCpptSearch] = React.useState('');
-  const [cpptListLoading, setCpptListLoading] = React.useState(false);
-  const [cpptList, setCpptList] = React.useState<CpptItem[]>([]);
-  const [cpptForm, setCpptForm] = React.useState<CpptForm>(createEmptyCpptForm());
-  const [cpptSaving, setCpptSaving] = React.useState(false);
-  const [cpptDeletingId, setCpptDeletingId] = React.useState<number | null>(null);
-  const [cpptIcdSearch, setCpptIcdSearch] = React.useState('');
-  const [cpptIcdResults, setCpptIcdResults] = React.useState<IcdSearchItem[]>([]);
-  const [cpptIcdLoading, setCpptIcdLoading] = React.useState(false);
 
   const [generatorNoRawat, setGeneratorNoRawat] = React.useState('');
   const [generatorMasterId, setGeneratorMasterId] = React.useState(0);
@@ -510,13 +636,10 @@ const ClinicalPathwayMaster: React.FC = () => {
 
   const fetchMasterOptions = React.useCallback(async () => {
     try {
-      setLoadingMasterOptions(true);
       const result = await requestJson<ApiListResponse<MasterOption>>(`${API_URLS.CLINICAL_PATHWAY}/master?limit=100`);
       setMasterOptions(Array.isArray(result.data) ? result.data : []);
     } catch (error) {
       console.error('Error loading master options:', error);
-    } finally {
-      setLoadingMasterOptions(false);
     }
   }, [requestJson]);
 
@@ -530,8 +653,7 @@ const ClinicalPathwayMaster: React.FC = () => {
         mapping_count: 0,
         patient_count: 0,
         active_patient_count: 0,
-        average_compliance_percentage: 0,
-        cppt_template_count: 0
+        average_compliance_percentage: 0
       });
       setDashboardPatients(Array.isArray(result.data?.latest_patients) ? result.data!.latest_patients : []);
     } catch (error) {
@@ -612,27 +734,6 @@ const ClinicalPathwayMaster: React.FC = () => {
     }
   }, [mappingFilterMasterId, mappingSearch, requestJson, toast]);
 
-  const fetchCpptList = React.useCallback(async () => {
-    try {
-      setCpptListLoading(true);
-      const query = new URLSearchParams({ limit: '100' });
-      if (cpptSearch.trim()) {
-        query.set('search', cpptSearch.trim());
-      }
-      const result = await requestJson<ApiListResponse<CpptItem>>(`${API_URLS.CLINICAL_PATHWAY}/cppt?${query.toString()}`);
-      setCpptList(Array.isArray(result.data) ? result.data : []);
-    } catch (error) {
-      console.error('Error loading CPPT list:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Gagal memuat template CPPT',
-        variant: 'destructive'
-      });
-    } finally {
-      setCpptListLoading(false);
-    }
-  }, [cpptSearch, requestJson, toast]);
-
   const fetchMonitoringList = React.useCallback(async () => {
     try {
       setMonitoringListLoading(true);
@@ -663,9 +764,8 @@ const ClinicalPathwayMaster: React.FC = () => {
     void fetchMasterList();
     void fetchTemplateList();
     void fetchMappingList();
-    void fetchCpptList();
     void fetchMonitoringList();
-  }, [fetchCpptList, fetchDashboard, fetchMappingList, fetchMasterList, fetchMasterOptions, fetchMonitoringList, fetchTemplateList]);
+  }, [fetchDashboard, fetchMappingList, fetchMasterList, fetchMasterOptions, fetchMonitoringList, fetchTemplateList]);
 
   const searchIcd = async (
     keyword: string,
@@ -972,88 +1072,6 @@ const ClinicalPathwayMaster: React.FC = () => {
     }
   };
 
-  const loadCpptDetail = async (id: number) => {
-    try {
-      const result = await requestJson<ApiDetailResponse<CpptItem>>(`${API_URLS.CLINICAL_PATHWAY}/cppt/${id}`);
-      const detail = result.data;
-      if (!detail) return;
-      setCpptForm({
-        id: detail.id,
-        kd_penyakit: detail.kd_penyakit,
-        nm_penyakit: detail.nm_penyakit,
-        ppra: detail.ppra,
-        subjective: detail.subjective || '',
-        objective: detail.objective || '',
-        assessment: detail.assessment || '',
-        plan: detail.plan || '',
-        aktif: detail.aktif === 'Tidak' ? 'Tidak' : 'Ya'
-      });
-      setActiveTab('cppt');
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Gagal memuat template CPPT',
-        variant: 'destructive'
-      });
-    }
-  };
-
-  const saveCppt = async () => {
-    try {
-      setCpptSaving(true);
-      const endpoint = cpptForm.id
-        ? `${API_URLS.CLINICAL_PATHWAY}/cppt/${cpptForm.id}`
-        : `${API_URLS.CLINICAL_PATHWAY}/cppt`;
-      const method = cpptForm.id ? 'PUT' : 'POST';
-      await requestJson<ApiDetailResponse<CpptItem>>(endpoint, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kd_penyakit: cpptForm.kd_penyakit,
-          ppra: cpptForm.ppra,
-          subjective: cpptForm.subjective,
-          objective: cpptForm.objective,
-          assessment: cpptForm.assessment,
-          plan: cpptForm.plan,
-          aktif: cpptForm.aktif
-        })
-      });
-      toast({ title: 'Berhasil', description: 'Template CPPT berhasil disimpan' });
-      setCpptForm(createEmptyCpptForm());
-      await Promise.all([fetchCpptList(), fetchDashboard()]);
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Gagal menyimpan template CPPT',
-        variant: 'destructive'
-      });
-    } finally {
-      setCpptSaving(false);
-    }
-  };
-
-  const deleteCppt = async (id: number) => {
-    try {
-      setCpptDeletingId(id);
-      await requestJson<ApiDetailResponse<null>>(`${API_URLS.CLINICAL_PATHWAY}/cppt/${id}`, {
-        method: 'DELETE'
-      });
-      toast({ title: 'Berhasil', description: 'Template CPPT berhasil dihapus' });
-      if (cpptForm.id === id) {
-        setCpptForm(createEmptyCpptForm());
-      }
-      await Promise.all([fetchCpptList(), fetchDashboard()]);
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Gagal menghapus template CPPT',
-        variant: 'destructive'
-      });
-    } finally {
-      setCpptDeletingId(null);
-    }
-  };
-
   const previewGenerator = async () => {
     if (!generatorNoRawat.trim()) {
       toast({
@@ -1230,43 +1248,108 @@ const ClinicalPathwayMaster: React.FC = () => {
     const totalDays = Math.max(1, Number(patient.target_los || 0), maxExecutionDay, maxVarianceDay);
     const dayHeaders = Array.from({ length: totalDays }, (_, index) => index + 1);
 
-    const executionRowsHtml = monitoringDetail.execution.map((item) => {
+    const calculateAge = (dateValue?: string) => {
+      if (!dateValue) return '-';
+      const birthDate = new Date(dateValue);
+      if (Number.isNaN(birthDate.getTime())) return '-';
+      const now = new Date();
+      let years = now.getFullYear() - birthDate.getFullYear();
+      const monthDiff = now.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) {
+        years -= 1;
+      }
+      return years >= 0 ? `${years} th` : '-';
+    };
+
+    const groupedExecution = monitoringDetail.execution.reduce<Array<{
+      kategori: string;
+      uraian: string;
+      aktivitas: string;
+      note: string;
+      days: Map<number, string>;
+    }>>((accumulator, item) => {
+      const kategori = String(item.kategori || '').trim() || '-';
+      const uraian = String(item.uraian_kegiatan || item.kegiatan || '').trim() || '-';
+      const aktivitas = String(item.aktivitas || '').trim() || '-';
+      const key = `${kategori}||${uraian}||${aktivitas}`;
+      const currentDay = Math.max(1, Number(item.hari_ke || 1));
+      const normalizedStatus = String(item.status || '').trim().toLowerCase();
+      const notes = [item.keterangan, item.catatan]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+      const existing = accumulator.find((entry) => `${entry.kategori}||${entry.uraian}||${entry.aktivitas}` === key);
+
+      if (existing) {
+        existing.days.set(currentDay, normalizedStatus);
+        if (notes.length) {
+          existing.note = [existing.note, ...notes]
+            .join(' | ')
+            .split('|')
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .filter((value, index, array) => array.indexOf(value) === index)
+            .join(' | ');
+        }
+        return accumulator;
+      }
+
+      accumulator.push({
+        kategori,
+        uraian,
+        aktivitas,
+        note: notes
+          .filter((value, index, array) => array.indexOf(value) === index)
+          .join(' | '),
+        days: new Map([[currentDay, normalizedStatus]])
+      });
+      return accumulator;
+    }, []);
+
+    const groupedByCategory = groupedExecution.reduce<Array<{
+      kategori: string;
+      items: typeof groupedExecution;
+    }>>((accumulator, item) => {
+      const existing = accumulator.find((entry) => entry.kategori === item.kategori);
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        accumulator.push({
+          kategori: item.kategori,
+          items: [item]
+        });
+      }
+      return accumulator;
+    }, []);
+
+    const executionRowsHtml = groupedByCategory.map((group) => group.items.map((item, index) => {
       const dayCells = dayHeaders.map((day) => {
-        if (Number(item.hari_ke) !== day) {
-          return '<td class="day-cell"></td>';
+        const status = item.days.get(day);
+        if (!status) {
+          return '<td class="day-cell day-empty"></td>';
         }
 
-        const normalizedStatus = String(item.status || '').toLowerCase();
-        const marker = normalizedStatus === 'completed'
-          ? '&#10003;'
-          : normalizedStatus === 'missed'
-            ? '&#10005;'
-            : '&#9679;';
-        const className = normalizedStatus === 'completed'
-          ? 'day-cell day-completed'
-          : normalizedStatus === 'missed'
-            ? 'day-cell day-missed'
-            : 'day-cell day-planned';
+        if (status === 'missed') {
+          return '<td class="day-cell day-missed">X</td>';
+        }
 
-        return `<td class="${className}">${marker}</td>`;
+        return '<td class="day-cell day-filled"></td>';
       }).join('');
 
       return `
         <tr>
-          <td>${escapeHtml(item.kategori)}</td>
-          <td>${escapeHtml(item.uraian_kegiatan || item.kegiatan)}</td>
-          <td>${escapeHtml(item.aktivitas)}</td>
+          ${index === 0 ? `<td class="category-cell" rowspan="${group.items.length}">${escapeHtml(group.kategori)}</td>` : ''}
+          <td class="aktivitas-cell">${escapeHtml(item.aktivitas)}</td>
           ${dayCells}
-          <td>${escapeHtml(item.catatan || item.keterangan || '-')}</td>
+          <td class="note-cell">${escapeHtml(item.note || '-')}</td>
         </tr>
       `;
-    }).join('');
+    }).join('')).join('');
 
     const varianceHtml = monitoringDetail.variance.length
       ? `
         <div class="variance-section">
-          <div class="section-title">Variance</div>
-          <table>
+          <div class="section-title">Variasi Monitoring</div>
+          <table class="variance-table">
             <thead>
               <tr>
                 <th>Hari</th>
@@ -1303,21 +1386,28 @@ const ClinicalPathwayMaster: React.FC = () => {
             body {
               font-family: Arial, sans-serif;
               margin: 0;
-              background: #f3f4f6;
+              background: #dcdcdc;
               color: #111827;
             }
             .page {
-              width: 1120px;
-              max-width: calc(100% - 32px);
-              margin: 16px auto 24px;
+              width: 190mm;
+              max-width: calc(100% - 24px);
+              margin: 12px auto 24px;
               background: #ffffff;
-              border: 1px solid #d1d5db;
+              border: 1px solid #5b5b5b;
               box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-              padding: 12px;
+              padding: 8mm;
+              box-sizing: border-box;
+            }
+            .document-code {
+              text-align: right;
+              font-size: 8px;
+              margin-bottom: 2mm;
             }
             .header-table,
             .identity-table,
-            table {
+            .main-table,
+            .variance-table {
               width: 100%;
               border-collapse: collapse;
             }
@@ -1325,76 +1415,135 @@ const ClinicalPathwayMaster: React.FC = () => {
             .identity-table td,
             .header-table th,
             .identity-table th,
-            table td,
-            table th {
-              border: 1px solid #bfc7d1;
-              padding: 4px 6px;
-              font-size: 11px;
+            .main-table td,
+            .main-table th,
+            .variance-table td,
+            .variance-table th {
+              border: 1px solid #444444;
+              padding: 2px 4px;
+              font-size: 9px;
               vertical-align: top;
             }
             .header-center {
               text-align: center;
               font-weight: bold;
+              background: #55e93d;
             }
             .header-logo {
-              width: 72px;
+              width: 56px;
               text-align: center;
               vertical-align: middle;
             }
             .header-logo img {
-              width: 48px;
-              height: 48px;
+              width: 42px;
+              height: 42px;
               object-fit: contain;
             }
             .header-title {
-              font-size: 24px;
+              font-size: 18px;
               line-height: 1.1;
             }
             .header-subtitle {
-              font-size: 15px;
+              font-size: 12px;
               line-height: 1.2;
             }
             .header-meta {
-              font-size: 10px;
+              font-size: 8px;
+              width: 110px;
             }
-            .main-table th {
-              background: #f3f4f6;
+            .identity-table {
+              margin-top: 3mm;
+            }
+            .identity-table td {
+              font-size: 8.8px;
+              padding: 2px 4px;
+            }
+            .identity-label {
+              width: 18%;
+              white-space: nowrap;
+            }
+            .identity-value {
+              border-bottom: 1px solid #444444;
+              min-height: 14px;
+            }
+            .main-table {
+              margin-top: 3mm;
+            }
+            .main-table th,
+            .variance-table th {
+              background: #f2f2f2;
               text-align: center;
             }
             .day-cell {
-              width: 36px;
-              min-width: 36px;
+              width: 18px;
+              min-width: 18px;
+              height: 18px;
               text-align: center;
               font-weight: bold;
+              padding: 0;
             }
-            .day-planned {
-              background: #dbeafe;
-              color: #1d4ed8;
+            .day-empty {
+              background: #cfcfcf;
             }
-            .day-completed {
-              background: #dcfce7;
-              color: #166534;
+            .day-filled {
+              background: #ffef45;
             }
             .day-missed {
               background: #fee2e2;
               color: #991b1b;
             }
+            .category-cell {
+              width: 95px;
+              font-weight: bold;
+            }
+            .aktivitas-cell {
+              width: 220px;
+            }
+            .note-cell {
+              width: 110px;
+            }
             .signature-grid {
               display: grid;
               grid-template-columns: 1fr 1fr;
-              gap: 48px;
-              margin-top: 28px;
+              gap: 18mm;
+              margin-top: 10mm;
               text-align: center;
-              font-size: 11px;
+              font-size: 9px;
             }
             .signature-name {
-              margin-top: 56px;
+              margin-top: 18mm;
               font-weight: bold;
             }
             .section-title {
-              margin: 18px 0 8px;
+              margin: 5mm 0 2mm;
               font-weight: bold;
-              font-size: 12px;
+              font-size: 10px;
+            }
+            .verification-box {
+              margin-top: 8mm;
+              text-align: center;
+              font-size: 9px;
+            }
+            .verification-name {
+              margin-top: 14mm;
+            }
+            .legend {
+              margin-top: 10mm;
+              font-size: 8.5px;
+            }
+            .legend-swatch {
+              display: inline-block;
+              width: 18px;
+              height: 10px;
+              border: 1px solid #444444;
+              vertical-align: middle;
+              margin-right: 4px;
+            }
+            .legend-filled {
+              background: #ffef45;
+            }
+            .legend-empty {
+              background: #cfcfcf;
             }
             @media print {
               body {
@@ -1409,28 +1558,28 @@ const ClinicalPathwayMaster: React.FC = () => {
                 padding: 0;
               }
               @page {
-                size: landscape;
-                margin: 10mm;
+                size: A4 portrait;
+                margin: 8mm;
               }
             }
           </style>
         </head>
         <body>
           <div class="page">
+            <div class="document-code">${escapeHtml(patient.kode_cp || 'CP')}</div>
             <table class="header-table">
               <tr>
                 <td class="header-logo">
                   <img src="${escapeHtml(logoImg)}" alt="Logo RSUD" />
                 </td>
                 <td class="header-center">
-                  <div class="header-title">CLINICAL PATHWAY</div>
+                  <div class="header-title">CLINICAL PATHWAYS</div>
                   <div class="header-subtitle">${escapeHtml(patient.nama_cp || '-')}</div>
                   <div>RSUD H. Damanhuri Barabai</div>
                 </td>
-                <td class="header-meta" style="width: 190px;">
-                  <div>No. Dok: ${escapeHtml(patient.kode_cp || '-')}</div>
+                <td class="header-meta">
                   <div>No. RM: ${escapeHtml(patient.no_rkm_medis || '-')}</div>
-                  <div>Status: ${escapeHtml(patient.status_layanan || '-')}</div>
+                  <div>No. Rawat: ${escapeHtml(patient.no_rawat || '-')}</div>
                   <div>Tgl Cetak: ${escapeHtml(formatDateTime(new Date().toISOString()))}</div>
                 </td>
               </tr>
@@ -1438,32 +1587,40 @@ const ClinicalPathwayMaster: React.FC = () => {
 
             <table class="identity-table" style="margin-top: 8px;">
               <tr>
-                <td style="width: 100px;"><strong>No. Rawat</strong></td>
-                <td>${escapeHtml(patient.no_rawat || '-')}</td>
-                <td style="width: 100px;"><strong>No. RM</strong></td>
-                <td>${escapeHtml(patient.no_rkm_medis || '-')}</td>
-                <td style="width: 100px;"><strong>Status</strong></td>
-                <td>${escapeHtml(patient.status_layanan || '-')}</td>
+                <td class="identity-label">No. RM</td>
+                <td class="identity-value">${escapeHtml(patient.no_rkm_medis || '-')}</td>
+                <td class="identity-label">No. Rawat</td>
+                <td class="identity-value">${escapeHtml(patient.no_rawat || '-')}</td>
               </tr>
               <tr>
-                <td><strong>Nama</strong></td>
-                <td>${escapeHtml(patient.nm_pasien || '-')}</td>
-                <td><strong>JK</strong></td>
-                <td>${escapeHtml(patient.jk || '-')}</td>
-                <td><strong>Tgl Lahir</strong></td>
-                <td>${escapeHtml(formatDate(patient.tgl_lahir))}</td>
+                <td class="identity-label">Nama Pasien</td>
+                <td class="identity-value">${escapeHtml(patient.nm_pasien || '-')}</td>
+                <td class="identity-label">Jenis Kelamin</td>
+                <td class="identity-value">${escapeHtml(patient.jk || '-')}</td>
               </tr>
               <tr>
-                <td><strong>Tgl Masuk</strong></td>
-                <td>${escapeHtml(formatDateTime(patient.tgl_masuk || (patient.tgl_registrasi ? `${patient.tgl_registrasi} ${patient.jam_reg || '00:00:00'}` : '')))}</td>
-                <td><strong>Tgl Keluar</strong></td>
-                <td>${escapeHtml(formatDateTime(patient.tgl_keluar || patient.tanggal_selesai || ''))}</td>
-                <td><strong>Kepatuhan</strong></td>
-                <td>${escapeHtml(formatPercent(patient.compliance_percentage || 0))}</td>
+                <td class="identity-label">Umur / Tgl Lahir</td>
+                <td class="identity-value">${escapeHtml(`${calculateAge(patient.tgl_lahir)} / ${formatDate(patient.tgl_lahir)}`)}</td>
+                <td class="identity-label">Tanggal Masuk RS</td>
+                <td class="identity-value">${escapeHtml(formatDateTime(patient.tgl_masuk || (patient.tgl_registrasi ? `${patient.tgl_registrasi} ${patient.jam_reg || '00:00:00'}` : '')))}</td>
               </tr>
               <tr>
-                <td><strong>Diagnosa</strong></td>
-                <td colspan="5">${escapeHtml(patient.nm_penyakit || patient.kd_penyakit || '-')}</td>
+                <td class="identity-label">Tanggal Keluar RS</td>
+                <td class="identity-value">${escapeHtml(formatDateTime(patient.tgl_keluar || patient.tanggal_selesai || ''))}</td>
+                <td class="identity-label">Status Layanan</td>
+                <td class="identity-value">${escapeHtml(patient.status_layanan || '-')}</td>
+              </tr>
+              <tr>
+                <td class="identity-label">Penyakit Utama</td>
+                <td class="identity-value">${escapeHtml(patient.nm_penyakit || patient.kd_penyakit || '-')}</td>
+                <td class="identity-label">Kode ICD</td>
+                <td class="identity-value">${escapeHtml(patient.kd_penyakit || '-')}</td>
+              </tr>
+              <tr>
+                <td class="identity-label">Penyakit Penyerta / Komplikasi / Tindakan</td>
+                <td class="identity-value"></td>
+                <td class="identity-label">Lama / Rencana Rawat</td>
+                <td class="identity-value">${escapeHtml(`${patient.target_los || 0} hari`)}</td>
               </tr>
             </table>
 
@@ -1471,9 +1628,8 @@ const ClinicalPathwayMaster: React.FC = () => {
               <thead>
                 <tr>
                   <th rowspan="2">Kegiatan</th>
-                  <th rowspan="2">Uraian Kegiatan</th>
                   <th rowspan="2">Intervensi / Aktivitas</th>
-                  <th colspan="${dayHeaders.length}">Hari Rawat</th>
+                  <th colspan="${dayHeaders.length}">Hari Ke</th>
                   <th rowspan="2">Keterangan</th>
                 </tr>
                 <tr>
@@ -1481,7 +1637,7 @@ const ClinicalPathwayMaster: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                ${executionRowsHtml || `<tr><td colspan="${4 + dayHeaders.length}">Belum ada aktivitas monitoring.</td></tr>`}
+                ${executionRowsHtml || `<tr><td colspan="${3 + dayHeaders.length}">Belum ada aktivitas monitoring.</td></tr>`}
               </tbody>
             </table>
 
@@ -1496,6 +1652,18 @@ const ClinicalPathwayMaster: React.FC = () => {
                 <div>Perawat Penanggung Jawab</div>
                 <div class="signature-name">....................................</div>
               </div>
+            </div>
+
+            <div class="verification-box">
+              <div>Pelaksana Verifikasi</div>
+              <div class="verification-name">....................................</div>
+            </div>
+
+            <div class="legend">
+              <div>Keterangan:</div>
+              <div><span class="legend-swatch legend-filled"></span>yang harus diisikan</div>
+              <div><span class="legend-swatch legend-empty"></span>bisa ada, bisa tidak</div>
+              <div><strong>X</strong> tidak dilakukan</div>
             </div>
           </div>
         </body>
@@ -1533,7 +1701,6 @@ const ClinicalPathwayMaster: React.FC = () => {
     { key: 'master', label: 'Clinical Pathway' },
     { key: 'template', label: 'Template Harian' },
     { key: 'mapping', label: 'Mapping ICD' },
-    { key: 'cppt', label: 'Template CPPT' },
     { key: 'generator', label: 'Generator Pasien' },
     { key: 'monitoring', label: 'Monitoring' }
   ];
@@ -1585,7 +1752,7 @@ const ClinicalPathwayMaster: React.FC = () => {
               <div className={panelClass}>
                 <div className={panelHeaderClass}>Ringkasan</div>
                 <div className="p-4">
-                  <div className="grid gap-3 text-xs md:grid-cols-3">
+                  <div className="grid gap-3 text-xs md:grid-cols-2">
                     <div className="rounded-md border bg-muted/30 p-3">
                       <div className="font-semibold text-primary">CP Aktif</div>
                       <div className="mt-1 text-base font-bold">{dashboardSummary.active_patient_count}</div>
@@ -1593,10 +1760,6 @@ const ClinicalPathwayMaster: React.FC = () => {
                     <div className="rounded-md border bg-muted/30 p-3">
                       <div className="font-semibold text-primary">Rata-rata</div>
                       <div className="mt-1 text-base font-bold">{formatPercent(dashboardSummary.average_compliance_percentage)}</div>
-                    </div>
-                    <div className="rounded-md border bg-muted/30 p-3">
-                      <div className="font-semibold text-primary">Template CPPT</div>
-                      <div className="mt-1 text-base font-bold">{dashboardSummary.cppt_template_count}</div>
                     </div>
                   </div>
                   <p className="mt-4 text-xs text-muted-foreground">
@@ -1768,12 +1931,12 @@ const ClinicalPathwayMaster: React.FC = () => {
               <div className="space-y-4 p-4">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold">Clinical Pathway</label>
-                  <select className={inputClass} value={templateForm.clinical_pathway_id || ''} onChange={(e) => setTemplateForm((prev) => ({ ...prev, clinical_pathway_id: Number(e.target.value || 0) }))}>
-                    <option value="">- Pilih Clinical Pathway -</option>
-                    {masterOptions.map((item) => (
-                      <option key={item.id} value={item.id}>{item.kode_cp} - {item.nama_cp}</option>
-                    ))}
-                  </select>
+                  <SearchableMasterSelect
+                    options={masterOptions}
+                    value={Number(templateForm.clinical_pathway_id || 0)}
+                    onChange={(nextId) => setTemplateForm((prev) => ({ ...prev, clinical_pathway_id: nextId }))}
+                    placeholder="- Pilih Clinical Pathway -"
+                  />
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-1">
@@ -1787,12 +1950,12 @@ const ClinicalPathwayMaster: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold">Kategori</label>
-                  <select className={inputClass} value={templateForm.kategori} onChange={(e) => setTemplateForm((prev) => ({ ...prev, kategori: e.target.value }))}>
-                    <option value="">- Pilih Kategori -</option>
-                    {CATEGORY_OPTIONS.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </select>
+                  <SearchableCategorySelect
+                    groups={CATEGORY_GROUP_OPTIONS}
+                    value={templateForm.kategori}
+                    onChange={(nextValue) => setTemplateForm((prev) => ({ ...prev, kategori: nextValue }))}
+                    placeholder="- Pilih Kategori -"
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold">Kegiatan</label>
@@ -1830,12 +1993,15 @@ const ClinicalPathwayMaster: React.FC = () => {
             <div className={panelClass}>
               <div className={panelHeaderClass}>Daftar Template Harian</div>
               <div className="flex items-center justify-end border-b p-3 dark:border-slate-800">
-                <select className={`${inputClass} max-w-md`} value={templateFilterMasterId || ''} onChange={(e) => setTemplateFilterMasterId(Number(e.target.value || 0))}>
-                  <option value="">Semua Clinical Pathway</option>
-                  {masterOptions.map((item) => (
-                    <option key={item.id} value={item.id}>{item.kode_cp} - {item.nama_cp}</option>
-                  ))}
-                </select>
+                <SearchableMasterSelect
+                  options={masterOptions}
+                  value={Number(templateFilterMasterId || 0)}
+                  onChange={(nextId) => setTemplateFilterMasterId(nextId)}
+                  placeholder="Semua Clinical Pathway"
+                  allowEmpty
+                  emptyOptionLabel="Semua Clinical Pathway"
+                  className="max-w-md"
+                />
                 <Button size="sm" variant="outline" className="ml-2" onClick={() => void fetchTemplateList()} disabled={templateListLoading}>
                   {templateListLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 </Button>
@@ -1846,7 +2012,6 @@ const ClinicalPathwayMaster: React.FC = () => {
                     <tr>
                       <th className={tableHeadClass}>Hari</th>
                       <th className={tableHeadClass}>Kategori</th>
-                      <th className={tableHeadClass}>Kegiatan</th>
                       <th className={tableHeadClass}>Uraian</th>
                       <th className={tableHeadClass}>Aktivitas</th>
                       <th className={tableHeadClass}>Wajib</th>
@@ -1858,7 +2023,6 @@ const ClinicalPathwayMaster: React.FC = () => {
                       <tr key={item.id}>
                         <td className={tableCellClass}>{item.hari_ke}</td>
                         <td className={tableCellClass}>{item.kategori}</td>
-                        <td className={tableCellClass}>{item.kegiatan}</td>
                         <td className={tableCellClass}>{item.uraian_kegiatan || '-'}</td>
                         <td className={tableCellClass}>{item.aktivitas || '-'}</td>
                         <td className={tableCellClass}>{item.wajib}</td>
@@ -1874,7 +2038,7 @@ const ClinicalPathwayMaster: React.FC = () => {
                     ))}
                     {!templateList.length ? (
                       <tr>
-                        <td className={tableCellClass} colSpan={7}>Belum ada template harian.</td>
+                        <td className={tableCellClass} colSpan={6}>Belum ada template harian.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -1891,11 +2055,10 @@ const ClinicalPathwayMaster: React.FC = () => {
               <div className="space-y-4 p-4">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold">Clinical Pathway</label>
-                  <select
-                    className={inputClass}
-                    value={mappingForm.clinical_pathway_id || ''}
-                    onChange={(e) => {
-                      const nextId = Number(e.target.value || 0);
+                  <SearchableMasterSelect
+                    options={masterOptions}
+                    value={Number(mappingForm.clinical_pathway_id || 0)}
+                    onChange={(nextId) => {
                       const master = masterOptions.find((item) => item.id === nextId);
                       setMappingForm((prev) => ({
                         ...prev,
@@ -1903,12 +2066,8 @@ const ClinicalPathwayMaster: React.FC = () => {
                         confidence_score: Number(master?.confidence_score || 0)
                       }));
                     }}
-                  >
-                    <option value="">- Pilih Clinical Pathway -</option>
-                    {masterOptions.map((item) => (
-                      <option key={item.id} value={item.id}>{item.kode_cp} - {item.nama_cp}</option>
-                    ))}
-                  </select>
+                    placeholder="- Pilih Clinical Pathway -"
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold">Kode ICD</label>
@@ -1977,12 +2136,15 @@ const ClinicalPathwayMaster: React.FC = () => {
               <div className={panelClass}>
                 <div className={panelHeaderClass}>Daftar Mapping ICD</div>
                 <div className="flex flex-wrap items-center gap-2 border-b p-3 dark:border-slate-800">
-                  <select className={`${inputClass} max-w-md`} value={mappingFilterMasterId || ''} onChange={(e) => setMappingFilterMasterId(Number(e.target.value || 0))}>
-                    <option value="">Semua Clinical Pathway</option>
-                    {masterOptions.map((item) => (
-                      <option key={item.id} value={item.id}>{item.kode_cp} - {item.nama_cp}</option>
-                    ))}
-                  </select>
+                  <SearchableMasterSelect
+                    options={masterOptions}
+                    value={Number(mappingFilterMasterId || 0)}
+                    onChange={(nextId) => setMappingFilterMasterId(nextId)}
+                    placeholder="Semua Clinical Pathway"
+                    allowEmpty
+                    emptyOptionLabel="Semua Clinical Pathway"
+                    className="max-w-md"
+                  />
                   <Input value={mappingSearch} onChange={(e) => setMappingSearch(e.target.value)} placeholder="Cari kode ICD / nama diagnosis / CP" className="max-w-sm" />
                   <Button size="sm" variant="outline" onClick={() => void fetchMappingList()} disabled={mappingListLoading}>
                     {mappingListLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -2036,142 +2198,6 @@ const ClinicalPathwayMaster: React.FC = () => {
           </div>
         ) : null}
 
-        {activeTab === 'cppt' ? (
-          <div className="grid gap-4 xl:grid-cols-[324px_minmax(0,1fr)]">
-            <div className={panelClass}>
-              <div className={`${panelHeaderClass} border-primary/10 bg-primary/10 text-primary dark:text-primary`}>Tambah Template CPPT</div>
-              <div className="space-y-4 p-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">Kode ICD</label>
-                  <input className={inputClass} value={cpptForm.kd_penyakit} onChange={(e) => setCpptForm((prev) => ({ ...prev, kd_penyakit: e.target.value.toUpperCase() }))} />
-                  <div className="text-[11px] text-muted-foreground">Isi kode ICD atau pilih dari hasil pencarian di panel kanan.</div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">Diagnosa</label>
-                  <input className={inputClass} value={cpptForm.nm_penyakit} onChange={(e) => setCpptForm((prev) => ({ ...prev, nm_penyakit: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">Kategori PPRA</label>
-                  <select className={inputClass} value={cpptForm.ppra} onChange={(e) => setCpptForm((prev) => ({ ...prev, ppra: e.target.value }))}>
-                    <option value="">- Pilih PPRA -</option>
-                    {PPRA_OPTIONS.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">S (Subjective)</label>
-                  <textarea className={textareaClass} value={cpptForm.subjective} onChange={(e) => setCpptForm((prev) => ({ ...prev, subjective: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">O (Objective)</label>
-                  <textarea className={textareaClass} value={cpptForm.objective} onChange={(e) => setCpptForm((prev) => ({ ...prev, objective: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">A (Assessment)</label>
-                  <textarea className={textareaClass} value={cpptForm.assessment} onChange={(e) => setCpptForm((prev) => ({ ...prev, assessment: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">P (Plan)</label>
-                  <textarea className={textareaClass} value={cpptForm.plan} onChange={(e) => setCpptForm((prev) => ({ ...prev, plan: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">Status</label>
-                  <select className={inputClass} value={cpptForm.aktif} onChange={(e) => setCpptForm((prev) => ({ ...prev, aktif: e.target.value === 'Tidak' ? 'Tidak' : 'Ya' }))}>
-                    <option value="Ya">Ya</option>
-                    <option value="Tidak">Tidak</option>
-                  </select>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => void saveCppt()} disabled={cpptSaving}>
-                    {cpptSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Simpan Template CPPT
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setCpptForm(createEmptyCpptForm())}>Reset</Button>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className={panelClass}>
-                <div className={panelHeaderClass}>Pencarian ICD Master Penyakit</div>
-                <div className="flex items-center gap-2 p-3">
-                  <Input value={cpptIcdSearch} onChange={(e) => setCpptIcdSearch(e.target.value)} placeholder="Cari ICD / nama penyakit" />
-                  <Button size="sm" onClick={() => void searchIcd(cpptIcdSearch, setCpptIcdResults, setCpptIcdLoading)} disabled={cpptIcdLoading}>
-                    {cpptIcdLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Cari
-                  </Button>
-                </div>
-                {cpptIcdResults.length ? (
-                  <div className="border-t px-3 py-2 dark:border-slate-800">
-                    <div className="grid gap-2 md:grid-cols-2">
-                      {cpptIcdResults.map((item) => (
-                        <button
-                          key={item.kd_penyakit}
-                          type="button"
-                          onClick={() => setCpptForm((prev) => ({ ...prev, kd_penyakit: item.kd_penyakit, nm_penyakit: item.nm_penyakit }))}
-                          className="rounded-md border p-3 text-left transition-colors hover:bg-muted/40 dark:border-slate-800"
-                        >
-                          <div className="text-xs font-semibold">{item.kd_penyakit}</div>
-                          <div className="text-xs text-muted-foreground">{item.nm_penyakit}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className={panelClass}>
-                <div className={panelHeaderClass}>Master Template CPPT</div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr>
-                        <th className={tableHeadClass}>PPRA</th>
-                        <th className={tableHeadClass}>Kode ICD</th>
-                        <th className={tableHeadClass}>Diagnosa</th>
-                        <th className={tableHeadClass}>S</th>
-                        <th className={tableHeadClass}>O</th>
-                        <th className={tableHeadClass}>A</th>
-                        <th className={tableHeadClass}>P</th>
-                        <th className={tableHeadClass}>Status</th>
-                        <th className={tableHeadClass}>Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cpptList.map((item) => (
-                        <tr key={item.id}>
-                          <td className={tableCellClass}>{item.ppra}</td>
-                          <td className={tableCellClass}>{item.kd_penyakit}</td>
-                          <td className={tableCellClass}>{item.nm_penyakit}</td>
-                          <td className={tableCellClass}>{item.subjective ? 's' : '-'}</td>
-                          <td className={tableCellClass}>{item.objective ? 'o' : '-'}</td>
-                          <td className={tableCellClass}>{item.assessment ? 'a' : '-'}</td>
-                          <td className={tableCellClass}>{item.plan ? 'p' : '-'}</td>
-                          <td className={tableCellClass}>{item.aktif}</td>
-                          <td className={tableCellClass}>
-                            <div className="flex gap-1">
-                              <Button size="sm" variant="outline" onClick={() => void loadCpptDetail(item.id)}>Edit</Button>
-                              <Button size="sm" variant="destructive" onClick={() => void deleteCppt(item.id)} disabled={cpptDeletingId === item.id}>
-                                {cpptDeletingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Hapus'}
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {!cpptList.length ? (
-                        <tr>
-                          <td className={tableCellClass} colSpan={9}>Belum ada template CPPT.</td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
         {activeTab === 'generator' ? (
           <div className="grid gap-4 xl:grid-cols-[324px_minmax(0,1fr)]">
             <div className={panelClass}>
@@ -2183,12 +2209,14 @@ const ClinicalPathwayMaster: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold">Clinical Pathway Manual</label>
-                  <select className={inputClass} value={generatorMasterId || ''} onChange={(e) => setGeneratorMasterId(Number(e.target.value || 0))}>
-                    <option value="">Auto dari diagnosis</option>
-                    {masterOptions.map((item) => (
-                      <option key={item.id} value={item.id}>{item.kode_cp} - {item.nama_cp}</option>
-                    ))}
-                  </select>
+                  <SearchableMasterSelect
+                    options={masterOptions}
+                    value={Number(generatorMasterId || 0)}
+                    onChange={(nextId) => setGeneratorMasterId(nextId)}
+                    placeholder="Auto dari diagnosis"
+                    allowEmpty
+                    emptyOptionLabel="Auto dari diagnosis"
+                  />
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" onClick={() => void previewGenerator()} disabled={generatorLoading}>
@@ -2379,7 +2407,6 @@ const ClinicalPathwayMaster: React.FC = () => {
                           <tr>
                             <th className={tableHeadClass}>Hari</th>
                             <th className={tableHeadClass}>Kategori</th>
-                            <th className={tableHeadClass}>Kegiatan</th>
                             <th className={tableHeadClass}>Aktivitas</th>
                             <th className={tableHeadClass}>Status</th>
                             <th className={tableHeadClass}>Aksi</th>
@@ -2390,32 +2417,53 @@ const ClinicalPathwayMaster: React.FC = () => {
                             <tr key={item.id}>
                               <td className={tableCellClass}>{item.hari_ke}</td>
                               <td className={tableCellClass}>{item.kategori}</td>
-                              <td className={tableCellClass}>{item.kegiatan}</td>
                               <td className={tableCellClass}>
                                 <div>{item.aktivitas}</div>
                                 <div className="text-[11px] text-muted-foreground">{item.uraian_kegiatan || item.keterangan || '-'}</div>
                               </td>
                               <td className={tableCellClass}>{item.status}</td>
                               <td className={tableCellClass}>
-                                <div className="flex flex-wrap gap-1">
-                                  {['Planned', 'Completed', 'Missed'].map((status) => (
-                                    <Button
-                                      key={status}
-                                      size="sm"
-                                      variant={item.status === status ? 'default' : 'outline'}
-                                      onClick={() => void updateExecutionStatus(item.id, status)}
-                                      disabled={monitoringActionKey === `execution-${item.id}-${status}`}
-                                    >
-                                      {status}
-                                    </Button>
-                                  ))}
+                                <div className="flex items-center gap-2">
+                                  <ToggleGroup
+                                    type="single"
+                                    value={item.status}
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex-wrap justify-start gap-0"
+                                    onValueChange={(nextStatus) => {
+                                      if (nextStatus && nextStatus !== item.status) {
+                                        void updateExecutionStatus(item.id, nextStatus);
+                                      }
+                                    }}
+                                  >
+                                    {['Planned', 'Completed', 'Missed'].map((status, index) => (
+                                      <ToggleGroupItem
+                                        key={status}
+                                        value={status}
+                                        disabled={monitoringActionKey.startsWith(`execution-${item.id}-`)}
+                                        className={cn(
+                                          'min-w-[88px] rounded-none text-xs',
+                                          index === 0 && 'rounded-l-md',
+                                          index === 2 && 'rounded-r-md',
+                                          item.status === status && status === 'Completed' && 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600 hover:text-white',
+                                          item.status === status && status === 'Missed' && 'border-rose-600 bg-rose-600 text-white hover:bg-rose-600 hover:text-white',
+                                          item.status === status && status === 'Planned' && 'border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
+                                        )}
+                                      >
+                                        {status}
+                                      </ToggleGroupItem>
+                                    ))}
+                                  </ToggleGroup>
+                                  {monitoringActionKey.startsWith(`execution-${item.id}-`) ? (
+                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                  ) : null}
                                 </div>
                               </td>
                             </tr>
                           ))}
                           {!monitoringDetail.execution.length ? (
                             <tr>
-                              <td className={tableCellClass} colSpan={6}>Belum ada aktivitas monitoring.</td>
+                              <td className={tableCellClass} colSpan={5}>Belum ada aktivitas monitoring.</td>
                             </tr>
                           ) : null}
                         </tbody>
